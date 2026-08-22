@@ -98,7 +98,7 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
                         "recipient": "age1example",
                         "store_binding": "sops",
                     }
-                }
+                },
             }
         )
         + "\n",

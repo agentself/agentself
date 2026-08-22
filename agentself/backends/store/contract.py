@@ -23,12 +23,10 @@ class StoreAccess(ABC):
     """Caller never names the Resource (sops / age / pass)."""
 
     @abstractmethod
-    def seal(self, principal_id: str, name: str, value: str) -> None:
-        ...
+    def seal(self, principal_id: str, name: str, value: str) -> None: ...
 
     @abstractmethod
-    def reveal(self, principal_id: str, name: str) -> str:
-        ...
+    def reveal(self, principal_id: str, name: str) -> str: ...
 
     @abstractmethod
     def replace(self, principal_id: str, name: str, value: str) -> None:

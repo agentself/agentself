@@ -46,8 +46,7 @@ class MailboxAccess(ABC):
         body: str,
         send_token: str | None = None,
         address: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @abstractmethod
     def recv(
@@ -77,8 +76,7 @@ class MailboxAccess(ABC):
         *,
         send_token: str | None = None,
         address: str | None = None,
-    ) -> dict[str, object]:
-        ...
+    ) -> dict[str, object]: ...
 
     def connect(
         self,
