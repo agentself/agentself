@@ -26,19 +26,17 @@ done on a branch that contains the package.
   `python3 -m ruff`, `python3 -m mypy`, `python3 -m agentself`).
 
 ### Running the test suite (important gotchas)
-- Run with `python3 -m pytest` (or `pytest`). All 330 tests should pass.
+- Run with `python3 -m pytest` (or `pytest`).
 - The suite sets `AGENTSELF_FETCH_TOOLS=0`, so it does NOT download host tools;
   `age`, `sops`, `pass`, and `gpg` must already be on `PATH`. `pass` and `gnupg`
   come from apt; `age`/`sops` come from `agentself install --tools`.
-- The `pass`-backend tests generate a GPG key, and gpg-agent's unix-socket path
-  under the default pytest temp dir (`/tmp/pytest-of-ubuntu/...`) is 1 byte over
-  the 108-char socket limit, which makes 3 tests fail with "gpg keygen failed".
-  `PYTEST_ADDOPTS=--basetemp=/tmp/pytest-as` is set in `~/.bashrc` to keep the
-  temp path short. If that variable is missing, run tests with a short basetemp:
-  `python3 -m pytest --basetemp=/tmp/p`.
+- The `pass` backend keeps keys in the vault `gnupg/` dir but points
+  `GNUPGHOME` at a short `/tmp/as-gpg-*` symlink so gpg-agent sockets fit the
+  unix sockaddr limit. Long `AGENTSELF_VAULT_ROOT` / pytest temp paths should
+  work without a `--basetemp` workaround.
 
 ### Lint (matches the CI `lint` job)
-`ruff` is not in `[dependency-groups]`; it is installed separately.
+`ruff` is in `[dependency-groups] dev` alongside `pytest` and `mypy`.
 - `python3 -m ruff check .`
 - `python3 -m ruff format --check .`
 - `python3 -m mypy agentself`

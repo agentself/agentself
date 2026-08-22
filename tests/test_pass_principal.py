@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,9 +13,10 @@ import pytest
 import agentself.local as local
 from agentself.internal.custody.errors import HostToolMissing
 from agentself.internal.files import identity_home
+from agentself.internal.gpg import bindable_home
 from agentself.local import ensure_age_key
 
-from tests.support import PROJECT_ROOT, cli_env, run_cli
+from tests.support import PROJECT_ROOT, apply_cli_env, cli_env, run_cli
 
 
 def test_pass_missing_tools_fails_closed_without_setup_script(tmp_path, monkeypatch):
@@ -152,3 +154,109 @@ def test_init_store_pass(tmp_path):
     assert data["ok"] is True
     assert data["ready"]["email"] is False
     assert "AGE-SECRET-KEY" not in shown.stdout + shown.stderr
+
+
+def test_gpg_keygen_error_includes_redacted_stderr(tmp_path, monkeypatch):
+    vault = tmp_path / "vault"
+    pdir = identity_home(vault, "agent")
+    pdir.mkdir(parents=True)
+    (pdir / "agent.agekey").write_text(
+        "AGE-SECRET-KEY-TESTKEYGENERR\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(local, "_have_tool", lambda name: True)
+
+    def fake_run(argv, *, env=None, timeout=30, failed=""):
+        if "--generate-key" in argv:
+            return subprocess.CompletedProcess(
+                argv,
+                2,
+                b"",
+                b"gpg: generating principal GPG key\n"
+                b"gpg: AGE-SECRET-KEY-LEAKME\n"
+                b"gpg-agent[1]: socket name is too long\n",
+            )
+        if "--list-secret-keys" in argv:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(local, "_run_host", fake_run)
+    with pytest.raises(RuntimeError, match="socket name is too long") as caught:
+        ensure_age_key(vault, "agent", store="pass")
+    msg = str(caught.value)
+    assert "gpg keygen failed" in msg
+    assert "AGE-SECRET-KEY-LEAKME" not in msg
+
+
+def test_host_failure_message_redacts_secret_values():
+    proc = subprocess.CompletedProcess(
+        ["gpg"],
+        2,
+        b"",
+        b"gpg: cannot use AGE-SECRET-KEY-LEAKME\n",
+    )
+    msg = local._host_failure_message("gpg keygen failed", proc)
+    assert "AGE-SECRET-KEY-LEAKME" not in msg
+    assert "AGE-SECRET-KEY-[redacted]" in msg
+    assert msg.startswith("gpg keygen failed:")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="unix socket path limit")
+def test_bindable_home_uses_short_symlink(tmp_path):
+    gnupg = tmp_path / ("n" * 80) / "identities" / "agent" / "gnupg"
+    gnupg.mkdir(parents=True, mode=0o700)
+    home = bindable_home(gnupg)
+    assert home != gnupg
+    assert home.is_symlink()
+    assert home.resolve() == gnupg.resolve()
+    assert len(os.fsencode(home / "S.gpg-agent.browser")) <= 106
+    assert str(home).startswith("/tmp/as-gpg-")
+    assert bindable_home(gnupg) == home
+
+
+@pytest.mark.skipif(
+    shutil.which("gpg") is None or shutil.which("pass") is None,
+    reason="pass store requires gpg and pass on PATH",
+)
+def test_pass_setup_survives_long_vault_path(tmp_path):
+    vault = tmp_path / ("n" * 80) / "vault"
+    extra = vault / "identities" / "agent" / "gnupg" / "S.gpg-agent.browser"
+    assert len(os.fsencode(extra)) > 107
+    key = ensure_age_key(vault, "agent", store="pass")
+    pdir = identity_home(vault, "agent")
+    assert key.is_file()
+    assert (pdir / "gnupg").is_dir()
+    assert (pdir / "password-store" / ".gpg-id").is_file()
+    assert not (pdir / ".gpg-batch").exists()
+
+
+@pytest.mark.skipif(
+    shutil.which("gpg") is None or shutil.which("pass") is None,
+    reason="pass store requires gpg and pass on PATH",
+)
+def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
+    from agentself.cli.app import main
+
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(
+        "agentself.cli.app.ensure_age_key",
+        lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("gpg keygen failed: socket name is too long")
+        ),
+    )
+    code = main(["init", "--store", "pass"])
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert "Traceback" not in captured.err
+    assert captured.err.startswith(
+        "error: gpg keygen failed: socket name is too long\n"
+    )
+    js = main(["--json", "init", "--store", "pass"])
+    blob = capsys.readouterr()
+    assert js == 1
+    data = json.loads(blob.err)
+    assert data["ok"] is False
+    assert data["error"] == "error"
+    assert "socket name is too long" in data["reason"]
