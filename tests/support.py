@@ -144,9 +144,14 @@ class InstrumentedMailboxAccess:
         self.calls.append(("describe", principal_id))
         return self.inner.describe(principal_id, send_token=send_token, address=address)
 
-    def connect(self, principal_id, *, send_token=None, address=None):
+    def connect(self, principal_id, *, send_token=None, address=None, answers=None):
         self.calls.append(("connect", principal_id))
-        return self.inner.connect(principal_id, send_token=send_token, address=address)
+        return self.inner.connect(
+            principal_id,
+            send_token=send_token,
+            address=address,
+            answers=answers,
+        )
 
 
 class DoubleMailboxFactory:
@@ -207,6 +212,10 @@ class InstrumentedWalletAccess:
     def sign(self, principal_id, message):
         self.calls.append(("sign",))
         return self.inner.sign(principal_id, message)
+
+    def verify(self, principal_id, message, authorization):
+        self.calls.append(("verify",))
+        return self.inner.verify(principal_id, message, authorization)
 
     def balance(self, principal_id):
         self.calls.append(("balance",))
@@ -467,6 +476,10 @@ def cli_env(vault: Path) -> dict[str, str]:
         "AGENTSELF_MAIL_DOMAIN",
         "AGENTSELF_EMAIL_BACKEND",
         "AGENTSELF_WALLET_BACKEND",
+        "AGENTSELF_EMAIL_ADDRESS",
+        "AGENTSELF_EMAIL_CREDENTIAL",
+        "AGENTSELF_AGENTMAIL_API_KEY",
+        "AGENTSELF_MAIL_PASSWORD",
     ):
         env.pop(key, None)
     return env
@@ -508,12 +521,20 @@ def apply_cli_env(monkeypatch, env: dict[str, str]) -> None:
         monkeypatch.setenv(
             "AGENTSELF_FORBID_LIVE_AGENTMAIL", env["AGENTSELF_FORBID_LIVE_AGENTMAIL"]
         )
+    if "HOME" in env:
+        monkeypatch.setenv("HOME", env["HOME"])
+    if "USERPROFILE" in env:
+        monkeypatch.setenv("USERPROFILE", env["USERPROFILE"])
     for key in (
         "AGENTSELF_EMAIL_BACKEND",
         "AGENTSELF_WALLET_BACKEND",
         "AGENTSELF_MAIL_DOMAIN",
         "AGENTSELF_IDENTITY_ID",
         "AGE_KEY_FILE",
+        "AGENTSELF_EMAIL_ADDRESS",
+        "AGENTSELF_EMAIL_CREDENTIAL",
+        "AGENTSELF_AGENTMAIL_API_KEY",
+        "AGENTSELF_MAIL_PASSWORD",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -540,6 +561,13 @@ FEATURED_HELPS = [
     ["secret", "update", "--help"],
     ["secret", "list", "--help"],
     ["secret", "delete", "--help"],
+    ["secret", "exists", "--help"],
+    ["note", "--help"],
+    ["note", "create", "--help"],
+    ["note", "get", "--help"],
+    ["note", "update", "--help"],
+    ["note", "list", "--help"],
+    ["note", "delete", "--help"],
     ["email", "--help"],
     ["email", "connect", "--help"],
     ["email", "show", "--help"],
@@ -551,6 +579,7 @@ FEATURED_HELPS = [
     ["wallet", "address", "--help"],
     ["wallet", "balance", "--help"],
     ["wallet", "authorize", "--help"],
+    ["wallet", "verify", "--help"],
     ["wallet", "send", "--help"],
     ["backup", "--help"],
     ["restore", "--help"],

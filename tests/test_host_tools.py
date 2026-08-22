@@ -203,18 +203,19 @@ def test_doctor_fetch_error_is_json_object(tmp_path, monkeypatch, capsys):
     code = main(["--json", "diagnose"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
-    assert captured.out == ""
-    data = json.loads(captured.err)
+    assert captured.err == ""
+    data = json.loads(captured.out)
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == "age not on PATH"
     assert data["next"] == "agentself install --tools"
-    assert captured.err.count("\n") == 1
+    assert captured.out.count("\n") == 1
 
     tools_code = main(["--json", "install", "--tools"])
     tools_cap = capsys.readouterr()
     assert tools_code == 1, tools_cap.out + tools_cap.err
-    tools_data = json.loads(tools_cap.err)
+    assert tools_cap.err == ""
+    tools_data = json.loads(tools_cap.out)
     assert tools_data == {
         "ok": False,
         "error": "error",
@@ -258,7 +259,7 @@ def test_cli_doctor_fetch_off_keeps_age_missing_shape(tmp_path):
     assert proc.stderr == "error: age not on PATH\nnext: agentself install --tools\n"
     js = run_cli(["--json", "diagnose"], env)
     assert js.returncode == 1
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["reason"] == "age not on PATH"
     assert data["next"] == "agentself install --tools"
     init = run_cli(["init"], env)

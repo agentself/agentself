@@ -35,3 +35,9 @@ class WalletAccess(ABC):
 
     @abstractmethod
     def describe(self, principal_id: str) -> dict[str, object]: ...
+
+    @abstractmethod
+    def verify(
+        self, principal_id: str, message: str, authorization: str
+    ) -> dict[str, object]:
+        """Confirm an authorization against this identity. Never names a vendor."""

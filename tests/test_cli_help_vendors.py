@@ -29,6 +29,7 @@ _FEATURED_TOP = (
     "backends",
     "diagnose",
     "secret",
+    "note",
     "email",
     "wallet",
     "backup",
@@ -63,11 +64,11 @@ def test_cli_help_has_no_vendor_names(tmp_path):
                     f"{alias} featured in --help: {text}"
                 )
             assert (
-                "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
+                "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
                 in text
             )
         if args == ["wallet", "--help"]:
-            for verb in ("show", "address", "balance", "authorize", "send"):
+            for verb in ("show", "address", "balance", "authorize", "send", "verify"):
                 assert verb in text, f"{verb} missing from wallet --help: {text}"
             assert "sign" not in text, f"sign featured in wallet --help: {text}"
             for word in ("base", "ethereum", "lit"):
@@ -124,8 +125,9 @@ def test_nested_help_shows_args_and_defaults(tmp_path):
     email_send = run_cli(["email", "send", "--help"], env)
     assert email_send.returncode == 0, email_send.stderr
     assert "fails closed" in email_send.stdout.lower()
-    assert "email.send.token" in email_send.stdout
     assert "backends email" in email_send.stdout
+    assert "agentmail" not in email_send.stdout.lower()
+    assert "imap" not in email_send.stdout.lower()
 
     sms = run_cli(["sms", "--help"], env)
     assert sms.returncode == 2, sms.stdout + sms.stderr

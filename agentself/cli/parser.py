@@ -8,11 +8,19 @@ from agentself.host import CHANNELS, ENV_VAULT_ROOT, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
-_FEATURED = "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
+_FEATURED = (
+    "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
+)
 
 
 class _Parser(argparse.ArgumentParser):
     _as_json = False
+
+    def exit(self, status: int = 0, message: str | None = None) -> None:  # type: ignore[override]
+        if message:
+            stream = sys.stdout if _Parser._as_json else sys.stderr
+            self._print_message(message, stream)
+        raise SystemExit(status)
 
     def error(self, message: str) -> None:  # type: ignore[override]
         nxt = f"{self.prog} --help"
@@ -160,7 +168,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself backends\n"
             "  agentself diagnose\n"
             "  agentself --json show\n"
-            "  agentself secret create NAME VALUE\n"
+            "  agentself secret create NAME --file PATH\n"
             "  agentself wallet address\n"
             "  agentself install --skills\n"
             "\n"
@@ -197,10 +205,16 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself init\n"
             "  agentself init --id NAME\n"
             "  agentself init --wallet base\n"
+            "  agentself init --force\n"
             "  agentself --json init"
         ),
     )
     _add_create_flags(init_p)
+    init_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow identity or backend changes on an existing identity",
+    )
 
     _cmd(
         sub,
@@ -267,14 +281,16 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="Named secrets",
         description=(
-            "Named secrets. create refuses if the name exists. "
+            "Named secrets. create refuses if the name exists with a different value. "
+            "The same value is unchanged. "
             "update requires it. delete removes a name. list prints names only. "
-            "wallet.key cannot be deleted."
+            "wallet.key cannot be deleted and needs --unsafe to export."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself secret create NAME VALUE\n"
+            "  agentself secret create NAME --file PATH\n"
             "  agentself secret get NAME\n"
+            "  agentself secret exists NAME\n"
             "  agentself secret delete NAME\n"
             "  agentself --json secret list\n"
             "\n"
@@ -284,7 +300,7 @@ def _parser() -> argparse.ArgumentParser:
     secret_sub = secret.add_subparsers(
         dest="secret_command",
         required=True,
-        metavar="{create,get,update,list,delete}",
+        metavar="{create,get,update,list,delete,exists}",
         parser_class=_Parser,
         prog="agentself secret",
     )
@@ -294,14 +310,16 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="Write a named secret. Refuses if the name exists",
         description=(
-            "Write a named secret. Refuses if the name exists. "
-            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH."
+            "Write a named secret. Refuses if the name exists with a different value. "
+            "Repeating the same value is unchanged. "
+            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH. "
+            "Prefer --file or stdin; a positional value is still accepted."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself secret create NAME VALUE\n"
             "  agentself secret create NAME --file PATH\n"
-            "  agentself --json secret create NAME VALUE"
+            "  agentself secret create NAME\n"
+            "  agentself --json secret create NAME --file PATH"
         ),
     )
     _add_secret_write_args(create_p)
@@ -310,10 +328,37 @@ def _parser() -> argparse.ArgumentParser:
         "get",
         json_parent,
         help="Print a named secret",
-        description="Print a named secret. Exits 3 if the name is missing.",
-        epilog="Examples:\n  agentself secret get NAME\n  agentself --json secret get NAME",
+        description=(
+            "Print a named secret. Exits 3 if the name is missing. "
+            "wallet.key requires --unsafe. --file writes the exact stored bytes. "
+            "--meta prints size and SHA-256 without the value."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself secret get NAME\n"
+            "  agentself secret get NAME --file PATH\n"
+            "  agentself secret get NAME --meta\n"
+            "  agentself --json secret get NAME"
+        ),
     )
     get_secret.add_argument("name", metavar="NAME", help="Secret name")
+    get_secret.add_argument(
+        "--file",
+        dest="to_file",
+        default="",
+        metavar="PATH",
+        help="Write the value to a file instead of stdout",
+    )
+    get_secret.add_argument(
+        "--meta",
+        action="store_true",
+        help="Print size and SHA-256 without the value",
+    )
+    get_secret.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow a raw export of a protected secret",
+    )
     update_p = _cmd(
         secret_sub,
         "update",
@@ -342,6 +387,100 @@ def _parser() -> argparse.ArgumentParser:
         epilog="Examples:\n  agentself secret delete NAME\n  agentself --json secret delete NAME",
     )
     delete_p.add_argument("name", metavar="NAME", help="Secret name")
+    exists_p = _cmd(
+        secret_sub,
+        "exists",
+        json_parent,
+        help="Check that a named secret exists",
+        description="Exit 0 if the name exists, 3 if it is missing. Never prints the value.",
+        epilog="Examples:\n  agentself secret exists NAME\n  agentself --json secret exists NAME",
+    )
+    exists_p.add_argument("name", metavar="NAME", help="Secret name")
+
+    note = _cmd(
+        sub,
+        "note",
+        json_parent,
+        help="Encrypted notes for process handoff",
+        description=(
+            "Encrypted notes. Separate from secrets. "
+            "create refuses if the name exists with a different value. "
+            "list prints names only."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself note create NAME --file PATH\n"
+            "  agentself note get NAME\n"
+            "  agentself --json note list\n"
+            "\n"
+            "Use agentself note <command> --help to drill in."
+        ),
+    )
+    note_sub = note.add_subparsers(
+        dest="note_command",
+        required=True,
+        metavar="{create,get,update,list,delete}",
+        parser_class=_Parser,
+        prog="agentself note",
+    )
+    note_create = _cmd(
+        note_sub,
+        "create",
+        json_parent,
+        help="Write an encrypted note. Refuses if the name exists",
+        description=(
+            "Write an encrypted note. Refuses if the name exists with a different value. "
+            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH."
+        ),
+        epilog="Examples:\n  agentself note create NAME --file PATH",
+    )
+    _add_secret_write_args(note_create)
+    note_get = _cmd(
+        note_sub,
+        "get",
+        json_parent,
+        help="Print an encrypted note",
+        description="Print an encrypted note. Exits 3 if the name is missing.",
+        epilog="Examples:\n  agentself note get NAME",
+    )
+    note_get.add_argument("name", metavar="NAME", help="Note name")
+    note_get.add_argument(
+        "--file",
+        dest="to_file",
+        default="",
+        metavar="PATH",
+        help="Write the value to a file instead of stdout",
+    )
+    note_get.add_argument(
+        "--meta",
+        action="store_true",
+        help="Print size and SHA-256 without the value",
+    )
+    note_update = _cmd(
+        note_sub,
+        "update",
+        json_parent,
+        help="Update an encrypted note. The name must exist",
+        description="Update an encrypted note. Same VALUE rules as create.",
+        epilog="Examples:\n  agentself note update NAME --file PATH",
+    )
+    _add_secret_write_args(note_update)
+    _cmd(
+        note_sub,
+        "list",
+        json_parent,
+        help="List note names. Never print values",
+        epilog="Examples:\n  agentself note list\n  agentself --json note list",
+    )
+    note_delete = _cmd(
+        note_sub,
+        "delete",
+        json_parent,
+        help="Delete an encrypted note",
+        description="Delete an encrypted note. No prompt.",
+        epilog="Examples:\n  agentself note delete NAME",
+    )
+    note_delete.add_argument("name", metavar="NAME", help="Note name")
 
     email = _cmd(
         sub,
@@ -350,16 +489,16 @@ def _parser() -> argparse.ArgumentParser:
         help="Optional email. connect does not block init",
         description=(
             "Optional email. connect does not block init. "
-            "AgentMail: store email.send.token, then email connect. "
-            "IMAP: store email.address and email.send.token. "
+            "connect runs a generic, resumable setup. "
+            "Backends publish required inputs through agentself backends email. "
             "Send without credentials fails closed."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself secret create email.send.token TOKEN\n"
             "  agentself email connect\n"
             "  agentself email show\n"
             "  agentself --json email receive\n"
+            "  agentself backends email\n"
             "\n"
             "Use agentself email <command> --help to drill in."
         ),
@@ -371,21 +510,48 @@ def _parser() -> argparse.ArgumentParser:
         parser_class=_Parser,
         prog="agentself email",
     )
-    _cmd(
+    connect_p = _cmd(
         email_sub,
         "connect",
         json_parent,
         help="Connect email. Does not block init",
         description=(
             "Connect email. Does not block init. "
-            "AgentMail: persist the live inbox from secret email.send.token. "
-            "IMAP: uses stored email.address. Does not invent principal@domain."
+            "Interactive use continues setup until connected. "
+            "--json never prompts: it returns a generic setup object and exit 3 "
+            "when input or a human action is required. "
+            "Continue with --continue SETUP_ID. "
+            "Sensitive answers come from --result-file, stdin, or a hidden prompt, "
+            "never from argv. "
+            "--import-env persists validated environment credentials."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself secret create email.send.token TOKEN\n"
-            "  agentself email connect"
+            "  agentself email connect\n"
+            "  agentself email connect --continue SETUP_ID --result-file PATH\n"
+            "  agentself --json email connect\n"
+            "  agentself backends email"
         ),
+    )
+    connect_p.add_argument(
+        "--continue",
+        dest="setup_id",
+        default="",
+        metavar="SETUP_ID",
+        help="Resume a pending setup by opaque id",
+    )
+    connect_p.add_argument(
+        "--result-file",
+        dest="result_file",
+        default="",
+        metavar="PATH",
+        help="Read a setup answer from a file",
+    )
+    connect_p.add_argument(
+        "--import-env",
+        dest="import_env",
+        action="store_true",
+        help="Persist successfully validated environment credentials",
     )
     _cmd(
         email_sub,
@@ -393,8 +559,8 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="Print the live email address",
         description=(
-            "Print the live email address. Does not invent principal@domain. "
-            "Prints 'not configured' when no owned address."
+            "Print the live email address. Does not invent an address. "
+            "Exits 3 when email is not configured."
         ),
         epilog="Examples:\n  agentself email show\n  agentself --json email show",
     )
@@ -405,10 +571,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Send a message. Needs send credentials",
         description=(
             "Send a message. Needs a send-capable email backend and send credentials. "
-            "Fails closed otherwise. "
-            "agentmail: secret email.send.token, then email connect. "
-            "imap: secrets email.send.token then email.address. "
-            "See agentself backends email."
+            "Fails closed otherwise. See agentself backends email."
         ),
         epilog=(
             "Examples:\n"
@@ -462,7 +625,7 @@ def _parser() -> argparse.ArgumentParser:
     wallet_sub = wallet.add_subparsers(
         dest="wallet_command",
         required=True,
-        metavar="{show,address,balance,authorize,send}",
+        metavar="{show,address,balance,authorize,send,verify}",
         parser_class=_Parser,
         prog="agentself wallet",
     )
@@ -493,10 +656,62 @@ def _parser() -> argparse.ArgumentParser:
         "authorize",
         json_parent,
         help="Authorize an action or message. The backend picks how.",
-        epilog="Examples:\n  agentself wallet authorize MESSAGE",
+        description=(
+            "Authorize an action or message. The backend picks how. "
+            "Prefer --file PATH. A positional message is still accepted."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself wallet authorize --file PATH\n"
+            "  agentself --json wallet authorize --file PATH"
+        ),
     )
     wallet_auth.add_argument(
-        "message", metavar="MESSAGE", help="Action or message to authorize"
+        "message",
+        nargs="?",
+        metavar="MESSAGE",
+        help="Action or message to authorize. Omit to read stdin when stdin is not a tty",
+    )
+    wallet_auth.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Read the message from a file",
+    )
+    wallet_verify = _cmd(
+        wallet_sub,
+        "verify",
+        json_parent,
+        help="Verify an authorization against this identity",
+        description=(
+            "Verify an authorization against this identity. "
+            "The backend picks the scheme. Provider-neutral: no vendor flags."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself wallet verify --file PATH AUTHORIZATION\n"
+            "  agentself --json wallet verify --file PATH AUTHORIZATION"
+        ),
+    )
+    wallet_verify.add_argument(
+        "message",
+        nargs="?",
+        metavar="MESSAGE",
+        help="Message that was authorized. Omit when using --file",
+    )
+    wallet_verify.add_argument(
+        "authorization",
+        nargs="?",
+        metavar="AUTHORIZATION",
+        help="Authorization to check",
+    )
+    wallet_verify.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Read the message from a file",
     )
     wallet_send = _cmd(
         wallet_sub,
@@ -570,6 +785,7 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Copy the optional agent skill, or fetch pinned host tools. "
             "agentself install with neither --skills nor --tools is an error. "
+            "Skills install under the user home directory unless --local. "
             "-g / --global is for skills, not tools. "
             "Skills-less operation is fine: --help and --json are enough."
         ),
@@ -577,9 +793,9 @@ def _parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  agentself install --tools\n"
             "  agentself install --skills\n"
-            "  agentself install --skills -g\n"
+            "  agentself install --skills --local\n"
             "  agentself install --skills=agents\n"
-            "  agentself install --skills=agents -g"
+            "  agentself install --skills=agents --local"
         ),
     )
     install_p.add_argument(
@@ -600,6 +816,12 @@ def _parser() -> argparse.ArgumentParser:
         "--global",
         dest="global_install",
         action="store_true",
-        help="Install skills under the user home directory",
+        help="Install skills under the user home directory (default)",
+    )
+    install_p.add_argument(
+        "--local",
+        dest="local_install",
+        action="store_true",
+        help="Install skills into the current directory",
     )
     return parser

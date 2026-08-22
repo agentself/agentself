@@ -147,7 +147,7 @@ def test_argparse_json_does_not_echo_age_secret(tmp_path):
     blob = _blob(proc.stdout, proc.stderr)
     assert AGE_CANARY not in blob
     assert "Traceback" not in blob
-    data = json.loads(proc.stderr)
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert AGE_CANARY not in json.dumps(data)
 
@@ -233,7 +233,7 @@ def test_incomplete_registry_record_fails_closed_no_traceback(tmp_path):
     assert proc.returncode != 0
     assert "Traceback" not in blob
     assert AGE_CANARY not in blob
-    err = json.loads(proc.stderr)
+    err = json.loads(proc.stdout or proc.stderr)
     assert err["ok"] is False
 
 

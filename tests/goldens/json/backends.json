@@ -23,7 +23,8 @@
             "address",
             "balance",
             "authorize",
-            "send"
+            "send",
+            "verify"
           ],
           "custody": "eoa-key",
           "network": "base",
@@ -41,7 +42,8 @@
             "address",
             "balance",
             "authorize",
-            "send"
+            "send",
+            "verify"
           ],
           "custody": "eoa-key",
           "network": "ethereum",
@@ -59,10 +61,11 @@
       "backends": [
         {
           "name": "agentmail",
-          "summary": "AgentMail HTTP. Store email.send.token, then email connect",
+          "summary": "HTTP inbox. Connect provisions or selects an owned address",
           "knobs": [
             "email.send.token",
-            "email.address"
+            "email.address",
+            "AGENTSELF_AGENTMAIL_API_KEY"
           ],
           "live": true,
           "verbs": [
@@ -74,7 +77,29 @@
           ],
           "custody": "none",
           "network": "agentmail",
-          "asset": ""
+          "asset": "",
+          "options": [
+            {
+              "name": "credential",
+              "type": "secret",
+              "required": true,
+              "sensitive": true,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_AGENTMAIL_API_KEY",
+              "help": "Send credential"
+            },
+            {
+              "name": "address",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "",
+              "help": "Inbox address when more than one exists"
+            }
+          ]
         },
         {
           "name": "imap",
@@ -84,7 +109,8 @@
             "email.address",
             "AGENTSELF_MAIL_HOST",
             "AGENTSELF_IMAP_HOST",
-            "AGENTSELF_SMTP_HOST"
+            "AGENTSELF_SMTP_HOST",
+            "AGENTSELF_MAIL_PASSWORD"
           ],
           "live": true,
           "verbs": [
@@ -96,7 +122,59 @@
           ],
           "custody": "none",
           "network": "imap-smtp",
-          "asset": ""
+          "asset": "",
+          "options": [
+            {
+              "name": "address",
+              "type": "string",
+              "required": true,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "",
+              "help": "Mailbox address"
+            },
+            {
+              "name": "credential",
+              "type": "secret",
+              "required": true,
+              "sensitive": true,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_MAIL_PASSWORD",
+              "help": "Mailbox credential"
+            },
+            {
+              "name": "mail_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_MAIL_HOST",
+              "help": "Shared mail host when IMAP and SMTP share a name"
+            },
+            {
+              "name": "imap_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_IMAP_HOST",
+              "help": "IMAP host override"
+            },
+            {
+              "name": "smtp_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_SMTP_HOST",
+              "help": "SMTP host override"
+            }
+          ]
         }
       ]
     },

@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from agentself.internal.setup import (
+    SETUP_FAILED,
+    SETUP_INPUT_REQUIRED,
+    setup_status_of,
+)
+
 
 class MailboxError(Exception):
     """Mailbox Resource failure. Must never include a secret or send-token value."""
@@ -26,11 +32,48 @@ def mailbox_view(
     *,
     owned_address: bool = False,
     needs_domain: bool = False,
+    status: str | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "address": address,
         "owned_address": owned_address,
         "needs_domain": needs_domain,
+    }
+    if status:
+        payload["status"] = status
+    return payload
+
+
+def setup_needed(
+    options: list[dict[str, object]],
+    *,
+    status: str = SETUP_INPUT_REQUIRED,
+    human_action_required: bool = False,
+    expires_at: float | None = None,
+    message: str = "",
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "status": status,
+        "address": None,
+        "owned_address": False,
+        "needs_domain": False,
+        "options": list(options),
+        "human_action_required": human_action_required,
+    }
+    if expires_at is not None:
+        payload["expires_at"] = expires_at
+    if message:
+        payload["message"] = message
+    return payload
+
+
+def setup_failed(reason: str = "error") -> dict[str, object]:
+    return {
+        "status": SETUP_FAILED,
+        "address": None,
+        "owned_address": False,
+        "needs_domain": False,
+        "reason": reason,
     }
 
 
@@ -84,6 +127,18 @@ class MailboxAccess(ABC):
         *,
         send_token: str | None = None,
         address: str | None = None,
+        answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        """Default is describe(); no create."""
+        """Generic setup. Default is describe(); no create.
+
+        Return a mailbox view when connected. Return setup_needed() when the
+        backend needs input, a human action, or a later continuation. Public
+        callers never see provider workflow names.
+        """
+
+        del answers
         return self.describe(principal_id, send_token=send_token, address=address)
+
+
+def connect_status(payload: object) -> str:
+    return setup_status_of(payload)

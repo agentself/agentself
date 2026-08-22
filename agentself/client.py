@@ -20,7 +20,7 @@ class CustodyManager(Protocol):
         name: str,
         value: str,
         hold_owner: str | None = None,
-    ) -> None: ...
+    ) -> bool: ...
 
     def reveal(
         self,
@@ -41,7 +41,45 @@ class CustodyManager(Protocol):
         self, caller: BoundCaller, hold_owner: str | None = None
     ) -> builtins.list[str]: ...
 
+    def exists(
+        self,
+        caller: BoundCaller,
+        name: str,
+        hold_owner: str | None = None,
+    ) -> bool: ...
+
     def delete(
+        self, caller: BoundCaller, name: str, hold_owner: str | None = None
+    ) -> None: ...
+
+    def note_create(
+        self,
+        caller: BoundCaller,
+        name: str,
+        value: str,
+        hold_owner: str | None = None,
+    ) -> bool: ...
+
+    def note_update(
+        self,
+        caller: BoundCaller,
+        name: str,
+        value: str,
+        hold_owner: str | None = None,
+    ) -> None: ...
+
+    def note_get(
+        self,
+        caller: BoundCaller,
+        name: str,
+        hold_owner: str | None = None,
+    ) -> str: ...
+
+    def note_list(
+        self, caller: BoundCaller, hold_owner: str | None = None
+    ) -> builtins.list[str]: ...
+
+    def note_delete(
         self, caller: BoundCaller, name: str, hold_owner: str | None = None
     ) -> None: ...
 
@@ -66,7 +104,13 @@ class CustodyManager(Protocol):
     ) -> builtins.list[dict[str, str]]: ...
 
     def email_connect(
-        self, caller: BoundCaller, hold_owner: str | None = None
+        self,
+        caller: BoundCaller,
+        hold_owner: str | None = None,
+        *,
+        answers: dict[str, str] | None = None,
+        setup_id: str | None = None,
+        import_env: bool = False,
     ) -> dict[str, object]: ...
 
     def wallet_address(
@@ -76,6 +120,14 @@ class CustodyManager(Protocol):
     def wallet_sign(
         self, caller: BoundCaller, message: str, hold_owner: str | None = None
     ) -> str: ...
+
+    def wallet_verify(
+        self,
+        caller: BoundCaller,
+        message: str,
+        authorization: str,
+        hold_owner: str | None = None,
+    ) -> dict[str, object]: ...
 
     def wallet_balance(
         self, caller: BoundCaller, hold_owner: str | None = None
@@ -111,9 +163,9 @@ class Gateway:
         principal = self._manager.enroll(caller, store_binding)
         return principal.public_view()
 
-    def seal(self, name: str, value: str, hold_owner: str | None = None) -> None:
+    def seal(self, name: str, value: str, hold_owner: str | None = None) -> bool:
         caller = self._require_caller()
-        self._manager.seal(caller, name, value, hold_owner=hold_owner)
+        return self._manager.seal(caller, name, value, hold_owner=hold_owner)
 
     def reveal(self, name: str, hold_owner: str | None = None) -> str:
         caller = self._require_caller()
@@ -127,9 +179,33 @@ class Gateway:
         caller = self._require_caller()
         return self._manager.list(caller, hold_owner=hold_owner)
 
+    def exists(self, name: str, hold_owner: str | None = None) -> bool:
+        caller = self._require_caller()
+        return self._manager.exists(caller, name, hold_owner=hold_owner)
+
     def delete(self, name: str, hold_owner: str | None = None) -> None:
         caller = self._require_caller()
         self._manager.delete(caller, name, hold_owner=hold_owner)
+
+    def note_create(self, name: str, value: str, hold_owner: str | None = None) -> bool:
+        caller = self._require_caller()
+        return self._manager.note_create(caller, name, value, hold_owner=hold_owner)
+
+    def note_update(self, name: str, value: str, hold_owner: str | None = None) -> None:
+        caller = self._require_caller()
+        self._manager.note_update(caller, name, value, hold_owner=hold_owner)
+
+    def note_get(self, name: str, hold_owner: str | None = None) -> str:
+        caller = self._require_caller()
+        return self._manager.note_get(caller, name, hold_owner=hold_owner)
+
+    def note_list(self, hold_owner: str | None = None) -> builtins.list[str]:
+        caller = self._require_caller()
+        return self._manager.note_list(caller, hold_owner=hold_owner)
+
+    def note_delete(self, name: str, hold_owner: str | None = None) -> None:
+        caller = self._require_caller()
+        self._manager.note_delete(caller, name, hold_owner=hold_owner)
 
     def email_send(
         self,
@@ -158,9 +234,22 @@ class Gateway:
         caller = self._require_caller()
         return self._manager.email_list(caller, hold_owner=hold_owner)
 
-    def email_connect(self, hold_owner: str | None = None) -> dict[str, object]:
+    def email_connect(
+        self,
+        hold_owner: str | None = None,
+        *,
+        answers: dict[str, str] | None = None,
+        setup_id: str | None = None,
+        import_env: bool = False,
+    ) -> dict[str, object]:
         caller = self._require_caller()
-        return self._manager.email_connect(caller, hold_owner=hold_owner)
+        return self._manager.email_connect(
+            caller,
+            hold_owner=hold_owner,
+            answers=answers,
+            setup_id=setup_id,
+            import_env=import_env,
+        )
 
     def email_receive(
         self,
@@ -177,6 +266,17 @@ class Gateway:
     def wallet_sign(self, message: str, hold_owner: str | None = None) -> str:
         caller = self._require_caller()
         return self._manager.wallet_sign(caller, message, hold_owner=hold_owner)
+
+    def wallet_verify(
+        self,
+        message: str,
+        authorization: str,
+        hold_owner: str | None = None,
+    ) -> dict[str, object]:
+        caller = self._require_caller()
+        return self._manager.wallet_verify(
+            caller, message, authorization, hold_owner=hold_owner
+        )
 
     def wallet_authorize(self, message: str, hold_owner: str | None = None) -> str:
         return self.wallet_sign(message, hold_owner=hold_owner)

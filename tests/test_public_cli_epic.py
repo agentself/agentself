@@ -18,13 +18,18 @@ def test_install_skills_project_and_global(tmp_path):
     project.mkdir()
     proc = run_cli(["install", "--skills"], env, cwd=project)
     assert proc.returncode == 0, proc.stderr
+    gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
+    assert gdest.is_file()
+    local = run_cli(["install", "--skills", "--local"], env, cwd=project)
+    assert local.returncode == 0, local.stderr
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
     glob = run_cli(["install", "--skills", "-g"], env, cwd=project)
     assert glob.returncode == 0, glob.stderr
-    gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert gdest.is_file()
-    agents = run_cli(["--json", "install", "--skills=agents", "-g"], env, cwd=project)
+    agents = run_cli(
+        ["--json", "install", "--skills=agents", "--local"], env, cwd=project
+    )
     assert agents.returncode == 0, agents.stderr
     data = json.loads(agents.stdout)
     assert data["ok"] is True
@@ -86,7 +91,7 @@ def test_v1_config_fails_closed(tmp_path):
     planted = cfg_path.read_bytes()
     shown = run_cli(["--json", "show"], env)
     assert shown.returncode == 1, shown.stdout + shown.stderr
-    data = json.loads(shown.stderr)
+    data = json.loads(shown.stdout or shown.stderr)
     assert data["ok"] is False
     assert "format_version 1 is unsupported" in data["reason"]
     assert cfg_path.read_bytes() == planted

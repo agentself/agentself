@@ -1,6 +1,6 @@
 {
   "version": {
-    "exact": ["ok", "version", "cli"]
+    "exact": ["ok", "version", "cli", "package", "executable"]
   },
   "init": {
     "exact": [
@@ -22,7 +22,9 @@
       "usdc",
       "wallet_backend",
       "email_backend",
-      "vault"
+      "vault",
+      "email",
+      "ready"
     ]
   },
   "diagnose": {
@@ -36,7 +38,9 @@
       "tools",
       "wallet_backend",
       "email_backend",
-      "store_backend"
+      "store_backend",
+      "package",
+      "executable"
     ]
   },
   "install": {
@@ -58,19 +62,49 @@
     "exact": ["ok", "channel"]
   },
   "secret_write": {
-    "exact": ["ok", "name"]
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "unchanged"]
   },
   "secret_get": {
-    "exact": ["ok", "name", "value"]
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "value", "bytes", "sha256", "path", "protected", "exists"]
   },
   "secret_list": {
+    "exact": ["ok", "names", "protected"]
+  },
+  "secret_exists": {
+    "exact": ["ok", "name", "exists"]
+  },
+  "note_write": {
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "unchanged"]
+  },
+  "note_get": {
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "value", "bytes", "sha256", "path", "protected"]
+  },
+  "note_list": {
     "exact": ["ok", "names"]
   },
   "email_connect": {
-    "exact": ["ok", "address"]
+    "required": ["ok"],
+    "allowed": [
+      "ok",
+      "address",
+      "status",
+      "setup_id",
+      "options",
+      "human_action_required",
+      "continue",
+      "expires_at",
+      "message",
+      "owned_address",
+      "needs_domain"
+    ]
   },
   "email_show": {
-    "exact": ["ok", "address", "owned_address", "needs_domain"]
+    "required": ["ok"],
+    "allowed": ["ok", "address", "owned_address", "needs_domain", "ready", "status"]
   },
   "email_send": {
     "exact": ["ok", "to", "subject"]
@@ -82,7 +116,19 @@
     "exact": ["ok", "address"]
   },
   "wallet_authorize": {
-    "exact": ["ok", "authorization", "signature"]
+    "exact": [
+      "ok",
+      "address",
+      "scheme",
+      "network",
+      "message_sha256",
+      "authorization",
+      "signature"
+    ]
+  },
+  "wallet_verify": {
+    "required": ["ok", "valid", "address"],
+    "allowed": ["ok", "valid", "address", "scheme"]
   },
   "wallet_send": {
     "exact": ["ok", "to", "amount", "asset"]

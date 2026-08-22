@@ -256,7 +256,8 @@ def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
     js = main(["--json", "init", "--store", "pass"])
     blob = capsys.readouterr()
     assert js == 1
-    data = json.loads(blob.err)
+    assert blob.err == ""
+    data = json.loads(blob.out)
     assert data["ok"] is False
     assert data["error"] == "error"
     assert "socket name is too long" in data["reason"]

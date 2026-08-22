@@ -128,6 +128,24 @@ class ChainWalletAccess(WalletAccess):
             "asset": USDC_ASSET,
         }
 
+    def verify(
+        self, principal_id: str, message: str, authorization: str
+    ) -> dict[str, object]:
+        require_safe_token(principal_id, "principal id")
+        expected = self._derived_address()
+        try:
+            recovered = Account.recover_message(
+                encode_defunct(text=message),
+                signature=_normalize_signature(authorization),
+            )
+            valid = to_checksum_address(recovered) == to_checksum_address(expected)
+        except Exception:
+            valid = False
+        self._log.record(
+            "wallet_verify", principal_id, None, "ok" if valid else "error"
+        )
+        return {"valid": valid, "address": expected, "scheme": "eip191"}
+
     def _send_once(self, principal_id: str, to: str, amount: str, asset: str) -> None:
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
@@ -315,6 +333,13 @@ def _normalize_key(key_hex: str) -> str:
     if not key:
         raise WalletError("missing key")
     return key
+
+
+def _normalize_signature(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        raise WalletError("missing authorization")
+    return text
 
 
 def _pad_address(address: str) -> str:

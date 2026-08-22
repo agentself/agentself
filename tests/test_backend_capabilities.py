@@ -61,7 +61,7 @@ def test_sms_is_not_a_public_channel(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["--json", "backends", "sms"], env)
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    data = json.loads(proc.stderr)
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert "sms" in data["reason"] or "invalid choice" in data["reason"]
 

@@ -18,7 +18,8 @@
           "address",
           "balance",
           "authorize",
-          "send"
+          "send",
+          "verify"
         ],
         "custody": "eoa-key",
         "network": "base",
@@ -36,7 +37,8 @@
           "address",
           "balance",
           "authorize",
-          "send"
+          "send",
+          "verify"
         ],
         "custody": "eoa-key",
         "network": "ethereum",

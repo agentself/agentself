@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import shutil
@@ -9,6 +10,13 @@ from pathlib import Path
 
 from agentself import __version__
 from agentself.bind import public_recipient
+from agentself.cli.io import (
+    load_value_file,
+    parse_result_payload,
+    read_stdin_text,
+    store_value_file,
+    value_meta,
+)
 from agentself.cli.parser import _Parser, _parser
 from agentself.host import (
     CHANNELS,
@@ -35,7 +43,20 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.format import format_version_error
 from agentself.internal.log import NullLog, StreamLog
-from agentself.internal.names import require_safe_token
+from agentself.internal.names import (
+    PROTECTED_HOLD_NAMES,
+    require_safe_token,
+)
+from agentself.internal.setup import (
+    SETUP_ACTION_REQUIRED,
+    SETUP_CONNECTED,
+    SETUP_FAILED,
+    SETUP_INPUT_REQUIRED,
+    SETUP_PENDING,
+    continue_command,
+    setup_status_of,
+)
+from agentself.internal.text import sha256_text
 from agentself.local import (
     DEFAULT_IDENTITY,
     VaultStateError,
@@ -53,7 +74,7 @@ from agentself.local import (
     resolve_setting,
 )
 
-CLI_SCHEMA_VERSION = 2
+CLI_SCHEMA_VERSION = 3
 _INSTALL_TOOLS_NEXT = "agentself install --tools"
 _DIAGNOSE_NEXT = "agentself diagnose"
 _SKILL_TARGETS = {
@@ -157,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "secret":
             return _secret(gateway, args)
+        if args.command == "note":
+            return _note(gateway, args)
         if args.command == "email":
             return _email(gateway, args)
         if args.command == "wallet":
@@ -377,9 +400,8 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
             nxt="agentself --help",
         )
     rel = _SKILL_TARGETS[target]
-    dest_dir = (
-        Path.home() if getattr(args, "global_install", False) else Path.cwd()
-    ) / rel
+    dest_root = Path.cwd() if getattr(args, "local_install", False) else Path.home()
+    dest_dir = dest_root / rel
     try:
         body = src.read_text(encoding="utf-8")
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -408,13 +430,32 @@ def _backends(args) -> int:
     return 0
 
 
+def _runtime_paths() -> dict[str, str]:
+    package = str(Path(__file__).resolve().parent.parent)
+    argv0 = str(sys.argv[0] or "")
+    executable = argv0
+    try:
+        if argv0:
+            executable = str(Path(argv0).resolve())
+    except OSError:
+        executable = argv0 or sys.executable
+    return {"package": package, "executable": executable}
+
+
 def _print_version(as_json: bool) -> int:
+    paths = _runtime_paths()
     if as_json:
         return _emit_ok(
             argparse.Namespace(as_json=True),
-            {"version": __version__, "cli": CLI_SCHEMA_VERSION},
+            {
+                "version": __version__,
+                "cli": CLI_SCHEMA_VERSION,
+                **paths,
+            },
         )
     sys.stdout.write(f"agentself {__version__}\n")
+    sys.stdout.write(f"package: {paths['package']}\n")
+    sys.stdout.write(f"executable: {paths['executable']}\n")
     return 0
 
 
@@ -535,7 +576,8 @@ def _diagnose(vault: Path, args) -> int:
     problems: list[tuple[str, str]] = []
     if initialized:
         problems, ready = _diagnose_identity(vault, cfg, store_name)
-    payload = {
+    paths = _runtime_paths()
+    payload: dict[str, object] = {
         "ok": not problems,
         "initialized": initialized,
         "ready": ready,
@@ -546,6 +588,7 @@ def _diagnose(vault: Path, args) -> int:
         "wallet_backend": wallet_backend,
         "email_backend": email_backend,
         "store_backend": store_backend,
+        **paths,
     }
     if problems:
         payload["problems"] = [item[0] for item in problems]
@@ -554,12 +597,15 @@ def _diagnose(vault: Path, args) -> int:
         payload["next"] = problems[0][1]
     if _as_json(args):
         if problems:
-            sys.stderr.write(redact_secrets(json.dumps(payload)) + "\n")
+            payload["ok"] = False
+            sys.stdout.write(redact_secrets(json.dumps(payload)) + "\n")
             return 1
         return _emit_ok(args, payload)
     lines = [
         f"version: {__version__}",
         f"python: {python}",
+        f"package: {paths['package']}",
+        f"executable: {paths['executable']}",
         f"vault: {vault}",
         "age-keygen: ok",
         f"{store_name}: ok",
@@ -689,6 +735,7 @@ def _gateway(vault: Path, **compose_kw):
 def _start(vault: Path, args) -> int:
     try:
         require_supported_formats(vault)
+        cfg = load_config(vault)
         store = getattr(args, "store", None) or CHANNELS["store"].default
         refused = _require_bind(args, "store", store)
         if refused is not None:
@@ -711,6 +758,13 @@ def _start(vault: Path, args) -> int:
         email_backend = backends["email"]
         wallet_backend = backends["wallet"]
         identity_id = _start_identity_id(vault, args)
+        initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
+        if initialized and not bool(getattr(args, "force", False)):
+            blocked = _init_mutation_refused(
+                vault, args, cfg, identity_id, wallet_backend, email_backend, store
+            )
+            if blocked is not None:
+                return blocked
         key = ensure_age_key(vault, identity_id, store)
         cfg = load_config(vault)
         age_key_file = _age_key_rel(vault, identity_id, cfg)
@@ -828,6 +882,39 @@ def _start_identity_id(vault: Path, args) -> str:
     return DEFAULT_IDENTITY
 
 
+def _init_mutation_refused(
+    vault: Path,
+    args,
+    cfg: dict[str, str],
+    identity_id: str,
+    wallet_backend: str,
+    email_backend: str,
+    store: str,
+) -> int | None:
+    current_id = (cfg.get("identity_id") or "").strip()
+    current_wallet = (cfg.get("wallet_backend") or "").strip()
+    current_email = (cfg.get("email_backend") or "").strip()
+    recorded = _registry_store_binding(vault, current_id) if current_id else None
+    changing = any(
+        [
+            bool(current_id and current_id != identity_id),
+            bool(current_wallet and current_wallet != wallet_backend),
+            bool(current_email and current_email != email_backend),
+            bool(recorded and recorded != store),
+        ]
+    )
+    if not changing:
+        return None
+    return _fail(
+        args,
+        2,
+        "refused: identity already initialized\n",
+        "refused",
+        "identity already initialized",
+        nxt="agentself init --force",
+    )
+
+
 def _ask_identity_name() -> str:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return ""
@@ -839,7 +926,14 @@ def _ask_identity_name() -> str:
 
 def _email_connect(vault: Path, args) -> int:
     try:
-        desc = _gateway(vault).email_connect()
+        answers, err = _connect_answers(args)
+        if err is not None:
+            return err
+        result = _gateway(vault).email_connect(
+            answers=answers or None,
+            setup_id=(getattr(args, "setup_id", "") or "").strip() or None,
+            import_env=bool(getattr(args, "import_env", False)),
+        )
     except UnknownBind as exc:
         return _bind_error(args, exc)
     except UnboundCaller:
@@ -866,20 +960,168 @@ def _email_connect(vault: Path, args) -> int:
         return _store_fail(args, exc)
     except Exception:
         return _fail(args, 1, "error\n", "error")
-    email = desc if isinstance(desc, dict) else {}
-    addr = ""
-    if email.get("owned_address") and email.get("address"):
-        addr = str(email["address"])
-    if not addr:
+    return _email_connect_result(vault, args, result)
+
+
+def _connect_answers(args) -> tuple[dict[str, str], int | None]:
+    setup_id = (getattr(args, "setup_id", "") or "").strip()
+    path = (getattr(args, "result_file", "") or "").strip()
+    if path and not setup_id:
+        return {}, _fail(
+            args,
+            2,
+            "refused: --result-file needs --continue\n",
+            "refused",
+            "--result-file needs --continue",
+            nxt="agentself email connect --help",
+        )
+    if not setup_id:
+        return {}, None
+    if path:
+        try:
+            text = load_value_file(path)
+        except OSError:
+            return {}, _fail(
+                args,
+                1,
+                "error: file\n",
+                "error",
+                "file",
+                nxt="agentself email connect --help",
+            )
+        parsed = parse_result_payload(text)
+        if parsed:
+            return parsed, None
+        return {"value": text}, None
+    if sys.stdin.isatty():
+        return {}, None
+    text = read_stdin_text()
+    parsed = parse_result_payload(text)
+    if parsed:
+        return parsed, None
+    if text:
+        return {"value": text}, None
+    return {}, None
+
+
+def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
+    status = setup_status_of(result)
+    if status == SETUP_CONNECTED:
+        addr = str(result.get("address") or "").strip()
+        if not addr:
+            return _fail(
+                args,
+                1,
+                "error: no inbox\n",
+                "error",
+                "no inbox",
+                nxt="agentself backends email",
+            )
+        return _email_connect_ok(args, addr)
+    if status == SETUP_FAILED:
+        reason = str(result.get("reason") or "error")
         return _fail(
             args,
             1,
-            "error: no inbox\n",
+            f"error: {reason}\n",
             "error",
-            "no inbox",
+            reason,
             nxt="agentself backends email",
+            extra=_setup_public(result),
         )
-    return _email_connect_ok(args, addr)
+    if (
+        status in (SETUP_INPUT_REQUIRED, SETUP_ACTION_REQUIRED, SETUP_PENDING)
+        and not _as_json(args)
+        and sys.stdin.isatty()
+        and sys.stdout.isatty()
+        and not (getattr(args, "setup_id", "") or "").strip()
+    ):
+        prompted = _prompt_setup_options(result)
+        if prompted:
+            nxt = _gateway(vault).email_connect(
+                answers=prompted,
+                setup_id=str(result.get("setup_id") or "") or None,
+                import_env=bool(getattr(args, "import_env", False)),
+            )
+            return _email_connect_result(vault, args, nxt)
+    return _email_setup_pending(args, result, status)
+
+
+def _prompt_setup_options(result: dict[str, object]) -> dict[str, str]:
+    options = result.get("options")
+    if not isinstance(options, list):
+        return {}
+    answers: dict[str, str] = {}
+    for item in options:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        help_text = str(item.get("help") or name)
+        sensitive = bool(item.get("sensitive"))
+        try:
+            if sensitive:
+                value = getpass.getpass(f"{name}: ")
+            else:
+                value = input(f"{name} ({help_text}): ")
+        except EOFError:
+            return {}
+        if value:
+            answers[name] = value
+    return answers
+
+
+def _setup_public(result: dict[str, object]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for key in (
+        "status",
+        "setup_id",
+        "options",
+        "human_action_required",
+        "continue",
+        "expires_at",
+        "message",
+    ):
+        if key in result:
+            payload[key] = result[key]
+    if "continue" not in payload and result.get("setup_id"):
+        payload["continue"] = continue_command(str(result["setup_id"]))
+    if "human_action_required" not in payload:
+        payload["human_action_required"] = (
+            setup_status_of(result) == SETUP_ACTION_REQUIRED
+        )
+    return payload
+
+
+def _email_setup_pending(args, result: dict[str, object], status: str) -> int:
+    setup_id = str(result.get("setup_id") or "")
+    nxt = str(result.get("continue") or "") or (
+        continue_command(setup_id) if setup_id else "agentself email connect --help"
+    )
+    extra = _setup_public(result)
+    reason = "input required"
+    if status == SETUP_ACTION_REQUIRED:
+        reason = "human action required"
+    elif status == SETUP_PENDING:
+        reason = "pending"
+    human = f"{reason}\n"
+    if extra.get("options"):
+        names = []
+        for item in extra["options"] if isinstance(extra["options"], list) else []:
+            if isinstance(item, dict) and item.get("name"):
+                names.append(str(item["name"]))
+        if names:
+            human = f"{reason}: {', '.join(names)}\n"
+    return _fail(
+        args,
+        3,
+        human,
+        "missing",
+        reason,
+        nxt=nxt,
+        extra=extra,
+    )
 
 
 def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
@@ -918,15 +1160,29 @@ def _secret(gateway, args) -> int:
         value, err = _secret_from_args(args)
         if err is not None:
             return _secret_value_error(args, err)
-        gateway.seal(args.name, value)
+        unchanged = gateway.seal(args.name, value)
+        payload: dict[str, object] = {"name": args.name}
+        if unchanged:
+            payload["unchanged"] = True
         if _as_json(args):
-            return _emit_ok(args, {"name": args.name})
+            return _emit_ok(args, payload)
         return 0
     if verb == "get":
-        value = gateway.reveal(args.name)
+        return _secret_get(gateway, args, protected=True)
+    if verb == "exists":
+        found = gateway.exists(args.name)
+        if not found:
+            return _fail(
+                args,
+                3,
+                "missing\n",
+                "missing",
+                nxt="agentself secret list",
+                extra={"name": args.name, "exists": False},
+            )
         if _as_json(args):
-            return _emit_ok(args, {"name": args.name, "value": value}, redact=False)
-        sys.stdout.write(value + "\n")
+            return _emit_ok(args, {"name": args.name, "exists": True})
+        sys.stdout.write("yes\n")
         return 0
     if verb == "update":
         value, err = _secret_from_args(args)
@@ -938,13 +1194,94 @@ def _secret(gateway, args) -> int:
         return 0
     if verb == "list":
         names = gateway.list()
+        protected = [name for name in names if name in PROTECTED_HOLD_NAMES]
+        if _as_json(args):
+            return _emit_ok(args, {"names": names, "protected": protected})
+        for name in names:
+            suffix = " (protected)" if name in PROTECTED_HOLD_NAMES else ""
+            sys.stdout.write(name + suffix + "\n")
+        return 0
+    if verb == "delete":
+        gateway.delete(args.name)
+        if _as_json(args):
+            return _emit_ok(args, {"name": args.name})
+        sys.stdout.write("ok\n")
+        return 0
+    return 1
+
+
+def _secret_get(gateway, args, *, protected: bool) -> int:
+    name = args.name
+    if (
+        protected
+        and name in PROTECTED_HOLD_NAMES
+        and not bool(getattr(args, "unsafe", False))
+    ):
+        return _fail(
+            args,
+            2,
+            f"refused: {name} is protected\n",
+            "refused",
+            f"{name} is protected",
+            nxt="agentself secret get NAME --unsafe",
+        )
+    value = gateway.reveal(name) if protected else gateway.note_get(name)
+    meta = value_meta(value)
+    path = (getattr(args, "to_file", None) or "").strip()
+    if getattr(args, "meta", False):
+        payload = {"name": name, **meta, "protected": name in PROTECTED_HOLD_NAMES}
+        if _as_json(args):
+            return _emit_ok(args, payload)
+        sys.stdout.write(f"name: {name}\n")
+        sys.stdout.write(f"bytes: {meta['bytes']}\n")
+        sys.stdout.write(f"sha256: {meta['sha256']}\n")
+        return 0
+    if path:
+        try:
+            store_value_file(path, value)
+        except OSError:
+            return _fail(args, 1, "error: file\n", "error", "file")
+        if _as_json(args):
+            return _emit_ok(args, {"name": name, "path": path, **meta}, redact=False)
+        return 0
+    if _as_json(args):
+        return _emit_ok(args, {"name": name, "value": value}, redact=False)
+    sys.stdout.write(value + "\n")
+    return 0
+
+
+def _note(gateway, args) -> int:
+    verb = args.note_command
+    if verb == "create":
+        value, err = _secret_from_args(args)
+        if err is not None:
+            return _secret_value_error(args, err, kind="note")
+        unchanged = gateway.note_create(args.name, value)
+        payload: dict[str, object] = {"name": args.name}
+        if unchanged:
+            payload["unchanged"] = True
+        if _as_json(args):
+            return _emit_ok(args, payload)
+        return 0
+    if verb == "get":
+        return _secret_get(gateway, args, protected=False)
+    if verb == "update":
+        value, err = _secret_from_args(args)
+        if err is not None:
+            return _secret_value_error(args, err, kind="note")
+        gateway.note_update(args.name, value)
+        if _as_json(args):
+            return _emit_ok(args, {"name": args.name})
+        return 0
+    if verb == "list":
+        names = gateway.note_list()
         if _as_json(args):
             return _emit_ok(args, {"names": names})
         for name in names:
             sys.stdout.write(name + "\n")
         return 0
     if verb == "delete":
-        gateway.delete(args.name)
+        gateway.note_delete(args.name)
         if _as_json(args):
             return _emit_ok(args, {"name": args.name})
         sys.stdout.write("ok\n")
@@ -957,12 +1294,28 @@ def _email(gateway, args) -> int:
         email = gateway.identity().get("email")
         email = email if isinstance(email, dict) else {}
         if _as_json(args):
-            return _emit_ok(args, email)
+            if not (email.get("owned_address") and email.get("address")):
+                return _fail(
+                    args,
+                    3,
+                    "not configured\n",
+                    "missing",
+                    "not configured",
+                    nxt="agentself email connect",
+                    extra={**email, "ready": False},
+                )
+            return _emit_ok(args, {**email, "ready": True})
         if email.get("owned_address") and email.get("address"):
             sys.stdout.write(str(email["address"]) + "\n")
-        else:
-            sys.stdout.write("not configured\n")
-        return 0
+            return 0
+        return _fail(
+            args,
+            3,
+            "not configured\n",
+            "missing",
+            "not configured",
+            nxt="agentself email connect",
+        )
     if args.email_command == "send":
         gateway.email_send(args.to, args.subject, args.body)
         if _as_json(args):
@@ -999,11 +1352,74 @@ def _wallet(gateway, args) -> int:
         sys.stdout.write(json.dumps(bal) + "\n")
         return 0
     if args.wallet_command == "authorize":
-        token = gateway.wallet_sign(args.message)
+        message, err = _message_from_args(args)
+        if err is not None or message is None:
+            return _fail(
+                args,
+                3,
+                f"missing: {err or 'need a value'}\n",
+                "missing",
+                err or "need a value",
+                nxt="agentself wallet authorize --help",
+            )
+        token = gateway.wallet_sign(message)
+        addr = gateway.wallet_address()
+        view = gateway.identity().get("wallet")
+        wallet = view if isinstance(view, dict) else {}
+        payload = {
+            "address": addr,
+            "scheme": "eip191",
+            "network": str(wallet.get("chain") or ""),
+            "message_sha256": sha256_text(message),
+            "authorization": token,
+            "signature": token,
+        }
         if _as_json(args):
-            return _emit_ok(args, {"authorization": token, "signature": token})
+            return _emit_ok(args, payload)
         sys.stdout.write(token + "\n")
         return 0
+    if args.wallet_command == "verify":
+        message, err = _message_from_args(args)
+        if err is not None or message is None:
+            return _fail(
+                args,
+                3,
+                f"missing: {err or 'need a value'}\n",
+                "missing",
+                err or "need a value",
+                nxt="agentself wallet verify --help",
+            )
+        authorization = (getattr(args, "authorization", None) or "").strip()
+        if not authorization:
+            return _fail(
+                args,
+                3,
+                "missing: need an authorization\n",
+                "missing",
+                "need an authorization",
+                nxt="agentself wallet verify --help",
+            )
+        checked = gateway.wallet_verify(message, authorization)
+        valid = bool(checked.get("valid"))
+        payload = {
+            "valid": valid,
+            "address": checked.get("address"),
+            "scheme": checked.get("scheme") or "eip191",
+        }
+        if _as_json(args):
+            if valid:
+                return _emit_ok(args, payload)
+            return _fail(
+                args,
+                2,
+                "invalid\n",
+                "refused",
+                "invalid authorization",
+                nxt="agentself wallet verify --help",
+                extra=payload,
+            )
+        sys.stdout.write("valid\n" if valid else "invalid\n")
+        return 0 if valid else 2
     if args.wallet_command == "send":
         asset = gateway.wallet_send(
             args.to, args.amount, getattr(args, "asset", "") or ""
@@ -1090,7 +1506,7 @@ def _emit_ok(args, payload: dict[str, object], *, redact: bool = True) -> int:
 def _email_connect_ok(args, address: str | None) -> int:
     addr = (address or "").strip() or None
     if _as_json(args):
-        return _emit_ok(args, {"address": addr})
+        return _emit_ok(args, {"address": addr, "status": SETUP_CONNECTED})
     if addr:
         sys.stdout.write(f"email: {addr}\n")
     else:
@@ -1128,11 +1544,11 @@ def _store_fail(args, exc: StoreFailure) -> int:
     )
 
 
-def _secret_value_error(args, err: str) -> int:
-    nxt = "agentself secret create --help"
-    verb = getattr(args, "secret_command", None)
+def _secret_value_error(args, err: str, *, kind: str = "secret") -> int:
+    nxt = f"agentself {kind} create --help"
+    verb = getattr(args, f"{kind}_command", None)
     if verb == "update":
-        nxt = "agentself secret update --help"
+        nxt = f"agentself {kind} update --help"
     if err == "need a value":
         return _fail(args, 3, f"missing: {err}\n", "missing", err, nxt=nxt)
     return _fail(args, 1, f"error: {err}\n", "error", err, nxt=nxt)
@@ -1145,8 +1561,10 @@ def _default_json_next(args, error: str) -> str:
             return "agentself secret create --help"
         if verb == "update":
             return "agentself secret update --help"
-        if verb in ("get", "delete", "list"):
+        if verb in ("get", "delete", "list", "exists"):
             return "agentself secret list"
+        if getattr(args, "note_command", None) in ("get", "delete", "list"):
+            return "agentself note list"
         return "agentself --help"
     if error == "refused":
         return _channel_next(args)
@@ -1160,6 +1578,7 @@ def _fail(
     error: str,
     reason: str | None = None,
     nxt: str | None = None,
+    extra: dict[str, object] | None = None,
 ) -> int:
     human = redact_secrets(human)
     if reason is not None:
@@ -1177,7 +1596,11 @@ def _fail(
             "reason": reason,
             "next": nxt if nxt is not None else _default_json_next(args, error),
         }
-        sys.stderr.write(json.dumps(payload) + "\n")
+        if extra:
+            for key, value in extra.items():
+                if key not in payload:
+                    payload[key] = value
+        sys.stdout.write(json.dumps(payload) + "\n")
     else:
         sys.stderr.write(human)
     return exit_code
@@ -1186,7 +1609,10 @@ def _fail(
 def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
     raw_wallet = view.get("wallet")
     wallet: dict[str, object] = raw_wallet if isinstance(raw_wallet, dict) else {}
+    raw_email = view.get("email")
+    email: dict[str, object] = raw_email if isinstance(raw_email, dict) else {}
     addr = wallet.get("address")
+    email_ready = bool(email.get("owned_address") and email.get("address"))
     return {
         "id": view.get("id"),
         "recipient": view.get("recipient"),
@@ -1195,6 +1621,8 @@ def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
         "wallet_backend": view.get("wallet_backend"),
         "email_backend": view.get("email_backend"),
         "vault": str(vault),
+        "email": {**email, "ready": email_ready},
+        "ready": {"email": email_ready},
     }
 
 
@@ -1205,15 +1633,42 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
         return None, "value and --file"
     if path:
         try:
-            raw = Path(path).read_text(encoding="utf-8")
+            return load_value_file(path), None
         except OSError:
             return None, "file"
-        return raw.removesuffix("\n"), None
+        except UnicodeDecodeError:
+            return None, "file"
     if argv_value is not None:
         return argv_value, None
     if sys.stdin.isatty():
         return None, "need a value"
-    return sys.stdin.read().removesuffix("\n"), None
+    try:
+        return read_stdin_text(), None
+    except UnicodeDecodeError:
+        return None, "file"
+
+
+def _message_from_args(args) -> tuple[str | None, str | None]:
+    argv_value = getattr(args, "message", None)
+    path = (getattr(args, "from_file", None) or "").strip()
+    if argv_value is not None and str(argv_value) != "" and path:
+        return None, "message and --file"
+    if path:
+        try:
+            return load_value_file(path), None
+        except (OSError, UnicodeDecodeError):
+            return None, "file"
+    if argv_value is not None and str(argv_value) != "":
+        return str(argv_value), None
+    if sys.stdin.isatty():
+        return None, "need a value"
+    try:
+        text = read_stdin_text()
+    except UnicodeDecodeError:
+        return None, "file"
+    if not text:
+        return None, "need a value"
+    return text, None
 
 
 def run() -> None:

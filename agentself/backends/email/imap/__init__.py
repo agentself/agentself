@@ -17,10 +17,12 @@ from agentself.backends.email.contract import (
     mailbox_view,
     require_addr,
     require_secret,
+    setup_needed,
 )
 from agentself.internal.files import VaultBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.setup import address_option, credential_option
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
@@ -199,6 +201,33 @@ class ImapMailboxAccess(MailboxAccess):
         if wanted:
             return mailbox_view(self._inbox(wanted), owned_address=True)
         return mailbox_view()
+
+    def connect(
+        self,
+        principal_id: str,
+        *,
+        send_token: str | None = None,
+        address: str | None = None,
+        answers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        require_safe_token(principal_id, "principal id")
+        extra = answers or {}
+        wanted = (address or extra.get("address") or "").strip()
+        token = send_token or extra.get("credential") or ""
+        needed: list[dict[str, object]] = []
+        if not wanted:
+            needed.append(address_option(required=True))
+        if not token:
+            needed.append(credential_option(required=True, help="Mailbox credential"))
+        if needed:
+            self._log.record("mailbox_connect", principal_id, None, "error")
+            return setup_needed(needed)
+        token = require_secret(token)
+        inbox = self._inbox(wanted)
+        box = self._imap_login(inbox, token)
+        _close(box.logout)
+        self._log.record("mailbox_connect", principal_id, None, "ok")
+        return mailbox_view(inbox, owned_address=True)
 
     def _inbox(self, address: str | None) -> str:
         wanted = (address or "").strip()

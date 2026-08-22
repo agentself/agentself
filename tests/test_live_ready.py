@@ -39,7 +39,7 @@ def test_set_missing_sops_json_error(tmp_path):
     env["PATH"] = _path_with_age_without_sops(tmp_path)
     proc = run_cli(["secret", "create", "--json", "notes", "x"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    err = json.loads(proc.stderr)
+    err = json.loads(proc.stdout or proc.stderr)
     assert err == {
         "ok": False,
         "error": "error",

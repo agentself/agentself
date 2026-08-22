@@ -44,16 +44,17 @@ def test_agentmail_connect_without_token_points_at_secret(tmp_path):
     assert start.returncode == 0, start.stderr
     proc = run_cli(["email", "connect"], env)
     assert proc.returncode == 3, proc.stdout + proc.stderr
-    assert "need email.send.token" in proc.stderr
-    assert "next: agentself secret create email.send.token" in proc.stderr
+    assert "input required" in proc.stderr
+    assert "credential" in proc.stderr
     assert "need --domain" not in proc.stderr
     js = run_cli(["--json", "email", "connect"], env)
     assert js.returncode == 3, js.stdout + js.stderr
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["error"] == "missing"
-    assert data["reason"] == "need email.send.token"
-    assert data["next"] == "agentself secret create email.send.token"
+    assert data["status"] == "input_required"
+    assert "credential" in [item["name"] for item in data["options"]]
+    assert data["next"].startswith("agentself email connect --continue ")
 
 
 def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys):
@@ -111,7 +112,9 @@ def test_agentmail_connect_creates_when_empty(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert code == 0, captured.out + captured.err
     data = json.loads(captured.out)
-    assert data == {"ok": True, "address": ISSUED}
+    assert data["ok"] is True
+    assert data["address"] == ISSUED
+    assert data["status"] == "connected"
     assert TOKEN not in captured.out + captured.err
     assert len(http.posts) == 1
     url, headers, payload = http.posts[0]
@@ -150,19 +153,21 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     code = main(["email", "connect"])
     captured = capsys.readouterr()
     assert code == 3, captured.out + captured.err
-    assert "need email.address" in captured.err
-    assert "next: agentself secret create email.address" in captured.err
+    assert "input required" in captured.err
+    assert "address" in captured.err
     assert TAKEN not in captured.out + captured.err
     assert TOKEN not in captured.out + captured.err
     assert http.posts == []
     js = main(["--json", "email", "connect"])
     js_out = capsys.readouterr()
     assert js == 3, js_out.out + js_out.err
-    data = json.loads(js_out.err)
+    data = json.loads(js_out.out or js_out.err)
     assert data["ok"] is False
     assert data["error"] == "missing"
-    assert data["reason"] == "need email.address"
-    assert data["next"] == "agentself secret create email.address"
+    assert data["status"] == "input_required"
+    names = [item["name"] for item in data["options"]]
+    assert "address" in names
+    assert data["next"].startswith("agentself email connect --continue ")
 
 
 def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):

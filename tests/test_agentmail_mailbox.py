@@ -615,13 +615,15 @@ def test_connect_no_token_zero_http(vault):
     log = MemoryLog()
     http = Http()
     mb = _box(vault, log, http)
-    with pytest.raises(MailboxError, match="missing credentials") as err:
-        mb.connect(PRINCIPAL)
+    desc = mb.connect(PRINCIPAL)
+    assert desc["status"] == "input_required"
+    names = [item["name"] for item in desc["options"]]
+    assert names == ["credential"]
     assert http.gets == []
     assert http.posts == []
-    _secret_absent(log, err.value)
-    assert TAKEN not in str(err.value)
-    assert f"{PRINCIPAL}@agentmail.to" not in str(err.value)
+    _secret_absent(log)
+    assert TAKEN not in str(desc)
+    assert f"{PRINCIPAL}@agentmail.to" not in str(desc)
 
 
 def test_connect_hold_zero_http(vault):
@@ -699,11 +701,13 @@ def test_connect_many_inboxes_need_address_no_post(vault):
         },
     )
     mb = _box(vault, log, http)
-    with pytest.raises(MailboxError, match="need address") as err:
-        mb.connect(PRINCIPAL, send_token=CANARY)
+    desc = mb.connect(PRINCIPAL, send_token=CANARY)
+    assert desc["status"] == "input_required"
+    names = [item["name"] for item in desc["options"]]
+    assert names == ["address"]
     assert http.posts == []
-    _secret_absent(log, err.value)
-    assert TAKEN not in str(err.value)
+    _secret_absent(log)
+    assert TAKEN not in str(desc)
 
 
 def test_connect_create_rpc_failed(vault):

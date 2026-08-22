@@ -131,15 +131,17 @@ jobs:
           export PATH="$venv/bin:$PATH"
           cd "$empty"
           version="$("$venv/bin/python" -c "from agentself import __version__; print(__version__)")"
-          got="$(agentself --version)"
+          got="$(agentself --version | head -n1)"
           test "$got" = "agentself ${version}"
+          agentself --version | grep -q '^package: '
+          agentself --version | grep -q '^executable: '
           agentself --help
           agentself backends
           export AGENTSELF_VAULT_ROOT="${RUNNER_TEMP}/agentself-vault-sops"
           agentself diagnose
           agentself init
           agentself --json diagnose
-          agentself install --skills=agents
+          agentself install --skills=agents --local
           test -f "${empty}/.agents/skills/agentself/SKILL.md"
           export AGENTSELF_VAULT_ROOT="${RUNNER_TEMP}/agentself-vault-pass"
           agentself init --store pass

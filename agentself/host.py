@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from agentself.internal.setup import address_option, credential_option, setup_option
 
 ENV_PREFIX = "AGENTSELF_"
 ENV_VAULT_ROOT = "AGENTSELF_VAULT_ROOT"
@@ -12,6 +14,10 @@ ENV_SMTP_HOST = "AGENTSELF_SMTP_HOST"
 ENV_IMAP_PORT = "AGENTSELF_IMAP_PORT"
 ENV_SMTP_PORT = "AGENTSELF_SMTP_PORT"
 ENV_MAIL_USER = "AGENTSELF_MAIL_USER"
+ENV_EMAIL_ADDRESS = "AGENTSELF_EMAIL_ADDRESS"
+ENV_EMAIL_CREDENTIAL = "AGENTSELF_EMAIL_CREDENTIAL"
+ENV_AGENTMAIL_API_KEY = "AGENTSELF_AGENTMAIL_API_KEY"
+ENV_MAIL_PASSWORD = "AGENTSELF_MAIL_PASSWORD"
 ENV_ETH_RPC_URL = "AGENTSELF_ETH_RPC_URL"
 ENV_WALLET_BACKEND = "AGENTSELF_WALLET_BACKEND"
 ENV_EMAIL_BACKEND = "AGENTSELF_EMAIL_BACKEND"
@@ -23,9 +29,47 @@ ENV_TOOLS_DIR = "AGENTSELF_TOOLS"
 # age's own variable. Not product-prefixed.
 ENV_AGE_KEY_FILE = "AGE_KEY_FILE"
 
-_WALLET_LIVE_VERBS = ("show", "address", "balance", "authorize", "send")
+_WALLET_LIVE_VERBS = ("show", "address", "balance", "authorize", "send", "verify")
 _MAIL_VERBS = ("connect", "show", "send", "receive", "list")
 _STORE_VERBS = ("create", "get", "update", "list", "delete")
+
+_AGENTMAIL_OPTIONS = (
+    credential_option(
+        required=True,
+        source=ENV_AGENTMAIL_API_KEY,
+        help="Send credential",
+    ),
+    address_option(
+        required=False,
+        help="Inbox address when more than one exists",
+    ),
+)
+_IMAP_OPTIONS = (
+    address_option(required=True, help="Mailbox address"),
+    credential_option(
+        required=True,
+        source=ENV_MAIL_PASSWORD,
+        help="Mailbox credential",
+    ),
+    setup_option(
+        name="mail_host",
+        type="string",
+        source=ENV_MAIL_HOST,
+        help="Shared mail host when IMAP and SMTP share a name",
+    ),
+    setup_option(
+        name="imap_host",
+        type="string",
+        source=ENV_IMAP_HOST,
+        help="IMAP host override",
+    ),
+    setup_option(
+        name="smtp_host",
+        type="string",
+        source=ENV_SMTP_HOST,
+        help="SMTP host override",
+    ),
+)
 
 
 class UnknownBind(ValueError):
@@ -45,9 +89,10 @@ class Bind:
     custody: str = ""
     network: str = ""
     asset: str = ""
+    options: tuple[dict[str, object], ...] = field(default_factory=tuple)
 
     def as_json(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "name": self.name,
             "summary": self.summary,
             "knobs": list(self.knobs),
@@ -57,6 +102,9 @@ class Bind:
             "network": self.network,
             "asset": self.asset,
         }
+        if self.options:
+            payload["options"] = [dict(item) for item in self.options]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -124,12 +172,13 @@ CHANNELS: dict[str, Channel] = {
         binds=(
             Bind(
                 "agentmail",
-                "AgentMail HTTP. Store email.send.token, then email connect",
-                knobs=("email.send.token", "email.address"),
+                "HTTP inbox. Connect provisions or selects an owned address",
+                knobs=("email.send.token", "email.address", ENV_AGENTMAIL_API_KEY),
                 live=True,
                 verbs=_MAIL_VERBS,
                 custody="none",
                 network="agentmail",
+                options=_AGENTMAIL_OPTIONS,
             ),
             Bind(
                 "imap",
@@ -140,11 +189,13 @@ CHANNELS: dict[str, Channel] = {
                     ENV_MAIL_HOST,
                     ENV_IMAP_HOST,
                     ENV_SMTP_HOST,
+                    ENV_MAIL_PASSWORD,
                 ),
                 live=True,
                 verbs=_MAIL_VERBS,
                 custody="none",
                 network="imap-smtp",
+                options=_IMAP_OPTIONS,
             ),
         ),
         note="email connect does not block init.",

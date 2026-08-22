@@ -118,10 +118,9 @@ def test_email_set_does_not_print_invented_maildir_inbox(tmp_path):
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert "unrecognized arguments: --domain" in proc.stderr
     shown = run_cli(["--json", "email", "show"], env)
-    assert shown.returncode == 0, shown.stderr
+    assert shown.returncode == 3, shown.stdout + shown.stderr
     email = json.loads(shown.stdout)
-    assert email["owned_address"] is False
-    assert email["address"] is None
+    assert email["ok"] is False
     assert "agent@example.com" not in shown.stdout
 
 
@@ -278,7 +277,7 @@ class _FailMailbox:
             "needs_domain": True,
         }
 
-    def connect(self, principal_id, *, send_token=None, address=None):
+    def connect(self, principal_id, *, send_token=None, address=None, answers=None):
         if self._need_token and not send_token:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
@@ -345,7 +344,7 @@ def test_cli_json_email_recv_list_without_token_has_reason(tmp_path):
     for verb in ("receive", "list"):
         proc = run_cli(["--json", "email", verb], env)
         assert proc.returncode == 1, proc.stdout + proc.stderr
-        err = json.loads(proc.stderr)
+        err = json.loads(proc.stdout or proc.stderr)
         assert err["ok"] is False
         assert err["error"] == "error"
         assert "reason" in err
@@ -383,7 +382,7 @@ def test_cli_json_email_recv_list_injected_rpc(tmp_path, monkeypatch, capsys):
         code = main(["--json", "email", verb])
         captured = capsys.readouterr()
         assert code == 1, captured.out + captured.err
-        err = json.loads(captured.err)
+        err = json.loads(captured.out or captured.err)
         assert err["ok"] is False
         assert err["error"] == "error"
         assert "reason" in err
@@ -483,6 +482,9 @@ class _MissingKeyWallet:
         raise WalletError("missing key")
 
     def sign(self, principal_id, message):
+        raise WalletError("missing key")
+
+    def verify(self, principal_id, message, authorization):
         raise WalletError("missing key")
 
     def balance(self, principal_id):

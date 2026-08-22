@@ -9,7 +9,7 @@
   },
   "streams": {
     "success": "stdout",
-    "failure": "stderr"
+    "failure": "stdout"
   },
   "diagnose_extra": [
     "version",
@@ -21,6 +21,28 @@
     "wallet_backend",
     "email_backend",
     "store_backend",
-    "problems"
+    "problems",
+    "package",
+    "executable"
+  ],
+  "setup_extra": [
+    "status",
+    "setup_id",
+    "options",
+    "human_action_required",
+    "continue",
+    "expires_at",
+    "message",
+    "name",
+    "exists",
+    "address",
+    "owned_address",
+    "needs_domain",
+    "ready",
+    "valid",
+    "scheme",
+    "network",
+    "message_sha256",
+    "authorization"
   ]
 }

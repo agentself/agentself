@@ -28,6 +28,7 @@ ERROR_ENVELOPE = tuple(ERROR_GOLDEN["keys"])
 ERROR_TOKENS = frozenset(ERROR_GOLDEN["error"])
 EXIT_FOR_ERROR = {key: int(value) for key, value in ERROR_GOLDEN["exit"].items()}
 DIAGNOSE_EXTRA = frozenset(ERROR_GOLDEN["diagnose_extra"])
+SETUP_EXTRA = frozenset(ERROR_GOLDEN.get("setup_extra", []))
 CANARIES = ("AGE-SECRET-KEY", "hold-token-CANARY", "plain-secret-CANARY")
 _TO = "0x" + "11" * 20
 
@@ -80,13 +81,13 @@ def assert_ok(proc, spec_name: str) -> dict:
 
 def assert_err(proc, *, error: str | None = None) -> dict:
     assert proc.returncode != 0, proc.stdout + proc.stderr
-    assert proc.stdout == "", proc.stdout
+    assert proc.stderr == "", proc.stderr
     _assert_clean(proc.stdout + proc.stderr)
-    data = _one_object(proc.stderr)
+    data = _one_object(proc.stdout)
     assert data["ok"] is False
     missing = set(ERROR_ENVELOPE) - set(data)
     assert not missing, (missing, data)
-    extra = set(data) - set(ERROR_ENVELOPE) - DIAGNOSE_EXTRA
+    extra = set(data) - set(ERROR_ENVELOPE) - DIAGNOSE_EXTRA - SETUP_EXTRA
     assert not extra, extra
     assert data["error"] in ERROR_TOKENS
     assert isinstance(data["reason"], str) and data["reason"]
@@ -134,7 +135,7 @@ def _main_err(monkeypatch, capsys, env, argv, *, error: str | None = None) -> di
 
 def test_error_envelope_golden_matches_readme_exit_codes():
     assert ERROR_GOLDEN["ok"] is False
-    assert ERROR_GOLDEN["streams"] == {"success": "stdout", "failure": "stderr"}
+    assert ERROR_GOLDEN["streams"] == {"success": "stdout", "failure": "stdout"}
     assert EXIT_FOR_ERROR == {"error": 1, "refused": 2, "missing": 3}
     assert set(SUCCESS_KEYS) >= {
         "version",
@@ -161,6 +162,7 @@ def test_featured_parser_matches_golden_commands():
     subs = action.choices
     for group, dest in (
         ("secret", "secret_command"),
+        ("note", "note_command"),
         ("email", "email_command"),
         ("wallet", "wallet_command"),
     ):
@@ -172,7 +174,10 @@ def test_featured_parser_matches_golden_commands():
 def test_json_version_and_machine_alias(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
-    assert version == {"ok": True, "version": __version__, "cli": 2}
+    assert version["version"] == __version__
+    assert version["cli"] == 3
+    assert version["package"]
+    assert version["executable"]
     machine = run_cli(["--machine", "--version"], env)
     assert machine.returncode == 2
 
@@ -227,6 +232,19 @@ def test_json_secrets_and_missing(tmp_path):
         "secret_write",
     )
     assert created == {"ok": True, "name": "notes"}
+    same = assert_ok(
+        run_cli(["--json", "secret", "create", "notes", "only I can open this"], env),
+        "secret_write",
+    )
+    assert same == {"ok": True, "name": "notes", "unchanged": True}
+    missing_exists = assert_err(
+        run_cli(["--json", "secret", "exists", "ghost"], env), error="missing"
+    )
+    assert missing_exists["exists"] is False
+    present = assert_ok(
+        run_cli(["--json", "secret", "exists", "notes"], env), "secret_exists"
+    )
+    assert present == {"ok": True, "name": "notes", "exists": True}
     got = assert_ok(run_cli(["--json", "secret", "get", "notes"], env), "secret_get")
     assert got == {"ok": True, "name": "notes", "value": "only I can open this"}
     updated = assert_ok(
@@ -236,6 +254,7 @@ def test_json_secrets_and_missing(tmp_path):
     assert updated == {"ok": True, "name": "notes"}
     listed = assert_ok(run_cli(["--json", "secret", "list"], env), "secret_list")
     assert "notes" in listed["names"]
+    assert "wallet.key" in listed["protected"]
     assert "only I can open this" not in json.dumps(listed)
     missing = assert_err(
         run_cli(["--json", "secret", "get", "ghost"], env), error="missing"
@@ -269,11 +288,15 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     connected = assert_err(
         run_cli(["--json", "email", "connect"], env), error="missing"
     )
-    assert connected["reason"] == "need email.send.token"
-    shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
-    assert shown["ok"] is True
-    assert shown["owned_address"] is False
-    assert shown["address"] is None
+    assert connected["status"] == "input_required"
+    assert connected["setup_id"]
+    assert connected["continue"].startswith("agentself email connect --continue ")
+    assert connected["human_action_required"] is False
+    names = [item["name"] for item in connected["options"]]
+    assert "credential" in names
+    shown = assert_err(run_cli(["--json", "email", "show"], env), error="missing")
+    assert shown["reason"] == "not configured"
+    assert shown["next"] == "agentself email connect"
 
 
 def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, capsys):
@@ -293,6 +316,10 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
     )
     assert auth["authorization"].startswith("0x")
     assert auth["signature"] == auth["authorization"]
+    assert auth["address"] == started["address"]
+    assert auth["scheme"] == "eip191"
+    assert auth["network"] == "base"
+    assert len(auth["message_sha256"]) == 64
     sent = _main_ok(
         monkeypatch,
         capsys,
@@ -354,7 +381,7 @@ def test_json_install_and_doctor_fresh(tmp_path):
     assert diagnose["wallet_backend"] is None
     assert diagnose["ready"]["email"] is False
     installed = assert_ok(
-        run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path),
+        run_cli(["--json", "install", "--skills=agents", "--local"], env, cwd=tmp_path),
         "install",
     )
     assert len(installed["paths"]) == 1

@@ -110,7 +110,7 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
     env = cli_env(vault)
     proc = run_cli(["--json", "diagnose"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    data = json.loads(proc.stderr)
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert data["initialized"] is True
     assert data["wallet_backend"] == "ethereum"
@@ -143,8 +143,8 @@ def test_doctor_missing_age_keygen(tmp_path):
 
     js = run_cli(["--json", "diagnose"], env)
     assert js.returncode == 1, js.stdout + js.stderr
-    assert js.stdout == ""
-    data = json.loads(js.stderr)
+    assert js.stderr == ""
+    data = json.loads(js.stdout)
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == "age not on PATH"

@@ -23,11 +23,11 @@ agentself backends
 agentself diagnose
 ```
 
-Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `email`, `wallet`, `backup`, `restore`, `install`.
+Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `note`, `email`, `wallet`, `backup`, `restore`, `install`.
 
-Prefer `--json`. Success is one JSON object on stdout with `"ok": true`. Failure is one JSON object on stderr with `"ok": false`, `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line. `agentself --json --version` includes `cli` (machine schema id, currently 2). Ignore unknown keys.
+Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 3). Ignore unknown keys.
 
-No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey). Email without a token is not ready, not broken.
+No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey) and email readiness. Unconfigured `email show` exits 3.
 
 Identity directory is `AGENTSELF_VAULT_ROOT` (default `~/.agentself`).
 
@@ -40,16 +40,18 @@ agentself --json show
 agentself backends wallet
 ```
 
-`init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`.
+`init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
 ## Live vs not
 
-`agentself backends` lists shipped backends. Default wallet is live Base (`--wallet base`). Default email is AgentMail (`--email agentmail`): store `email.send.token`, then `email connect`. IMAP uses stored `email.address`. Do not invent `{id}@domain`.
+`agentself backends` lists shipped backends and their setup options. Default wallet is live Base (`--wallet base`) and can move real funds. Email is optional: `email connect` is a generic, resumable setup. `--json email connect` never prompts. Continue with `agentself email connect --continue SETUP_ID --result-file PATH`. Do not invent `{id}@domain`. See `agentself backends email` for inputs. Sensitive answers are never passed on argv.
 
 ## Skills
 
 ```bash
 agentself install --skills
-agentself install --skills -g
-agentself install --skills=agents
+agentself install --skills --local
+agentself install --skills=agents --local
 ```
+
+Skills install under the user home directory unless `--local`.

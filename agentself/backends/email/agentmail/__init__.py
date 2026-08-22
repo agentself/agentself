@@ -14,6 +14,7 @@ from agentself.backends.email.contract import (
     mailbox_view,
     require_addr,
     require_secret,
+    setup_needed,
 )
 from agentself.backends.email.http import request as http_request
 from agentself.internal.files import (
@@ -25,6 +26,7 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.setup import address_option, credential_option
 
 _API = "https://api.agentmail.to"
 
@@ -177,19 +179,22 @@ class AgentMailMailboxAccess(MailboxAccess):
         *,
         send_token: str | None = None,
         address: str | None = None,
+        answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
-        wanted = (address or "").strip()
+        extra = answers or {}
+        wanted = (address or extra.get("address") or "").strip()
+        token = send_token or extra.get("credential") or ""
         if wanted:
             return mailbox_view(wanted, owned_address=True)
-        if not send_token:
+        if not token:
             self._log.record("mailbox_connect", principal_id, None, "error")
-            raise MailboxError("missing credentials")
-        send_token = require_secret(send_token)
+            return setup_needed([credential_option()])
+        send_token = require_secret(token)
         live = _live_inboxes(self._listed_inboxes(send_token))
         if len(live) > 1:
             self._log.record("mailbox_connect", principal_id, None, "error")
-            raise MailboxError("need address")
+            return setup_needed([address_option(required=True)])
         if len(live) == 1:
             inbox = live[0]
         else:

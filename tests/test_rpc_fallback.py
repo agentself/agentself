@@ -118,7 +118,7 @@ def test_cli_all_urls_fail_json_error_rpc(tmp_path, monkeypatch, capsys):
     code = main(["--json", "wallet", "balance"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
-    err = json.loads(captured.err)
+    err = json.loads(captured.out or captured.err)
     assert err["ok"] is False
     assert err["error"] == "error"
     assert err["reason"] == "rpc"

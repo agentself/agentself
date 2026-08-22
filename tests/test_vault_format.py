@@ -179,8 +179,8 @@ def test_init_does_not_wipe_future_registry(tmp_path):
     assert not (vault / "identities").exists()
     js = run_cli(["--json", "init"], env)
     assert js.returncode == 1
-    assert js.stdout == ""
-    data = json.loads(js.stderr)
+    assert js.stderr == ""
+    data = json.loads(js.stdout)
     assert data["ok"] is False
     assert data["reason"] == FUTURE_REGISTRY_MSG
     assert data["next"] != "agentself init"
@@ -202,8 +202,8 @@ def test_init_does_not_wipe_future_config(tmp_path):
     assert path.read_bytes() == original
     js = run_cli(["--json", "init"], env)
     assert js.returncode == 1
-    assert js.stdout == ""
-    data = json.loads(js.stderr)
+    assert js.stderr == ""
+    data = json.loads(js.stdout)
     assert data["ok"] is False
     assert data["reason"] == FUTURE_CONFIG_MSG
     assert CANARY not in js.stderr
@@ -217,10 +217,10 @@ def test_json_show_future_config_is_one_stderr_object(tmp_path):
     env = cli_env(vault)
     proc = run_cli(["--json", "show"], env)
     assert proc.returncode == 1
-    assert proc.stdout == ""
-    assert proc.stderr.endswith("\n")
-    assert proc.stderr.count("\n") == 1
-    data = json.loads(proc.stderr)
+    assert proc.stderr == ""
+    assert proc.stdout.endswith("\n")
+    assert proc.stdout.count("\n") == 1
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == FUTURE_CONFIG_MSG
@@ -302,8 +302,8 @@ def test_json_secret_list_future_registry_does_not_wipe(tmp_path):
     original = path.read_bytes()
     proc = run_cli(["--json", "secret", "list"], env)
     assert proc.returncode == 1
-    assert proc.stdout == ""
-    data = json.loads(proc.stderr)
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == FUTURE_REGISTRY_MSG
@@ -319,8 +319,8 @@ def test_doctor_future_registry_is_not_uninitialized(tmp_path):
     original = path.read_bytes()
     proc = run_cli(["--json", "diagnose"], env)
     assert proc.returncode == 1
-    assert proc.stdout == ""
-    data = json.loads(proc.stderr)
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout or proc.stderr)
     assert data["ok"] is False
     assert data["reason"] == FUTURE_REGISTRY_MSG
     assert "initialized" not in data

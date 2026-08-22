@@ -37,7 +37,7 @@ def test_unbound_wallet_address_points_to_init(tmp_path):
     assert "next: agentself init" in proc.stderr
     js = run_cli(["--json", "wallet", "address"], env)
     assert js.returncode == 2, js.stdout + js.stderr
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["error"] == "refused"
     assert data["reason"] == "unbound caller"
@@ -53,7 +53,7 @@ def test_unknown_bind_typo_names_value_and_suggestion(tmp_path):
     assert "did you mean base?" in proc.stderr
     assert "next: agentself backends wallet" in proc.stderr
     js = run_cli(["--json", "show"], env)
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert "basee" in data["reason"]
     assert "did you mean base?" in data["reason"]
@@ -74,7 +74,7 @@ def test_doctor_unknown_wallet_bind_is_not_ok(tmp_path):
     assert "next: agentself backends wallet" in proc.stderr
     js = run_cli(["--json", "diagnose"], env)
     assert js.returncode == 1, js.stdout + js.stderr
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["wallet_backend"] == "basee"
     assert data["reason"] == "unknown wallet backend: basee (did you mean base?)"
@@ -97,7 +97,7 @@ def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
     assert addr.stderr == "error: cannot read wallet.key\nnext: agentself diagnose\n"
     js = run_cli(["--json", "wallet", "address"], env)
     assert js.returncode == 1, js.stdout + js.stderr
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data == {
         "ok": False,
         "error": "error",
@@ -127,14 +127,14 @@ def test_email_connect_without_domain_refuses(tmp_path):
     assert started.returncode == 0, started.stderr
     proc = run_cli(["email", "connect"], env)
     assert proc.returncode == 3, proc.stdout + proc.stderr
-    assert "need email.send.token" in proc.stderr
+    assert "input required" in proc.stderr
     assert "need --domain" not in proc.stderr
     js = run_cli(["--json", "email", "connect"], env)
     assert js.returncode == 3, js.stdout + js.stderr
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
-    assert data["reason"] == "need email.send.token"
-    assert data["next"] == "agentself secret create email.send.token"
+    assert data["status"] == "input_required"
+    assert data["next"].startswith("agentself email connect --continue ")
 
 
 def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsys):

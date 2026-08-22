@@ -263,7 +263,7 @@ def test_corrupt_registry_fails_closed(tmp_path):
     assert "cannot read registry.json" in listed.stderr
     assert "Traceback" not in listed.stderr
     js = run_cli(["--json", "secret", "list"], env)
-    data = json.loads(js.stderr)
+    data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["reason"] == "cannot read registry.json"
 

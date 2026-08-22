@@ -59,13 +59,13 @@ def test_init_show_secrets_and_silent_aliases(tmp_path):
     assert run_cli(["doctor"], env).returncode == 2
 
     email_show = run_cli(["email", "show"], env)
-    assert email_show.returncode == 0, email_show.stderr
-    assert "not configured" in email_show.stdout
+    assert email_show.returncode == 3, email_show.stdout + email_show.stderr
+    assert "not configured" in email_show.stderr
     email_json = run_cli(["--json", "email", "show"], env)
-    assert email_json.returncode == 0, email_json.stderr
+    assert email_json.returncode == 3, email_json.stdout + email_json.stderr
     email_data = json.loads(email_json.stdout)
-    assert email_data.get("owned_address") is False
-    assert email_data.get("address") in (None, "")
+    assert email_data.get("ok") is False
+    assert email_data.get("error") == "missing"
 
 
 def test_uninitialized_status_points_to_init(tmp_path):
