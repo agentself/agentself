@@ -242,7 +242,7 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == "invalid credentials"
-    assert data["next"] == "agentself email connect"
+    assert data["next"] == "agentself --json email connect"
     assert TOKEN not in captured.out + captured.err
     exists = run_cli(["--json", "secret", "exists", "email.send.token"], env)
     assert exists.returncode == 3

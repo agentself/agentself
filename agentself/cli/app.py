@@ -1128,7 +1128,7 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "need email.send.token\n",
             "missing",
             "need email.send.token",
-            nxt="agentself email connect",
+            nxt="agentself --json email connect",
         )
     if reason == "need_address":
         return _fail(
@@ -1137,7 +1137,7 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "need email.address\n",
             "missing",
             "need email.address",
-            nxt="agentself email connect",
+            nxt="agentself --json email connect",
         )
     if reason == "invalid_credential":
         return _fail(
@@ -1146,7 +1146,7 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "error: invalid credentials\n",
             "error",
             "invalid credentials",
-            nxt="agentself email connect",
+            nxt="agentself --json email connect",
         )
     return _fail(
         args,
