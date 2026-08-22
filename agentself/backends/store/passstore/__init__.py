@@ -29,13 +29,6 @@ class PassStoreAccess(StoreAccess):
             with exclusive(self._root):
                 self._ensure_hold(principal_id)
                 if self._entry(principal_id, name).exists():
-                    env = self._env(principal_id)
-                    proc = run_cmd(["pass", "show", "--", name], env=env)
-                    if proc.returncode == 0:
-                        existing = proc.stdout.decode("utf-8").removesuffix("\n")
-                        if existing == value:
-                            self._log.record("store_seal", principal_id, name, "ok")
-                            return
                     self._log.record("store_seal", principal_id, name, "exists")
                     raise HoldNameExists(name)
                 self._insert(principal_id, name, value, force=False)

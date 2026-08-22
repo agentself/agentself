@@ -36,14 +36,6 @@ class SopsStoreAccess(StoreAccess):
                 ensure_private_dir(path.parent)
                 _scrub_plain_tmps(path.parent)
                 if _filled(path):
-                    try:
-                        existing = self._decrypt(principal_id, path)
-                    except StoreResourceError:
-                        self._log.record("store_seal", principal_id, name, "exists")
-                        raise HoldNameExists(name) from None
-                    if existing == value:
-                        self._log.record("store_seal", principal_id, name, "ok")
-                        return
                     self._log.record("store_seal", principal_id, name, "exists")
                     raise HoldNameExists(name)
                 self._encrypt(principal_id, path, value)

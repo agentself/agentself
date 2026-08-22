@@ -698,7 +698,7 @@ def _parser() -> argparse.ArgumentParser:
         "message",
         nargs="?",
         metavar="MESSAGE",
-        help="Message that was authorized. Omit when using --file",
+        help="Message that was authorized. Omit when using --file; then AUTHORIZATION is the first positional",
     )
     wallet_verify.add_argument(
         "authorization",

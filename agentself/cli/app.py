@@ -1379,6 +1379,12 @@ def _wallet(gateway, args) -> int:
         sys.stdout.write(token + "\n")
         return 0
     if args.wallet_command == "verify":
+        path = (getattr(args, "from_file", None) or "").strip()
+        authorization = (getattr(args, "authorization", None) or "").strip()
+        leftover = (getattr(args, "message", None) or "").strip()
+        if path and leftover and not authorization:
+            authorization = leftover
+            args.message = ""
         message, err = _message_from_args(args)
         if err is not None or message is None:
             return _fail(
@@ -1389,7 +1395,6 @@ def _wallet(gateway, args) -> int:
                 err or "need a value",
                 nxt="agentself wallet verify --help",
             )
-        authorization = (getattr(args, "authorization", None) or "").strip()
         if not authorization:
             return _fail(
                 args,
