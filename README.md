@@ -115,7 +115,7 @@ Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_
 `--json email connect` never prompts. When input or a human action is required it exits `3` with a generic setup object. Continue with:
 
 ```text
-agentself email connect --continue --state STATE --result-file PATH
+agentself --json email connect --continue --state STATE --result-file PATH
 ```
 
 Sensitive answers come from `--result-file`, stdin, or a hidden prompt, never from argv.

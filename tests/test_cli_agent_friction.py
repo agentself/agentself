@@ -134,7 +134,8 @@ def test_email_connect_without_domain_refuses(tmp_path):
     data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["status"] == "input_required"
-    assert data["next"].startswith("agentself email connect --continue ")
+    assert data["next"].startswith("agentself --json email connect --continue --state ")
+    assert "--result-file PATH" in data["next"]
 
 
 def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsys):

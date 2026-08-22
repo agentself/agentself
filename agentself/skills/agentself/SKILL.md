@@ -46,7 +46,7 @@ agentself backends wallet
 
 `agentself backends` lists shipped backends and their setup options. Default wallet is live Base (`--wallet base`) and can move real funds. Email is optional.
 
-`--json email connect` never prompts. On exit 3, read `option.help` and `message` — that text is the procedure. Obtain the value with other tools or ask the operator. Continue with `agentself email connect --continue --state STATE --result-file PATH`. Sensitive answers go in the file, not argv. If you cannot obtain the value, `agentself backends email` then `init --force --email OTHER`, or stop. Do not invent `{id}@domain`. Do not switch backends with `--continue`.
+`--json email connect` never prompts. On exit 3, read `option.help` and `message` — that text is the procedure. Obtain the value with other tools or ask the operator. Continue with `agentself --json email connect --continue --state STATE --result-file PATH`. Sensitive answers go in the file, not argv. If you cannot obtain the value, `agentself backends email` then `init --force --email OTHER`, or stop. Do not invent `{id}@domain`. Do not switch backends with `--continue`.
 
 ## Skills
 

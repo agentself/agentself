@@ -433,14 +433,14 @@ def _parser() -> argparse.ArgumentParser:
             "Interactive use continues setup until connected. "
             "--json never prompts: it returns a generic setup object and exit 3 "
             "when input or a human action is required. "
-            "Continue with --continue --state STATE. "
+            "Continue with --json --continue --state STATE --result-file PATH. "
             "Sensitive answers come from --result-file, stdin, or a hidden prompt, "
             "never from argv."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email connect\n"
-            "  agentself email connect --continue --state STATE --result-file PATH\n"
+            "  agentself --json email connect --continue --state STATE --result-file PATH\n"
             "  agentself --json email connect\n"
             "  agentself backends email"
         ),

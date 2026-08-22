@@ -57,7 +57,10 @@ def test_agentmail_connect_without_token_points_at_secret(tmp_path):
     assert "console.agentmail.to" in data["option"]["help"]
     assert "AGENTSELF_AGENTMAIL_API_KEY" in data["option"]["help"]
     assert "init --force --email imap" in data["option"]["help"]
-    assert data["next"].startswith("agentself email connect --continue --state ")
+    assert data["next"].startswith(
+        "agentself --json email connect --continue --state "
+    )
+    assert "--result-file PATH" in data["next"]
 
 
 def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys):
@@ -178,7 +181,10 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     assert data["error"] == "missing"
     assert data["status"] == "input_required"
     assert data["option"]["name"] == "address"
-    assert data["next"].startswith("agentself email connect --continue --state ")
+    assert data["next"].startswith(
+        "agentself --json email connect --continue --state "
+    )
+    assert "--result-file PATH" in data["next"]
 
 
 def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
@@ -200,3 +206,43 @@ def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
     assert code == 1, captured.out + captured.err
     assert captured.err == "error: rpc\nnext: agentself backends email\n"
     assert TOKEN not in captured.out + captured.err
+
+
+def test_agentmail_connect_unauthorized_is_invalid_credentials(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    start = run_cli(["init"], env)
+    assert start.returncode == 0, start.stderr
+    apply_cli_env(monkeypatch, env)
+    first = main(["--json", "email", "connect"])
+    captured = capsys.readouterr()
+    assert first == 3, captured.out + captured.err
+    state = json.loads(captured.out)["state"]
+    http = Http()
+    http.on_get(INBOXES, 401, {"error": "nope"})
+    _patch_agentmail(monkeypatch, http)
+    cred = value_file(tmp_path, TOKEN)
+    code = main(
+        [
+            "--json",
+            "email",
+            "connect",
+            "--continue",
+            "--state",
+            state,
+            "--result-file",
+            cred,
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 1, captured.out + captured.err
+    data = json.loads(captured.out)
+    assert data["ok"] is False
+    assert data["error"] == "error"
+    assert data["reason"] == "invalid credentials"
+    assert data["next"] == "agentself email connect"
+    assert TOKEN not in captured.out + captured.err
+    exists = run_cli(["--json", "secret", "exists", "email.send.token"], env)
+    assert exists.returncode == 3

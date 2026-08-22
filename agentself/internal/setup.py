@@ -137,7 +137,9 @@ def decode_state(state: str) -> dict[str, object] | None:
 
 
 def continue_command(state: str) -> str:
-    return f"agentself email connect --continue --state {state}"
+    return (
+        f"agentself --json email connect --continue --state {state} --result-file PATH"
+    )
 
 
 def setup_status_of(payload: object) -> str:

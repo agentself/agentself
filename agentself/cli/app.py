@@ -1139,6 +1139,15 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "need email.address",
             nxt="agentself email connect",
         )
+    if reason == "invalid_credential":
+        return _fail(
+            args,
+            1,
+            "error: invalid credentials\n",
+            "error",
+            "invalid credentials",
+            nxt="agentself email connect",
+        )
     return _fail(
         args,
         1,

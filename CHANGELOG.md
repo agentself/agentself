@@ -6,7 +6,7 @@ Provider-neutral CLI schema 3. Public commands describe resources and operations
 
 ### Commands
 
-- `email connect` is a generic, resumable setup. `--json` never prompts and exits 3 with one outstanding option plus opaque `state`. Continue with `--continue --state STATE --result-file PATH`.
+- `email connect` is a generic, resumable setup. `--json` never prompts and exits 3 with one outstanding option plus opaque `state`. Continue with `--json --continue --state STATE --result-file PATH`. HTTP 401/403 is `invalid credentials`, not `rpc`.
 - Environment credentials are used at runtime and are not copied into the vault.
 - Unconfigured `email show` is ready false, exit 0. `--json show` includes email readiness. `email connect` still exits 3 when input is required.
 - `init --force` is required to change identity or backends. Repeating the same init is unchanged.

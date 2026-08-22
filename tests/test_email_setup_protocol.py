@@ -91,7 +91,10 @@ def test_new_backend_uses_existing_connect_without_parser_changes(
     assert code == 3
     assert first["status"] == "input_required"
     assert first["state"]
-    assert first["continue"].startswith("agentself email connect --continue --state ")
+    assert first["continue"].startswith(
+        "agentself --json email connect --continue --state "
+    )
+    assert "--result-file PATH" in first["continue"]
     assert "agentmail" not in json.dumps(first).lower()
     assert first["option"]["name"] == "credential"
     assert first["option"]["sensitive"] is True

@@ -310,7 +310,6 @@ class CustodyManager:
                 incoming[asked] = raw_value
         else:
             incoming.pop("value", None)
-        self._persist_setup_answers(principal, incoming)
         address, credential, _sources = self._resolve_email_inputs(principal, incoming)
         mailbox = self._mailbox_for(principal, "email_connect")
         try:
@@ -325,6 +324,7 @@ class CustodyManager:
             raise _channel_from_mailbox(exc, has_token=bool(credential)) from None
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
+            self._persist_setup_answers(principal, incoming)
             view = _email_view(desc)
             self._persist_email_success(principal, view)
             view["status"] = SETUP_CONNECTED
@@ -334,6 +334,7 @@ class CustodyManager:
             self._log.record("email_connect", principal.id, None, "error")
             reason = str(desc.get("reason") or "error")
             return {"status": SETUP_FAILED, "reason": reason}
+        self._persist_setup_answers(principal, incoming)
         option = _setup_option_of(desc)
         human = (
             bool(desc.get("human_action_required")) or status == SETUP_ACTION_REQUIRED
@@ -787,6 +788,8 @@ def _channel_from_mailbox(
         or low == "no_token"
     ):
         reason = "no_token"
+    elif "invalid credentials" in low:
+        reason = "invalid_credential"
     elif "need address" in low:
         reason = "need_address"
     elif (

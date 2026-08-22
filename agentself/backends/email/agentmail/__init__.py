@@ -279,7 +279,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         except (OSError, urllib.error.URLError, TimeoutError) as exc:
             raise MailboxError("rpc failed") from exc
         if status < 200 or status >= 300:
-            raise MailboxError("rpc failed")
+            raise MailboxError(_http_error(status))
         return body
 
     def _get_message(self, url: str, token: str) -> dict[str, object] | None:
@@ -312,7 +312,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         except (OSError, urllib.error.URLError, TimeoutError) as exc:
             raise MailboxError("rpc failed") from exc
         if status < 200 or status >= 300:
-            raise MailboxError("rpc failed")
+            raise MailboxError(_http_error(status))
         return resp
 
     def _write_inbox_id(self, principal_id: str, inbox_id: object) -> None:
@@ -325,6 +325,12 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def _seen_dir(self, principal_id: str) -> Path:
         return self._agentmail_dir(principal_id) / "seen"
+
+
+def _http_error(status: int) -> str:
+    if status in (401, 403):
+        return "invalid credentials"
+    return "rpc failed"
 
 
 def _live_inboxes(inboxes: list[object]) -> list[dict[str, object]]:

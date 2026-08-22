@@ -708,6 +708,19 @@ def test_connect_many_inboxes_need_address_no_post(vault):
     assert TAKEN not in str(desc)
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_connect_unauthorized_is_invalid_credentials(vault, status):
+    log = MemoryLog()
+    http = Http()
+    http.on_get(INBOXES, status, {"error": "nope"})
+    mb = _box(vault, log, http)
+    with pytest.raises(MailboxError, match="invalid credentials") as err:
+        mb.connect(PRINCIPAL, send_token=CANARY)
+    assert CANARY not in str(err.value)
+    _secret_absent(log, err.value)
+    _no_local_outbox(vault)
+
+
 def test_connect_create_rpc_failed(vault):
     log = MemoryLog()
     http = Http()
