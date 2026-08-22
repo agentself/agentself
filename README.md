@@ -32,18 +32,17 @@ agentself wallet address
 agentself wallet balance
 
 # Secrets
-agentself secret create API_TOKEN
+agentself secret create API_TOKEN --file PATH
 agentself secret get API_TOKEN
 
 # Email
-agentself secret create email.send.token YOUR_TOKEN
 agentself email connect
 agentself email show
 ```
 
-Run `agentself show` anytime to see the current identity.
+Run `agentself show` anytime to see the current identity. Repeat `init` is safe; `--force` is required to change the identity or backends.
 
-`agentself install --tools` installs the required `age` and `sops` host tools. Email is optional; the default AgentMail backend needs `email.send.token` before `email connect`.
+`agentself install --tools` installs the required `age` and `sops` host tools. Email is optional and does not block init. `agentself backends email` lists the generic setup inputs for the current backend.
 
 ## Why agentself?
 
@@ -56,8 +55,9 @@ Run `agentself show` anytime to see the current identity.
 | Area | Commands |
 |---|---|
 | Identity | `init`, `show`, `diagnose` |
-| Secrets | `secret create`, `get`, `update`, `list`, `delete` |
-| Wallet | `wallet show`, `address`, `balance`, `authorize`, `send` |
+| Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
+| Notes | `note create`, `get`, `update`, `list`, `delete` |
+| Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list` |
 | Backends | `backends [CHANNEL]` |
 | Recovery | `backup`, `restore` |
@@ -109,7 +109,17 @@ Configuration precedence is:
 CLI flag > environment variable > saved configuration > default
 ```
 
-There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific requirements and configuration knobs.
+There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific requirements and configuration knobs. Public commands never grow provider verbs or flags.
+
+Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. `email connect --import-env` persists validated environment credentials; ordinary connect does not copy them into the vault.
+
+`--json email connect` never prompts. When input or a human action is required it exits `3` with a generic setup object. Continue with:
+
+```text
+agentself email connect --continue SETUP_ID --result-file PATH
+```
+
+Sensitive answers come from `--result-file`, stdin, or a hidden prompt, never from argv.
 
 One identity lives in one directory, `~/.agentself` by default. Use `AGENTSELF_VAULT_ROOT` to isolate identities:
 
@@ -131,7 +141,7 @@ agentself diagnose
 
 For automation, prefer `--json`.
 
-Success is one JSON object on stdout with `"ok": true`. Failure is one JSON object on stderr with `ok`, `error`, `reason`, and `next`.
+Success and failure are one JSON object on stdout. Human errors stay on stderr. Exit codes are `0` success, `1` error, `2` refused, and `3` missing dependency or resource.
 
 ```json
 {
@@ -142,16 +152,14 @@ Success is one JSON object on stdout with `"ok": true`. Failure is one JSON obje
 }
 ```
 
-Exit codes are `0` success, `1` error, `2` refused, and `3` missing dependency or resource.
+Consumers should ignore unknown JSON keys. `agentself --json --version` includes `cli` (currently `3`), plus `package` and `executable` paths.
 
-Consumers should ignore unknown JSON keys. `agentself --json --version` includes `cli`, the machine schema identifier.
-
-An optional bundled skill gives compatible coding agents the same discovery guidance:
+An optional bundled skill gives compatible coding agents the same discovery guidance. Skills install under the user home directory unless `--local` writes into the current repository:
 
 ```bash
 agentself install --skills
-agentself install --skills -g
-agentself install --skills=agents
+agentself install --skills --local
+agentself install --skills=agents --local
 ```
 
 `--help` and `--json` are sufficient without the skill.
@@ -159,7 +167,7 @@ agentself install --skills=agents
 ## Security
 
 - Secret values are encrypted at rest by the configured store.
-- `secret list` returns names, not values.
+- `secret list` returns names, not values. `wallet.key` is protected and needs `--unsafe` to export.
 - Logs and structured errors do not print secret values.
 - Missing backends, credentials, or tools fail instead of silently switching implementations.
 - Wallet backends are live and `wallet send` can move real assets.
