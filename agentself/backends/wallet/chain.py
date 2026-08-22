@@ -316,7 +316,6 @@ class ChainWalletAccess(WalletAccess):
 
     def _rpc_urls(self) -> list[str]:
         extras = list(getattr(self, "fallback_rpcs", ()) or ())
-        # Built-in fallbacks only apply to the default public RPC.
         if self._rpc_override:
             extras = []
         return _dedup_urls(self._rpc_url, extras)

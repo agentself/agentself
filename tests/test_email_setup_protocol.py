@@ -506,6 +506,57 @@ def test_tty_continue_empty_secret_is_nothing_entered(
     assert "AGENT PROCEDURE DO NOT PRINT" not in blob
 
 
+@pytest.mark.parametrize(
+    ("status", "extra", "reason"),
+    [
+        (
+            SETUP_ACTION_REQUIRED,
+            {"human_action_required": True, "message": "Confirm this identity"},
+            "human action required",
+        ),
+        (SETUP_PENDING, {"message": "Provisioning"}, "pending"),
+    ],
+)
+def test_tty_without_option_falls_through_to_setup_pending(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+    status: str,
+    extra: dict[str, object],
+    reason: str,
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(_token, _address, _answers):
+        return setup_needed(None, status=status, **extra)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    first = main(["--json", "email", "connect"])
+    captured = capsys.readouterr()
+    assert first == 3
+    state = json.loads(captured.out)["state"]
+
+    def no_prompt(_prompt="", **_kwargs):
+        raise AssertionError("no named option should not prompt")
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr("agentself.cli.app.getpass.getpass", no_prompt)
+    monkeypatch.setattr("builtins.input", no_prompt)
+
+    assert main(["email", "connect"]) == 3
+    output = capsys.readouterr()
+    assert "nothing entered" not in output.err
+    assert reason in output.err
+
+    assert main(["email", "connect", "--continue", "--state", state]) == 3
+    output = capsys.readouterr()
+    assert "nothing entered" not in output.err
+    assert reason in output.err
+
+
 def test_human_renderer_unexpected_error_is_not_a_traceback(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

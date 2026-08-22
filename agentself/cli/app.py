@@ -1041,6 +1041,8 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
         and sys.stdout.isatty()
     ):
         prompted = _prompt_setup_option(result)
+        if prompted is None:
+            return _email_setup_pending(args, result, status)
         if prompted:
             option = result.get("option")
             if isinstance(option, dict) and (
@@ -1091,15 +1093,15 @@ def _print_setup_action(action: dict[str, object]) -> None:
     sys.stdout.write(f"{label}:\n{url}\n\n")
 
 
-def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
+def _prompt_setup_option(result: dict[str, object]) -> dict[str, str] | None:
     """Render one backend-provided setup request for a human operator."""
 
     option = result.get("option")
     if not isinstance(option, dict):
-        return {}
+        return None
     name = str(option.get("name") or "").strip()
     if not name:
-        return {}
+        return None
     words = name.replace("_", " ")
     article = "an" if words[:1].lower() in "aeiou" else "a"
     sys.stdout.write(f"Email setup needs {article} {words}.\n\n")
