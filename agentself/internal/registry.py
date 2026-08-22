@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from agentself.internal.files import (
+    VaultBusy,
+    atomic_write_text,
+    ensure_private_dir,
+    exclusive,
+)
+from agentself.internal.format import (
+    CURRENT_FORMAT_VERSION,
+    format_version_error,
+)
+from agentself.internal.log import Log
+from agentself.internal.names import require_safe_token
+from agentself.internal.types import Principal
+
+ALLOWED_BINDINGS = frozenset({"sops", "pass"})
+
+
+class RegistryError(Exception):
+    """registry.json exists but is unreadable. Fail closed."""
+
+    def __init__(self, message: str = "cannot read registry.json") -> None:
+        super().__init__(message)
+
+
+class RegistryFormatError(RegistryError):
+    """Unsupported format_version. Fail closed. Do not rewrite."""
+
+
+class FilePrincipalAccess:
+    """Not CRUD."""
+
+    def __init__(self, vault_root: Path, log: Log) -> None:
+        self._root = Path(vault_root)
+        self._registry = self._root / "registry.json"
+        self._log = log
+
+    def find(self, principal_id: str) -> Principal | None:
+        require_safe_token(principal_id, "principal id")
+        records = self._load()
+        raw = records.get(principal_id)
+        if raw is None:
+            self._log.record("find", principal_id, None, "miss")
+            return None
+        self._log.record("find", principal_id, None, "ok")
+        return _principal(raw)
+
+    def enroll(
+        self, principal_id: str, recipient: str, store_binding: str
+    ) -> Principal:
+        require_safe_token(principal_id, "principal id")
+        if not recipient or not recipient.startswith("age1"):
+            self._log.record("enroll", principal_id, None, "refused")
+            raise ValueError("invalid recipient")
+        if store_binding not in ALLOWED_BINDINGS:
+            self._log.record("enroll", principal_id, None, "refused")
+            raise ValueError("invalid store binding")
+        try:
+            with exclusive(self._root):
+                records = self._load()
+                if principal_id in records:
+                    self._log.record("enroll", principal_id, None, "exists")
+                    return _principal(records[principal_id])
+                principal = Principal(
+                    id=principal_id,
+                    recipient=recipient,
+                    store_binding=store_binding,
+                )
+                records[principal_id] = {
+                    "id": principal.id,
+                    "recipient": principal.recipient,
+                    "store_binding": principal.store_binding,
+                }
+                self._save(records)
+                self._log.record("enroll", principal_id, None, "ok")
+                return principal
+        except VaultBusy as exc:
+            raise RegistryError("vault busy") from exc
+
+    def _load(self) -> dict[str, dict[str, str]]:
+        if not self._registry.exists():
+            return {}
+        try:
+            data = json.loads(self._registry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RegistryError("cannot read registry.json") from exc
+        if not isinstance(data, dict):
+            raise RegistryError("cannot read registry.json")
+        err = format_version_error("registry.json", data)
+        if err:
+            raise RegistryFormatError(err)
+        identities = data.get("identities", {})
+        if not isinstance(identities, dict):
+            raise RegistryError("cannot read registry.json")
+        out: dict[str, dict[str, str]] = {}
+        for pid, raw in identities.items():
+            if not isinstance(pid, str):
+                raise RegistryError("cannot read registry.json")
+            principal = _principal(raw)
+            if principal.id != pid:
+                raise RegistryError("cannot read registry.json")
+            out[pid] = {
+                "id": principal.id,
+                "recipient": principal.recipient,
+                "store_binding": principal.store_binding,
+            }
+        return out
+
+    def _save(self, records: dict[str, dict[str, str]]) -> None:
+        ensure_private_dir(self._root)
+        payload = (
+            json.dumps(
+                {"format_version": CURRENT_FORMAT_VERSION, "identities": records},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        atomic_write_text(self._registry, payload)
+
+
+def _principal(raw: object) -> Principal:
+    if not isinstance(raw, dict):
+        raise RegistryError("cannot read registry.json")
+    pid = raw.get("id")
+    recipient = raw.get("recipient")
+    store_binding = raw.get("store_binding")
+    if (
+        not isinstance(pid, str)
+        or not isinstance(recipient, str)
+        or not isinstance(store_binding, str)
+    ):
+        raise RegistryError("cannot read registry.json")
+    try:
+        require_safe_token(pid, "principal id")
+    except ValueError:
+        raise RegistryError("cannot read registry.json") from None
+    if not _public_recipient(recipient):
+        raise RegistryError("cannot read registry.json")
+    if store_binding not in ALLOWED_BINDINGS:
+        raise RegistryError("cannot read registry.json")
+    return Principal(
+        id=pid,
+        recipient=recipient,
+        store_binding=store_binding,
+    )
+
+
+def _public_recipient(value: str) -> bool:
+    if not value.startswith("age1"):
+        return False
+    if "AGE-SECRET-KEY" in value:
+        return False
+    if any(ch.isspace() for ch in value):
+        return False
+    return 8 <= len(value) <= 128

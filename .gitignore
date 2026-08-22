@@ -1,0 +1,37 @@
+# python / build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+build/
+dist/
+*.egg
+*.egg-info/
+.venv/
+venv/
+pip-wheel-metadata/
+
+# identity vaults and keys
+vaults/
+.agentself/
+*.agekey
+AGE-SECRET-KEY*
+*AGE-SECRET-KEY*
+
+# runtime secrets / tokens
+outbox.jsonl
+.env
+.env.*
+tokens
+tokens/
+*.pem
+
+# os
+.DS_Store

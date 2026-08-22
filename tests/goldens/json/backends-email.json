@@ -1,0 +1,54 @@
+{
+  "ok": true,
+  "channel": {
+    "name": "email",
+    "env": "AGENTSELF_EMAIL_BACKEND",
+    "flag": "--email",
+    "config": "email_backend",
+    "default": "agentmail",
+    "note": "email connect does not block init.",
+    "backends": [
+      {
+        "name": "agentmail",
+        "summary": "AgentMail HTTP. Store email.send.token, then email connect",
+        "knobs": [
+          "email.send.token",
+          "email.address"
+        ],
+        "live": true,
+        "verbs": [
+          "connect",
+          "show",
+          "send",
+          "receive",
+          "list"
+        ],
+        "custody": "none",
+        "network": "agentmail",
+        "asset": ""
+      },
+      {
+        "name": "imap",
+        "summary": "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
+        "knobs": [
+          "email.send.token",
+          "email.address",
+          "AGENTSELF_MAIL_HOST",
+          "AGENTSELF_IMAP_HOST",
+          "AGENTSELF_SMTP_HOST"
+        ],
+        "live": true,
+        "verbs": [
+          "connect",
+          "show",
+          "send",
+          "receive",
+          "list"
+        ],
+        "custody": "none",
+        "network": "imap-smtp",
+        "asset": ""
+      }
+    ]
+  }
+}

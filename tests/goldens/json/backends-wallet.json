@@ -1,0 +1,47 @@
+{
+  "ok": true,
+  "channel": {
+    "name": "wallet",
+    "env": "AGENTSELF_WALLET_BACKEND",
+    "flag": "--wallet",
+    "config": "wallet_backend",
+    "default": "base",
+    "note": "RPC override: AGENTSELF_ETH_RPC_URL",
+    "backends": [
+      {
+        "name": "base",
+        "summary": "USDC destination on Base",
+        "knobs": [],
+        "live": true,
+        "verbs": [
+          "show",
+          "address",
+          "balance",
+          "authorize",
+          "send"
+        ],
+        "custody": "eoa-key",
+        "network": "base",
+        "asset": "USDC"
+      },
+      {
+        "name": "ethereum",
+        "summary": "USDC destination on Ethereum",
+        "knobs": [
+          "AGENTSELF_ETH_RPC_URL"
+        ],
+        "live": true,
+        "verbs": [
+          "show",
+          "address",
+          "balance",
+          "authorize",
+          "send"
+        ],
+        "custody": "eoa-key",
+        "network": "ethereum",
+        "asset": "USDC"
+      }
+    ]
+  }
+}

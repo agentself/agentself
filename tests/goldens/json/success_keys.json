@@ -1,0 +1,114 @@
+{
+  "version": {
+    "exact": ["ok", "version", "cli"]
+  },
+  "init": {
+    "exact": [
+      "ok",
+      "id",
+      "recipient",
+      "address",
+      "usdc",
+      "wallet_backend",
+      "email_backend"
+    ]
+  },
+  "show": {
+    "exact": [
+      "ok",
+      "id",
+      "recipient",
+      "address",
+      "usdc",
+      "wallet_backend",
+      "email_backend",
+      "vault"
+    ]
+  },
+  "diagnose": {
+    "exact": [
+      "ok",
+      "initialized",
+      "ready",
+      "version",
+      "python",
+      "vault",
+      "tools",
+      "wallet_backend",
+      "email_backend",
+      "store_backend"
+    ]
+  },
+  "install": {
+    "exact": ["ok", "paths"]
+  },
+  "install_tools": {
+    "exact": ["ok", "path"]
+  },
+  "backup": {
+    "exact": ["ok", "path"]
+  },
+  "restore": {
+    "exact": ["ok", "path"]
+  },
+  "backends": {
+    "exact": ["ok", "prefix", "vault", "order", "failover", "channels"]
+  },
+  "backends_channel": {
+    "exact": ["ok", "channel"]
+  },
+  "secret_write": {
+    "exact": ["ok", "name"]
+  },
+  "secret_get": {
+    "exact": ["ok", "name", "value"]
+  },
+  "secret_list": {
+    "exact": ["ok", "names"]
+  },
+  "email_connect": {
+    "exact": ["ok", "address"]
+  },
+  "email_show": {
+    "exact": ["ok", "address", "owned_address", "needs_domain"]
+  },
+  "email_send": {
+    "exact": ["ok", "to", "subject"]
+  },
+  "email_messages": {
+    "exact": ["ok", "messages"]
+  },
+  "wallet_address": {
+    "exact": ["ok", "address"]
+  },
+  "wallet_authorize": {
+    "exact": ["ok", "authorization", "signature"]
+  },
+  "wallet_send": {
+    "exact": ["ok", "to", "amount", "asset"]
+  },
+  "wallet_balance": {
+    "required": ["ok"],
+    "allowed": [
+      "ok",
+      "asset",
+      "chain",
+      "chain_id",
+      "address",
+      "amount",
+      "raw",
+      "gas_asset",
+      "gas_raw",
+      "gas_amount"
+    ]
+  },
+  "email_view": {
+    "allowed": ["address", "owned_address", "needs_domain"]
+  },
+  "wallet_view": {
+    "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind"]
+  },
+  "mail_item": {
+    "allowed": ["id", "from", "to", "subject", "body", "reason"]
+  }
+}

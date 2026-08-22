@@ -1,0 +1,26 @@
+{
+  "ok": false,
+  "keys": ["ok", "error", "reason", "next"],
+  "error": ["error", "refused", "missing"],
+  "exit": {
+    "error": 1,
+    "refused": 2,
+    "missing": 3
+  },
+  "streams": {
+    "success": "stdout",
+    "failure": "stderr"
+  },
+  "diagnose_extra": [
+    "version",
+    "python",
+    "vault",
+    "initialized",
+    "ready",
+    "tools",
+    "wallet_backend",
+    "email_backend",
+    "store_backend",
+    "problems"
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "ok": true,
+  "prefix": "AGENTSELF_",
+  "vault": "AGENTSELF_VAULT_ROOT",
+  "order": "flag, then env, then vault config, then default",
+  "failover": false,
+  "channels": [
+    {
+      "name": "wallet",
+      "env": "AGENTSELF_WALLET_BACKEND",
+      "flag": "--wallet",
+      "config": "wallet_backend",
+      "default": "base",
+      "note": "RPC override: AGENTSELF_ETH_RPC_URL",
+      "backends": [
+        {
+          "name": "base",
+          "summary": "USDC destination on Base",
+          "knobs": [],
+          "live": true,
+          "verbs": [
+            "show",
+            "address",
+            "balance",
+            "authorize",
+            "send"
+          ],
+          "custody": "eoa-key",
+          "network": "base",
+          "asset": "USDC"
+        },
+        {
+          "name": "ethereum",
+          "summary": "USDC destination on Ethereum",
+          "knobs": [
+            "AGENTSELF_ETH_RPC_URL"
+          ],
+          "live": true,
+          "verbs": [
+            "show",
+            "address",
+            "balance",
+            "authorize",
+            "send"
+          ],
+          "custody": "eoa-key",
+          "network": "ethereum",
+          "asset": "USDC"
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "env": "AGENTSELF_EMAIL_BACKEND",
+      "flag": "--email",
+      "config": "email_backend",
+      "default": "agentmail",
+      "note": "email connect does not block init.",
+      "backends": [
+        {
+          "name": "agentmail",
+          "summary": "AgentMail HTTP. Store email.send.token, then email connect",
+          "knobs": [
+            "email.send.token",
+            "email.address"
+          ],
+          "live": true,
+          "verbs": [
+            "connect",
+            "show",
+            "send",
+            "receive",
+            "list"
+          ],
+          "custody": "none",
+          "network": "agentmail",
+          "asset": ""
+        },
+        {
+          "name": "imap",
+          "summary": "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
+          "knobs": [
+            "email.send.token",
+            "email.address",
+            "AGENTSELF_MAIL_HOST",
+            "AGENTSELF_IMAP_HOST",
+            "AGENTSELF_SMTP_HOST"
+          ],
+          "live": true,
+          "verbs": [
+            "connect",
+            "show",
+            "send",
+            "receive",
+            "list"
+          ],
+          "custody": "none",
+          "network": "imap-smtp",
+          "asset": ""
+        }
+      ]
+    },
+    {
+      "name": "store",
+      "env": null,
+      "flag": "--store",
+      "config": null,
+      "default": "sops",
+      "note": "Recorded on the identity at init. Not an env override.",
+      "backends": [
+        {
+          "name": "sops",
+          "summary": "age files on this computer",
+          "knobs": [],
+          "live": false,
+          "verbs": [
+            "create",
+            "get",
+            "update",
+            "list",
+            "delete"
+          ],
+          "custody": "age-files",
+          "network": "",
+          "asset": ""
+        },
+        {
+          "name": "pass",
+          "summary": "gpg password store",
+          "knobs": [],
+          "live": false,
+          "verbs": [
+            "create",
+            "get",
+            "update",
+            "list",
+            "delete"
+          ],
+          "custody": "gpg-pass",
+          "network": "",
+          "asset": ""
+        }
+      ]
+    }
+  ]
+}

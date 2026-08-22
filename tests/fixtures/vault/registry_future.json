@@ -1,0 +1,11 @@
+{
+  "format_version": 3,
+  "future_field": "future-canary-keep",
+  "principals": {
+    "agent": {
+      "id": "agent",
+      "recipient": "age1example",
+      "store_binding": "sops"
+    }
+  }
+}

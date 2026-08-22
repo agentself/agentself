@@ -1,0 +1,88 @@
+# Tag-triggered publish via Trusted Publishing (OIDC). No API token.
+# Before the first `v[0-9]*` tag publish, create protected GitHub environments
+# `pypi` and `testpypi`, then register this workflow as a trusted publisher
+# on PyPI and TestPyPI (GitHub/PyPI UIs). CI does not register the project
+# name. `agentself` had no published distribution when this workflow was added.
+# Pin pypa/gh-action-pypi-publish at release/v1. Tag must be v${__version__}
+# after building the wheel that will be published.
+name: publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Build and check
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Smoke-test the wheel and require tag v${VERSION}
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP}/wheel-env"
+          python -m venv "$venv"
+          "$venv/bin/python" -m pip install dist/*.whl
+          version="$("$venv/bin/python" -c "from agentself import __version__; print(__version__)")"
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "$expected" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package version ${expected}" >&2
+            exit 1
+          fi
+          empty="${RUNNER_TEMP}/empty"
+          mkdir -p "$empty"
+          export PATH="$venv/bin:$PATH"
+          cd "$empty"
+          got="$(agentself --version)"
+          test "$got" = "agentself ${version}"
+          agentself --help
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/agentself
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  publish-pypi:
+    needs: [build, publish-testpypi]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agentself
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

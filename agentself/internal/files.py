@@ -1,0 +1,278 @@
+from __future__ import annotations
+
+import os
+import tempfile
+import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
+_GUARD = threading.Lock()
+_THREAD_LOCKS: dict[str, threading.RLock] = {}
+_LOCAL = threading.local()
+
+LOCK_NAME = "vault.lock"
+
+
+class VaultBusy(Exception):
+    """Another process or thread holds the vault lock past the wait."""
+
+    def __init__(self) -> None:
+        super().__init__("vault busy")
+
+
+def resolve_tool(name: str) -> str:
+    """Absolute PATH hit, skipping the current directory (Windows cwd search)."""
+
+    raw = str(name or "").strip()
+    if not raw:
+        return raw
+    given = Path(raw)
+    if given.is_absolute() or len(given.parts) > 1:
+        return raw
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        cwd = None
+    names = [raw]
+    if os.name == "nt" and not raw.lower().endswith((".exe", ".bat", ".cmd")):
+        names.append(raw + ".exe")
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        if not folder:
+            continue
+        base = Path(folder)
+        try:
+            if cwd is not None and base.resolve() == cwd:
+                continue
+        except OSError:
+            continue
+        for cand in names:
+            hit = base / cand
+            try:
+                if hit.is_file():
+                    return str(hit)
+            except OSError:
+                continue
+    return raw
+
+
+def identity_home(root: Path, principal_id: str) -> Path:
+    """Per-identity directory under identities/."""
+
+    return Path(root) / "identities" / principal_id
+
+
+def secrets_home(root: Path, principal_id: str) -> Path:
+    """Named-secret directory under identities/<id>/secrets/."""
+
+    return identity_home(root, principal_id) / "secrets"
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """mkdir 0o700 and chmod even when the directory already existed."""
+
+    folder = Path(path)
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(folder, 0o700)
+    except OSError:
+        pass
+    return folder
+
+
+def shred_unlink(path: Path | str) -> None:
+    """Overwrite a file with zeros, then unlink. Never follows a symlink."""
+
+    dest = Path(path)
+    try:
+        if dest.is_symlink():
+            dest.unlink()
+            return
+    except OSError:
+        return
+    name = str(dest)
+    try:
+        size = os.path.getsize(name)
+    except OSError:
+        size = 0
+    if size > 0:
+        try:
+            flags = os.O_WRONLY
+            nofollow = getattr(os, "O_NOFOLLOW", 0)
+            if nofollow:
+                flags |= nofollow
+            fd = os.open(name, flags)
+            try:
+                zeros = b"\x00" * min(size, 65536)
+                remaining = size
+                while remaining > 0:
+                    chunk = zeros if remaining >= len(zeros) else b"\x00" * remaining
+                    wrote = os.write(fd, chunk)
+                    if wrote <= 0:
+                        break
+                    remaining -= wrote
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
+    try:
+        os.unlink(name)
+    except OSError:
+        pass
+
+
+def atomic_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
+    """Replace path with data, or leave the previous bytes if this crashes."""
+
+    dest = Path(path)
+    ensure_private_dir(dest.parent)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=dest.name + ".", suffix=".tmp", dir=dest.parent
+    )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_name, mode)
+        os.replace(tmp_name, dest)
+        try:
+            os.chmod(dest, mode)
+        except OSError:
+            pass
+        _fsync_dir(dest.parent)
+    except Exception:
+        shred_unlink(tmp_name)
+        raise
+
+
+def atomic_write_text(path: Path, text: str, *, mode: int = 0o600) -> None:
+    atomic_write(path, text.encode("utf-8"), mode=mode)
+
+
+@contextmanager
+def exclusive(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
+    """Process-wide exclusive lock. Reentrant on the same thread."""
+
+    base = ensure_private_dir(root)
+    lock_path = base / LOCK_NAME
+    key = str(lock_path.resolve(strict=False))
+    held = getattr(_LOCAL, "held", None)
+    if held is None:
+        held = {}
+        _LOCAL.held = held
+    depth = held.get(key, 0)
+    if depth:
+        held[key] = depth + 1
+        try:
+            yield
+        finally:
+            held[key] -= 1
+        return
+    tlock = _thread_lock(key)
+    deadline = time.monotonic() + max(0.0, timeout)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0 or not tlock.acquire(timeout=remaining):
+        raise VaultBusy()
+    fd: int | None = None
+    try:
+        remaining = deadline - time.monotonic()
+        fd = _lock_file(lock_path, remaining)
+        held[key] = 1
+        yield
+    finally:
+        held[key] = 0
+        if fd is not None:
+            _unlock_file(fd)
+        tlock.release()
+
+
+def _thread_lock(key: str) -> threading.RLock:
+    with _GUARD:
+        lock = _THREAD_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _THREAD_LOCKS[key] = lock
+        return lock
+
+
+def _lock_file(path: Path, timeout: float) -> int:
+    ensure_private_dir(path.parent)
+    if path.is_symlink():
+        raise VaultBusy()
+    flags = os.O_RDWR | os.O_CREAT
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow:
+        flags |= nofollow
+    fd = os.open(str(path), flags, 0o600)
+    try:
+        if os.fstat(fd).st_size == 0:
+            os.write(fd, b"\n")
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            os.lseek(fd, 0, os.SEEK_SET)
+            if _try_lock(fd):
+                try:
+                    os.chmod(str(path), 0o600)
+                except OSError:
+                    pass
+                return fd
+            if time.monotonic() >= deadline:
+                raise VaultBusy()
+            time.sleep(0.05)
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _try_lock(fd: int) -> bool:
+    if os.name == "nt":
+        import msvcrt
+
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+
+    try:
+        locker = getattr(fcntl, "flock")
+        locker(fd, getattr(fcntl, "LOCK_EX") | getattr(fcntl, "LOCK_NB"))
+        return True
+    except OSError:
+        return False
+
+
+def _unlock_file(fd: int) -> None:
+    try:
+        os.lseek(fd, 0, os.SEEK_SET)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            getattr(fcntl, "flock")(fd, getattr(fcntl, "LOCK_UN"))
+    except OSError:
+        pass
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
+def _fsync_dir(folder: Path) -> None:
+    try:
+        dir_fd = os.open(str(folder), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        return
+    finally:
+        os.close(dir_fd)

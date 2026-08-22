@@ -1,0 +1,165 @@
+"""Regression: black-box agent tasks against the installed CLI.
+
+Fresh agents using only --help hit these: doctor missed a broken vault,
+unknown binds omitted the bad value, store errors were a bare 'error',
+unbound wallet address had no next step, and email connect without
+--domain looked like success.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from tests.support import cli_env, run_cli
+
+
+def _corrupt_wallet_key(vault: Path) -> None:
+    path = next(Path(vault).rglob("wallet.key.sops"))
+    path.write_text(
+        '{\n\t"data": "ENC[AES256_GCM,data:CORRUPTED"\n',
+        encoding="utf-8",
+    )
+
+
+def _write_wallet_binding(vault: Path, name: str) -> None:
+    path = Path(vault) / "config.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["wallet_backend"] = name
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def test_unbound_wallet_address_points_to_init(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    proc = run_cli(["wallet", "address"], env)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "unbound caller" in proc.stderr
+    assert "next: agentself init" in proc.stderr
+    js = run_cli(["--json", "wallet", "address"], env)
+    assert js.returncode == 2, js.stdout + js.stderr
+    data = json.loads(js.stderr)
+    assert data["ok"] is False
+    assert data["error"] == "refused"
+    assert data["reason"] == "unbound caller"
+    assert data["next"] == "agentself init"
+
+
+def test_unknown_bind_typo_names_value_and_suggestion(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    env["AGENTSELF_WALLET_BACKEND"] = "basee"
+    proc = run_cli(["show"], env)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "unknown wallet backend: basee" in proc.stderr
+    assert "did you mean base?" in proc.stderr
+    assert "next: agentself backends wallet" in proc.stderr
+    js = run_cli(["--json", "show"], env)
+    data = json.loads(js.stderr)
+    assert data["ok"] is False
+    assert "basee" in data["reason"]
+    assert "did you mean base?" in data["reason"]
+    assert data["next"] == "agentself backends wallet"
+
+
+def test_doctor_unknown_wallet_bind_is_not_ok(tmp_path):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+    _write_wallet_binding(vault, "basee")
+    proc = run_cli(["diagnose"], env)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "wallet_backend: basee" in proc.stdout
+    assert "unknown wallet backend: basee" in proc.stderr
+    assert "did you mean base?" in proc.stderr
+    assert "next: agentself backends wallet" in proc.stderr
+    js = run_cli(["--json", "diagnose"], env)
+    assert js.returncode == 1, js.stdout + js.stderr
+    data = json.loads(js.stderr)
+    assert data["ok"] is False
+    assert data["wallet_backend"] == "basee"
+    assert data["reason"] == "unknown wallet backend: basee (did you mean base?)"
+    assert data["next"] == "agentself backends wallet"
+    assert "AGE-SECRET-KEY" not in proc.stdout + proc.stderr + js.stdout + js.stderr
+
+
+def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+    _corrupt_wallet_key(vault)
+    doctor = run_cli(["diagnose"], env)
+    assert doctor.returncode == 1, doctor.stdout + doctor.stderr
+    assert "cannot read wallet.key" in doctor.stderr
+    assert "AGE-SECRET-KEY" not in doctor.stdout + doctor.stderr
+    addr = run_cli(["wallet", "address"], env)
+    assert addr.returncode == 1, addr.stdout + addr.stderr
+    assert addr.stderr == "error: cannot read wallet.key\nnext: agentself diagnose\n"
+    js = run_cli(["--json", "wallet", "address"], env)
+    assert js.returncode == 1, js.stdout + js.stderr
+    data = json.loads(js.stderr)
+    assert data == {
+        "ok": False,
+        "error": "error",
+        "reason": "cannot read wallet.key",
+        "next": "agentself diagnose",
+    }
+    assert "AGE-SECRET-KEY" not in js.stdout + js.stderr
+
+
+def test_failed_init_does_not_persist_bind_change(tmp_path):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+    _write_wallet_binding(vault, "basee")
+    _corrupt_wallet_key(vault)
+    proc = run_cli(["init", "--wallet", "base"], env)
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    cfg = json.loads((vault / "config.json").read_text(encoding="utf-8"))
+    assert cfg["wallet_backend"] == "basee"
+
+
+def test_email_connect_without_domain_refuses(tmp_path):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+    proc = run_cli(["email", "connect"], env)
+    assert proc.returncode == 3, proc.stdout + proc.stderr
+    assert "need email.send.token" in proc.stderr
+    assert "need --domain" not in proc.stderr
+    js = run_cli(["--json", "email", "connect"], env)
+    assert js.returncode == 3, js.stdout + js.stderr
+    data = json.loads(js.stderr)
+    assert data["ok"] is False
+    assert data["reason"] == "need email.send.token"
+    assert data["next"] == "agentself secret create email.send.token"
+
+
+def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsys):
+    from agentself.cli.app import main
+
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+
+    class Tty:
+        def isatty(self) -> bool:
+            return True
+
+        def read(self) -> str:
+            raise AssertionError("must not read")
+
+    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("AGENTSELF_TOOLS", env["AGENTSELF_TOOLS"])
+    monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "0")
+    monkeypatch.setattr("agentself.cli.app.sys.stdin", Tty())
+    code = main(["secret", "create", "notes"])
+    captured = capsys.readouterr()
+    assert code == 3, captured.out + captured.err
+    assert captured.err == (
+        "missing: need a value\nnext: agentself secret create --help\n"
+    )
