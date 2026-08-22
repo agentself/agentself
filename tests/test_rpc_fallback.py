@@ -149,6 +149,111 @@ def test_ethereum_empty_rpc_does_not_invent_fallbacks():
     assert wallet._rpc_urls() == []
 
 
+OVERRIDE = "https://rpc.example.invalid/base"
+
+
+def test_explicit_rpc_url_skips_base_fallbacks():
+    opener = FakeRpcOpener()
+    opener.fail(OVERRIDE, 403)
+    opener.ok(PUBLICNODE)
+    opener.ok(DRPC)
+    wallet = _key_wallet(opener, rpc_url=OVERRIDE)
+    assert wallet._rpc_urls() == [OVERRIDE]
+    with pytest.raises(WalletError, match="rpc failed"):
+        wallet.balance("P")
+    assert opener.urls == [OVERRIDE]
+    assert MAINNET not in opener.urls
+    assert PUBLICNODE not in opener.urls
+    assert DRPC not in opener.urls
+
+
+def test_explicit_default_url_still_fails_closed():
+    opener = FakeRpcOpener()
+    opener.fail(MAINNET, 403)
+    opener.ok(PUBLICNODE)
+    wallet = _key_wallet(opener, rpc_url=MAINNET)
+    assert wallet._rpc_urls() == [MAINNET]
+    with pytest.raises(WalletError, match="rpc failed"):
+        wallet.balance("P")
+    assert opener.urls == [MAINNET]
+    assert PUBLICNODE not in opener.urls
+    assert DRPC not in opener.urls
+
+
+def test_factory_base_without_override_keeps_fallbacks():
+    wallet = WalletAccessFactory(MemoryLog()).for_binding("base")
+    assert wallet._rpc_urls() == [MAINNET, PUBLICNODE, DRPC]
+
+
+def test_factory_base_override_does_not_fallback():
+    opener = FakeRpcOpener()
+    opener.fail(OVERRIDE, 403)
+    opener.ok(PUBLICNODE)
+    wallet = WalletAccessFactory(
+        MemoryLog(), eth_rpc_url=OVERRIDE, rpc_opener=opener
+    ).for_binding("base")
+    wallet.bind_key(generate_secp256k1())
+    with pytest.raises(WalletError, match="rpc failed"):
+        wallet.balance("P")
+    assert opener.urls == [OVERRIDE]
+    assert MAINNET not in opener.urls
+    assert PUBLICNODE not in opener.urls
+
+
+def test_gateway_override_reason_rpc(vault, monkeypatch):
+    opener = FakeRpcOpener()
+    opener.fail(OVERRIDE, 403)
+    opener.ok(PUBLICNODE)
+    app = build_app(vault, rpc_opener=opener, eth_rpc_url=OVERRIDE)
+    enroll_principal(app, monkeypatch)
+    with pytest.raises(ChannelFailure) as caught:
+        app.gateway.wallet_balance()
+    assert caught.value.reason == "rpc"
+    assert opener.urls == [OVERRIDE]
+    assert MAINNET not in opener.urls
+    assert PUBLICNODE not in opener.urls
+
+
+def test_cli_override_rpc_json_error_rpc_no_fallback(tmp_path, monkeypatch, capsys):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    start = run_cli(["init"], env)
+    assert start.returncode == 0, start.stderr
+    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", env["AGENTSELF_VAULT_ROOT"])
+    monkeypatch.setenv("PATH", env["PATH"])
+    monkeypatch.setenv("AGENTSELF_ETH_RPC_URL", OVERRIDE)
+    for key in (
+        "AGENTSELF_MAIL_DOMAIN",
+        "AGENTSELF_IDENTITY_ID",
+        "AGE_KEY_FILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    opener = FakeRpcOpener()
+    opener.fail(OVERRIDE, 403)
+    opener.ok(PUBLICNODE)
+    opener.ok(DRPC)
+
+    def wrapped(*args, **kwargs):
+        kwargs.setdefault("rpc_opener", opener)
+        return real_compose(*args, **kwargs)
+
+    monkeypatch.setattr("agentself.cli.app.compose", wrapped, raising=False)
+    code = main(["--json", "wallet", "balance"])
+    captured = capsys.readouterr()
+    assert code == 1, captured.out + captured.err
+    assert "Traceback" not in captured.out
+    assert "Traceback" not in captured.err
+    err = json.loads(captured.out or captured.err)
+    assert err["ok"] is False
+    assert err["error"] == "error"
+    assert err["reason"] == "rpc"
+    assert "next" in err
+    assert opener.urls == [OVERRIDE]
+    assert MAINNET not in opener.urls
+    assert PUBLICNODE not in opener.urls
+    assert DRPC not in opener.urls
+
+
 def test_injected_mock_rpc_never_calls_opener():
     opener = FakeRpcOpener()
     opener.fail_all(403)

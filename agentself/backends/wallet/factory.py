@@ -46,6 +46,7 @@ class WalletAccessFactory:
         return BaseWalletAccess(
             self._log,
             rpc=self._rpc,
+            rpc_url=self._eth_rpc_url or None,
             rpc_opener=self._rpc_opener,
             vault_root=self._root,
         )

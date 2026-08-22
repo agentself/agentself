@@ -53,7 +53,12 @@ class ChainWalletAccess(WalletAccess):
     ) -> None:
         self._log = log
         self._rpc = rpc
-        self._rpc_url = (rpc_url if rpc_url is not None else self.default_rpc).strip()
+        if rpc_url is None:
+            self._rpc_url = self.default_rpc.strip()
+            self._rpc_override = False
+        else:
+            self._rpc_url = rpc_url.strip()
+            self._rpc_override = bool(self._rpc_url)
         self._rpc_opener = rpc_opener
         self._http: HttpJsonRpc | None = None
         self.usdc = to_checksum_address(self.usdc)
@@ -311,6 +316,9 @@ class ChainWalletAccess(WalletAccess):
 
     def _rpc_urls(self) -> list[str]:
         extras = list(getattr(self, "fallback_rpcs", ()) or ())
+        # Built-in fallbacks only apply to the default public RPC.
+        if self._rpc_override:
+            extras = []
         return _dedup_urls(self._rpc_url, extras)
 
     def _http_client(self) -> HttpJsonRpc:
