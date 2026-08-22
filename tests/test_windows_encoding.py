@@ -10,7 +10,16 @@ from pathlib import Path
 
 import pytest
 
+from agentself.internal.text import strip_one_trailing_newline
+
 from tests.support import cli_env, run_cli, value_file
+
+
+def test_strip_one_trailing_newline_accepts_cr_lf_and_crlf() -> None:
+    assert strip_one_trailing_newline("am_key\r\n") == "am_key"
+    assert strip_one_trailing_newline("am_key\n") == "am_key"
+    assert strip_one_trailing_newline("am_key\r") == "am_key"
+    assert strip_one_trailing_newline("am_key") == "am_key"
 
 
 def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(

@@ -55,7 +55,7 @@ from agentself.internal.setup import (
     continue_command,
     setup_status_of,
 )
-from agentself.internal.text import sha256_text
+from agentself.internal.text import UTF8_BOM, sha256_text, strip_one_trailing_newline
 from agentself.local import (
     DEFAULT_IDENTITY,
     VaultStateError,
@@ -1050,11 +1050,24 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
             ):
                 sys.stdout.write("Checking the credential...\n")
                 setattr(args, "_interactive_email_credential_stored", True)
-            nxt = _gateway(vault).email_connect(
-                answers=prompted,
-                state=str(result.get("state") or "") or None,
-            )
+            try:
+                nxt = _gateway(vault).email_connect(
+                    answers=prompted,
+                    state=str(result.get("state") or "") or None,
+                )
+            except ChannelFailure as exc:
+                return _email_connect_channel_fail(args, exc)
+            except StoreFailure as exc:
+                return _store_fail(args, exc)
             return _email_connect_result(vault, args, nxt)
+        return _fail(
+            args,
+            3,
+            "nothing entered\n",
+            "missing",
+            "nothing entered",
+            nxt="agentself email connect",
+        )
     return _email_setup_pending(args, result, status)
 
 
@@ -1083,9 +1096,6 @@ def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
     action = option.get("action")
     if isinstance(action, dict):
         _print_setup_action(action)
-    help_text = str(option.get("help") or "").strip()
-    if help_text:
-        sys.stdout.write(help_text + "\n\n")
     prompt = str(option.get("prompt") or name).strip()
     option_type = str(option.get("type") or "string").strip().lower()
     sensitive = option_type == "secret" or bool(option.get("sensitive"))
@@ -1105,6 +1115,7 @@ def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
             return {}
         suffix = " (input is hidden)" if sensitive else ""
         sys.stdout.write(f"{prompt}{suffix}: ")
+        sys.stdout.flush()
         if sensitive:
             try:
                 value = getpass.getpass("", stream=sys.stdout)
@@ -1114,6 +1125,11 @@ def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
             value = input("")
     except EOFError:
         return {}
+    if not value:
+        return {}
+    if value.startswith(UTF8_BOM):
+        value = value[len(UTF8_BOM) :]
+    value = strip_one_trailing_newline(value)
     if not value:
         return {}
     return {name: value}
@@ -1187,13 +1203,18 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             nxt="agentself --json email connect",
         )
     if reason == "invalid_credential":
+        nxt = (
+            "agentself --json email connect"
+            if _as_json(args)
+            else "agentself email connect"
+        )
         return _fail(
             args,
             1,
             "error: invalid credentials\n",
             "error",
             "invalid credentials",
-            nxt="agentself --json email connect",
+            nxt=nxt,
         )
     return _fail(
         args,

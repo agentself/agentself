@@ -18,7 +18,7 @@ def decode_utf8(data: bytes) -> str:
 def strip_one_trailing_newline(text: str) -> str:
     if text.endswith("\r\n"):
         return text[:-2]
-    if text.endswith("\n"):
+    if text.endswith("\n") or text.endswith("\r"):
         return text[:-1]
     return text
 

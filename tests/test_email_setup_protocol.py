@@ -250,6 +250,7 @@ def test_human_renderer_consumes_generic_secret_action_and_choice(
     assert "Open provider console:" in output.out
     assert "https://provider.example/keys" in output.out
     assert "Paste the provider credential (input is hidden):" in output.out
+    assert "Create a credential in the provider console." not in output.out
     assert "1. assistant@example.com" in output.out
     assert "2. support@example.com" in output.out
     assert "Checking the credential..." in output.out
@@ -258,6 +259,103 @@ def test_human_renderer_consumes_generic_secret_action_and_choice(
         "The credential is encrypted in this identity.\n"
     )
     assert CREDENTIAL not in output.out
+
+
+def test_human_renderer_empty_secret_does_not_print_continue(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(
+                credential_option(
+                    prompt="Paste the provider credential",
+                    help="AGENT PROCEDURE DO NOT PRINT",
+                    action={
+                        "kind": "open_url",
+                        "label": "Open provider console",
+                        "url": "https://provider.example/keys",
+                    },
+                )
+            )
+        return mailbox_view("agent@example.com", owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: "",
+    )
+    assert main(["email", "connect"]) == 3
+    output = capsys.readouterr()
+    assert "AGENT PROCEDURE DO NOT PRINT" not in output.out + output.err
+    assert "nothing entered" in output.err
+    assert "--continue" not in output.err
+    assert "--result-file" not in output.err
+    assert "https://provider.example/keys" in output.out
+
+
+def test_human_renderer_strips_windows_trailing_cr(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(credential_option())
+        assert "\r" not in secret
+        assert secret == CREDENTIAL
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: CREDENTIAL + "\r",
+    )
+    assert main(["email", "connect"]) == 0
+    output = capsys.readouterr()
+    assert f"Connected: {ADDRESS}\n" in output.out
+    assert CREDENTIAL not in output.out
+
+
+def test_human_renderer_channel_failure_is_not_a_traceback(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(credential_option())
+        raise MailboxError("invalid credentials")
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: CREDENTIAL,
+    )
+    assert main(["email", "connect"]) == 1
+    output = capsys.readouterr()
+    assert "Traceback" not in output.out + output.err
+    assert "ChannelFailure" not in output.out + output.err
+    assert "error: invalid credentials" in output.err
+    assert "next: agentself email connect" in output.err
+    assert CREDENTIAL not in output.out + output.err
 
 
 def test_generic_setup_keeps_public_surfaces_provider_neutral() -> None:
