@@ -23,7 +23,7 @@ def require_secret(value: str | None) -> str:
     if not token:
         raise MailboxError("missing credentials")
     if any(ord(ch) < 32 for ch in token):
-        raise MailboxError("rpc failed")
+        raise MailboxError("invalid credentials")
     return token
 
 

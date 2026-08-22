@@ -792,8 +792,6 @@ def _channel_from_mailbox(
 ) -> ChannelFailure:
     msg = str(exc)
     low = msg.lower()
-    cause = exc.__cause__
-    cause_name = type(cause).__name__.lower() if cause is not None else ""
     if has_token is False or (
         "no token" in low
         or "missing credentials" in low
@@ -805,21 +803,22 @@ def _channel_from_mailbox(
         reason = "invalid_credential"
     elif "need address" in low:
         reason = "need_address"
-    elif (
-        "rpc" in low
-        or "http" in low
-        or "network" in low
-        or "timeout" in low
-        or "connection" in low
-        or "urlerror" in low
-        or "urlerror" in cause_name
-        or "timeout" in cause_name
-        or isinstance(cause, (OSError, TimeoutError))
-    ):
+    elif _mailbox_rpc_failure(low, exc.__cause__):
         reason = "rpc"
     else:
         reason = "mailbox_error"
     return ChannelFailure("channel error", reason=reason)
+
+
+def _mailbox_rpc_failure(low: str, cause: BaseException | None) -> bool:
+    if "rpc" in low or "http failed" in low:
+        return True
+    if cause is None:
+        return False
+    if isinstance(cause, (TimeoutError, ConnectionError)):
+        return True
+    cause_name = type(cause).__name__.lower()
+    return "urlerror" in cause_name or cause_name == "timeout"
 
 
 def _channel_from_wallet(exc: BaseException) -> ChannelFailure:

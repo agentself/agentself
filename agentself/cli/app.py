@@ -928,6 +928,7 @@ def _email_connect(vault: Path, args) -> int:
             answers=answers or None,
             state=(getattr(args, "setup_state", "") or "").strip() or None,
         )
+        return _email_connect_result(vault, args, result)
     except UnknownBind as exc:
         return _bind_error(args, exc)
     except UnboundCaller:
@@ -954,7 +955,6 @@ def _email_connect(vault: Path, args) -> int:
         return _store_fail(args, exc)
     except Exception:
         return _fail(args, 1, "error\n", "error")
-    return _email_connect_result(vault, args, result)
 
 
 def _connect_answers(args) -> tuple[dict[str, str], int | None]:
@@ -1039,7 +1039,6 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
         and not _as_json(args)
         and sys.stdin.isatty()
         and sys.stdout.isatty()
-        and not bool(getattr(args, "do_continue", False))
     ):
         prompted = _prompt_setup_option(result)
         if prompted:
@@ -1059,6 +1058,17 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
                 return _email_connect_channel_fail(args, exc)
             except StoreFailure as exc:
                 return _store_fail(args, exc)
+            except HostToolMissing as exc:
+                return _fail(
+                    args,
+                    1,
+                    f"error: {exc}\n",
+                    "error",
+                    str(exc),
+                    nxt=_INSTALL_TOOLS_NEXT,
+                )
+            except Exception:
+                return _fail(args, 1, "error\n", "error")
             return _email_connect_result(vault, args, nxt)
         return _fail(
             args,

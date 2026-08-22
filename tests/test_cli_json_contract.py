@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from agentself import __version__
@@ -345,6 +346,32 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
     assert shown["ready"] is False
     assert shown.get("owned_address") is False
+
+
+def test_json_email_connect_never_prompts_and_keeps_option_help(
+    tmp_path, monkeypatch, capsys
+):
+    _vault, env, _started = _init(tmp_path)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    prompted: list[str] = []
+
+    def no_prompt(_prompt="", **_kwargs):
+        prompted.append("secret")
+        raise AssertionError("--json must not prompt")
+
+    monkeypatch.setattr("agentself.cli.app.getpass.getpass", no_prompt)
+    monkeypatch.setattr("builtins.input", no_prompt)
+    data = _main_err(monkeypatch, capsys, env, ["email", "connect"], error="missing")
+    assert prompted == []
+    assert data["status"] == "input_required"
+    help_text = data["option"]["help"]
+    assert help_text
+    assert "wait for the operator to create and copy one" in help_text
+    assert data["continue"].startswith(
+        "agentself --json email connect --continue --state "
+    )
+    assert "--result-file PATH" in data["continue"]
 
 
 def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, capsys):

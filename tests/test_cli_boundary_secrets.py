@@ -522,7 +522,7 @@ def test_require_secret_rejects_header_injection():
         require_secret("tok\r\nAuthorization: Bearer " + TOKEN_CANARY)
     assert TOKEN_CANARY not in str(caught.value)
     assert "tok" not in str(caught.value)
-    assert str(caught.value) == "rpc failed"
+    assert str(caught.value) == "invalid credentials"
     with pytest.raises(MailboxError, match="missing credentials"):
         require_secret("")
     assert require_secret("ok-token") == "ok-token"

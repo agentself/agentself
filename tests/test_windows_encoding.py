@@ -20,6 +20,10 @@ def test_strip_one_trailing_newline_accepts_cr_lf_and_crlf() -> None:
     assert strip_one_trailing_newline("am_key\n") == "am_key"
     assert strip_one_trailing_newline("am_key\r") == "am_key"
     assert strip_one_trailing_newline("am_key") == "am_key"
+    assert strip_one_trailing_newline("tok\r\nAuthorization: Bearer x") == (
+        "tok\r\nAuthorization: Bearer x"
+    )
+    assert strip_one_trailing_newline("am_key\x00\r") == "am_key\x00"
 
 
 def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(

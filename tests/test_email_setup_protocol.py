@@ -13,12 +13,16 @@ from agentself.backends.email.contract import (
     MailboxAccess,
     MailboxError,
     mailbox_view,
+    require_secret,
     setup_needed,
 )
 from agentself.cli.app import _prompt_setup_option, main
 from agentself.cli.parser import _parser
 from agentself.client import Gateway
-from agentself.internal.custody.manager import CustodyManager
+from agentself.internal.custody.manager import (
+    CustodyManager,
+    _channel_from_mailbox,
+)
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_PENDING,
@@ -356,6 +360,220 @@ def test_human_renderer_channel_failure_is_not_a_traceback(
     assert "error: invalid credentials" in output.err
     assert "next: agentself email connect" in output.err
     assert CREDENTIAL not in output.out + output.err
+
+
+def test_channel_from_mailbox_local_input_is_not_rpc() -> None:
+    paste = MailboxError("credential looks like http header")
+    assert _channel_from_mailbox(paste).reason != "rpc"
+    connection = MailboxError("bad connection string")
+    assert _channel_from_mailbox(connection).reason == "mailbox_error"
+    network_word = MailboxError("network id is required")
+    assert _channel_from_mailbox(network_word).reason == "mailbox_error"
+    timeout_word = MailboxError("timeout waiting for operator")
+    assert _channel_from_mailbox(timeout_word).reason == "mailbox_error"
+    local = MailboxError("no inbox")
+    local.__cause__ = FileNotFoundError("missing")
+    assert _channel_from_mailbox(local).reason == "mailbox_error"
+    http = MailboxError("http failed")
+    assert _channel_from_mailbox(http).reason == "rpc"
+    rpc = MailboxError("rpc failed")
+    assert _channel_from_mailbox(rpc).reason == "rpc"
+    timed = MailboxError("send failed")
+    timed.__cause__ = TimeoutError("timeout")
+    assert _channel_from_mailbox(timed).reason == "rpc"
+    reset = MailboxError("send failed")
+    reset.__cause__ = ConnectionResetError("reset")
+    assert _channel_from_mailbox(reset).reason == "rpc"
+    injected = MailboxError("invalid credentials")
+    assert _channel_from_mailbox(injected).reason == "invalid_credential"
+
+
+def test_human_renderer_control_chars_are_not_rpc(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(
+                credential_option(
+                    prompt="Paste the provider credential",
+                    help="AGENT PROCEDURE DO NOT PRINT",
+                )
+            )
+        require_secret(secret)
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: "tok\r\nAuthorization: Bearer " + CREDENTIAL,
+    )
+    assert main(["email", "connect"]) == 1
+    output = capsys.readouterr()
+    blob = output.out + output.err
+    assert "Traceback" not in blob
+    assert "ChannelFailure" not in blob
+    assert "error: rpc" not in blob
+    assert "AGENT PROCEDURE DO NOT PRINT" not in blob
+    assert "error: invalid credentials" in output.err
+    assert CREDENTIAL not in blob
+
+
+def test_human_renderer_does_not_print_option_help(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+    help_text = (
+        "AGENT PROCEDURE: obtain the value then --continue --state --result-file"
+    )
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(
+                credential_option(
+                    prompt="Paste the provider credential",
+                    help=help_text,
+                    action={
+                        "kind": "open_url",
+                        "label": "Open provider console",
+                        "url": "https://provider.example/keys",
+                    },
+                )
+            )
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: CREDENTIAL,
+    )
+    assert main(["email", "connect"]) == 0
+    output = capsys.readouterr()
+    blob = output.out + output.err
+    assert help_text not in blob
+    assert "--continue" not in blob
+    assert "--result-file" not in blob
+    assert "Open provider console:" in output.out
+    assert "https://provider.example/keys" in output.out
+    assert "Paste the provider credential (input is hidden):" in output.out
+    assert CREDENTIAL not in blob
+
+
+def test_tty_continue_empty_secret_is_nothing_entered(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(credential_option(help="AGENT PROCEDURE DO NOT PRINT"))
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    first = main(["--json", "email", "connect"])
+    captured = capsys.readouterr()
+    assert first == 3
+    state = json.loads(captured.out)["state"]
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: "",
+    )
+    assert main(["email", "connect", "--continue", "--state", state]) == 3
+    output = capsys.readouterr()
+    blob = output.out + output.err
+    assert "nothing entered" in output.err
+    assert "next: agentself email connect" in output.err
+    assert "--continue" not in output.err
+    assert "--result-file" not in output.err
+    assert "--state" not in output.err
+    assert "AGENT PROCEDURE DO NOT PRINT" not in blob
+
+
+def test_human_renderer_unexpected_error_is_not_a_traceback(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(credential_option())
+        raise RuntimeError("ChannelFailure should not leak")
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(
+        "agentself.cli.app.getpass.getpass",
+        lambda _prompt="", **_kwargs: CREDENTIAL,
+    )
+    assert main(["email", "connect"]) == 1
+    output = capsys.readouterr()
+    blob = output.out + output.err
+    assert "Traceback" not in blob
+    assert "ChannelFailure" not in blob
+    assert "RuntimeError" not in blob
+    assert output.err == "error\n"
+    assert CREDENTIAL not in blob
+
+
+def test_json_continue_control_chars_are_not_rpc(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(credential_option(help="AGENT PROCEDURE FOR JSON"))
+        require_secret(secret)
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert "AGENT PROCEDURE FOR JSON" in first["option"]["help"]
+    cred = tmp_path / "credential.txt"
+    cred.write_bytes(b"tok\r\nAuthorization: Bearer paste-artifact")
+    code, failed = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [
+            "--continue",
+            "--state",
+            first["state"],
+            "--result-file",
+            str(cred),
+        ],
+    )
+    assert code == 1
+    assert failed["ok"] is False
+    assert failed["error"] == "error"
+    assert failed["reason"] != "rpc"
+    assert failed["reason"] == "invalid credentials"
+    assert "paste-artifact" not in json.dumps(failed)
 
 
 def test_generic_setup_keeps_public_surfaces_provider_neutral() -> None:
