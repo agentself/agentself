@@ -27,6 +27,7 @@ from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
 )
+from agentself.internal.gpg import bindable_home
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
 
@@ -277,7 +278,7 @@ def _have_tool(name: str) -> bool:
 
 def _pass_env(gnupg: Path, store_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
-    env["GNUPGHOME"] = str(gnupg)
+    env["GNUPGHOME"] = str(bindable_home(gnupg))
     env["PASSWORD_STORE_DIR"] = str(store_dir)
     env["PASSWORD_STORE_GPG_OPTS"] = "--pinentry-mode loopback --batch"
     env["GPG_TTY"] = ""
@@ -308,12 +309,48 @@ def _run_host(
         raise RuntimeError(failed) from None
 
 
+def _host_failure_message(prefix: str, proc: subprocess.CompletedProcess[bytes]) -> str:
+    """One line. Never a secret value."""
+
+    raw = (proc.stderr or b"") + b"\n" + (proc.stdout or b"")
+    text = raw.decode("utf-8", "replace")
+    detail = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lower = stripped.lower()
+        if lower.startswith("gpg: generating") or lower in ("gpg: done",):
+            continue
+        if stripped.startswith("%"):
+            continue
+        for head in ("gpg-agent:", "gpg:"):
+            if stripped.startswith(head):
+                stripped = stripped[len(head) :].strip()
+                break
+        else:
+            stripped = _strip_gpg_agent_prefix(stripped)
+        detail = stripped
+    msg = f"{prefix}: {detail}" if detail else prefix
+    return redact_secrets(" ".join(msg.split()))
+
+
+def _strip_gpg_agent_prefix(line: str) -> str:
+    if line.startswith("gpg-agent[") and ":" in line:
+        return line.split(":", 1)[1].strip()
+    return line
+
+
+def _raise_host_failed(prefix: str, proc: subprocess.CompletedProcess[bytes]) -> None:
+    raise RuntimeError(_host_failure_message(prefix, proc))
+
+
 def _gpg_has_secret(env: dict[str, str], gnupg: Path) -> bool:
     proc = _run_host(
         [
             "gpg",
             "--homedir",
-            str(gnupg),
+            env["GNUPGHOME"],
             "--batch",
             "--list-secret-keys",
             "--with-colons",
@@ -356,7 +393,7 @@ def _generate_principal_gpg(
             [
                 "gpg",
                 "--homedir",
-                str(gnupg),
+                env["GNUPGHOME"],
                 "--batch",
                 "--pinentry-mode",
                 "loopback",
@@ -368,7 +405,7 @@ def _generate_principal_gpg(
             failed="gpg keygen failed",
         )
         if proc.returncode != 0:
-            raise RuntimeError("gpg keygen failed")
+            _raise_host_failed("gpg keygen failed", proc)
     finally:
         shred_unlink(batch)
 
@@ -378,7 +415,7 @@ def _gpg_fingerprint(env: dict[str, str], gnupg: Path) -> str:
         [
             "gpg",
             "--homedir",
-            str(gnupg),
+            env["GNUPGHOME"],
             "--batch",
             "--list-secret-keys",
             "--with-colons",
@@ -387,7 +424,7 @@ def _gpg_fingerprint(env: dict[str, str], gnupg: Path) -> str:
         failed="failed to read GPG fingerprint",
     )
     if proc.returncode != 0:
-        raise RuntimeError("failed to read GPG fingerprint")
+        _raise_host_failed("failed to read GPG fingerprint", proc)
     try:
         text = proc.stdout.decode("utf-8")
     except UnicodeDecodeError:
@@ -410,7 +447,7 @@ def _pass_init(env: dict[str, str], store_dir: Path, fingerprint: str) -> None:
         failed="pass init failed",
     )
     if proc.returncode != 0 or not (store_dir / ".gpg-id").is_file():
-        raise RuntimeError("pass init failed")
+        _raise_host_failed("pass init failed", proc)
 
 
 def _read_config(vault: Path) -> dict[str, str]:

@@ -795,6 +795,9 @@ def _start(vault: Path, args) -> int:
             "age not on PATH",
             nxt=_INSTALL_TOOLS_NEXT,
         )
+    except RuntimeError as exc:
+        detail = redact_secrets(str(exc).strip()) or "error"
+        return _fail(args, 1, f"error: {detail}\n", "error", detail)
     except Exception:
         return _fail(args, 1, "error\n", "error")
 

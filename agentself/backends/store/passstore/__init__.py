@@ -11,6 +11,7 @@ from agentself.backends.store.contract import (
 )
 from agentself.backends.store.run import run_cmd
 from agentself.internal.files import VaultBusy, exclusive, identity_home
+from agentself.internal.gpg import bindable_home
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 
@@ -121,7 +122,7 @@ class PassStoreAccess(StoreAccess):
 
     def _env(self, principal_id: str) -> dict[str, str]:
         env = os.environ.copy()
-        env["GNUPGHOME"] = str(self._gpg_home(principal_id))
+        env["GNUPGHOME"] = str(bindable_home(self._gpg_home(principal_id)))
         env["PASSWORD_STORE_DIR"] = str(self._store_dir(principal_id))
         env["PASSWORD_STORE_GPG_OPTS"] = "--pinentry-mode loopback --batch"
         env["GPG_TTY"] = ""
