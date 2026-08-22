@@ -1043,6 +1043,13 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
     ):
         prompted = _prompt_setup_option(result)
         if prompted:
+            option = result.get("option")
+            if isinstance(option, dict) and (
+                str(option.get("type") or "").strip().lower() == "secret"
+                or bool(option.get("sensitive"))
+            ):
+                sys.stdout.write("Checking the credential...\n")
+                setattr(args, "_interactive_email_credential_stored", True)
             nxt = _gateway(vault).email_connect(
                 answers=prompted,
                 state=str(result.get("state") or "") or None,
@@ -1051,20 +1058,60 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
     return _email_setup_pending(args, result, status)
 
 
+def _print_setup_action(action: dict[str, object]) -> None:
+    """Display a backend-provided external action without interpreting it."""
+
+    label = str(action.get("label") or "Open link").strip()
+    url = str(action.get("url") or "").strip()
+    if not url:
+        return
+    sys.stdout.write(f"{label}:\n{url}\n\n")
+
+
 def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
+    """Render one backend-provided setup request for a human operator."""
+
     option = result.get("option")
     if not isinstance(option, dict):
         return {}
     name = str(option.get("name") or "").strip()
     if not name:
         return {}
-    help_text = str(option.get("help") or name)
-    sensitive = bool(option.get("sensitive"))
+    words = name.replace("_", " ")
+    article = "an" if words[:1].lower() in "aeiou" else "a"
+    sys.stdout.write(f"Email setup needs {article} {words}.\n\n")
+    action = option.get("action")
+    if isinstance(action, dict):
+        _print_setup_action(action)
+    help_text = str(option.get("help") or "").strip()
+    if help_text:
+        sys.stdout.write(help_text + "\n\n")
+    prompt = str(option.get("prompt") or name).strip()
+    option_type = str(option.get("type") or "string").strip().lower()
+    sensitive = option_type == "secret" or bool(option.get("sensitive"))
+    choices = [
+        str(choice).strip()
+        for choice in (option.get("choices") or [])
+        if str(choice).strip()
+    ]
     try:
+        if option_type == "choice" and choices:
+            sys.stdout.write(prompt + ":\n")
+            for index, choice in enumerate(choices, 1):
+                sys.stdout.write(f"{index}. {choice}\n")
+            raw = input(f"Choose [1-{len(choices)}]: ").strip()
+            if raw.isdigit() and 1 <= int(raw) <= len(choices):
+                return {name: choices[int(raw) - 1]}
+            return {}
+        suffix = " (input is hidden)" if sensitive else ""
+        sys.stdout.write(f"{prompt}{suffix}: ")
         if sensitive:
-            value = getpass.getpass(f"{name}: ")
+            try:
+                value = getpass.getpass("", stream=sys.stdout)
+            except TypeError:
+                value = getpass.getpass("")
         else:
-            value = input(f"{name} ({help_text}): ")
+            value = input("")
     except EOFError:
         return {}
     if not value:
@@ -1458,7 +1505,12 @@ def _email_connect_ok(args, address: str | None) -> int:
     if _as_json(args):
         return _emit_ok(args, {"address": addr, "status": SETUP_CONNECTED})
     if addr:
-        sys.stdout.write(f"email: {addr}\n")
+        if bool(getattr(args, "_interactive_email_credential_stored", False)):
+            sys.stdout.write(
+                f"Connected: {addr}\nThe credential is encrypted in this identity.\n"
+            )
+        else:
+            sys.stdout.write(f"email: {addr}\n")
     else:
         sys.stdout.write("email: not configured\n")
     return 0

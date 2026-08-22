@@ -110,7 +110,7 @@ CLI flag > environment variable > saved configuration > default
 
 There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific options. Each option's `help` is the procedure: how to get the value, which env var to use, and what to do if you cannot. Public commands never grow provider verbs or flags. Switching email backends is `init --force --email NAME`, not continue.
 
-Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. Environment credentials are not copied into the vault.
+Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. Environment credentials are transient and are not copied into the vault. Provide `AGENTSELF_EMAIL_CREDENTIAL` or the backend alias on every email invocation that needs a transient credential. If the credential owns multiple inboxes, also provide `AGENTSELF_EMAIL_ADDRESS`; the selected address must be one the provider lists as owned.
 
 `--json email connect` never prompts. When input or a human action is required it exits `3` with a generic setup object. Continue with:
 
@@ -120,12 +120,23 @@ agentself --json email connect --continue --state STATE --result-file PATH
 
 Sensitive answers come from `--result-file`, stdin, or a hidden prompt, never from argv.
 
+Non-JSON `agentself email connect` uses the same generic setup protocol as JSON, but renders it as a guided terminal flow. When a backend requests human action, it displays the backend-provided link and help, collects secrets with hidden input, and renders choices as a numbered prompt. An agent should first check the approved automated sources in the setup option; if none is available, run the interactive command and tell the human: open the displayed link, copy the requested value, and paste it into the secure prompt. The human does not create a result file, copy opaque state, or run a continuation command.
+
+For AgentMail, follow the [official signup procedure](https://docs.agentmail.to/api-reference/agent/sign-up) only for a first-time, unclaimed signup and capture the API key from its HTTP response. This is not claimed-organization recovery. Otherwise, create a key under API Keys at <https://console.agentmail.to>. The OTP or confirmation email does not contain the key. A key is shown once and cannot be retrieved; create another if it is lost. Signing into the console is not a documented way to attach an already-claimed organization.
+
 One identity lives in one directory, `~/.agentself` by default. Use `AGENTSELF_VAULT_ROOT` to isolate identities:
 
 ```bash
 AGENTSELF_VAULT_ROOT=~/.agent-a agentself init
 AGENTSELF_VAULT_ROOT=~/.agent-b agentself init
 ```
+
+Choose the identity flow deliberately:
+
+- Fresh sandbox, transient credential: set `AGENTSELF_EMAIL_CREDENTIAL` or the backend alias on every email invocation. Set `AGENTSELF_EMAIL_ADDRESS` when selecting among multiple verified-owned inboxes.
+- Fresh sandbox, durable identity: complete `email connect` with `--result-file`; the credential is encrypted into that isolated identity.
+- Same identity on another host: use `backup` and `restore`. This copies the whole identity, including its wallet and every secret.
+- Distinct agents: give each agent an isolated vault and inject only the credentials it needs. Do not share a whole vault between distinct agents.
 
 ## Automation and agents
 

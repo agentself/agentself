@@ -393,7 +393,7 @@ def test_send_poster_timeout_fail_closed(vault):
     _no_local_outbox(vault)
 
 
-def test_describe_hold_or_none_zero_http(vault):
+def test_describe_address_without_token_is_not_owned(vault):
     log = MemoryLog()
     http = Http()
     mb = _box(vault, log, http, domain="agentmail.to")
@@ -402,11 +402,11 @@ def test_describe_hold_or_none_zero_http(vault):
     assert none["address"] is None
     assert none["needs_domain"] is False
     assert TAKEN not in str(none)
-    held = mb.describe(PRINCIPAL, address=OURS, send_token=CANARY)
-    assert held["owned_address"] is True
-    assert held["address"] == OURS
-    assert held["needs_domain"] is False
-    assert TAKEN not in str(held)
+    unverified = mb.describe(PRINCIPAL, address=OURS)
+    assert unverified["owned_address"] is False
+    assert unverified["address"] is None
+    assert unverified["needs_domain"] is False
+    assert TAKEN not in str(unverified)
     assert http.gets == []
     assert http.posts == []
     _secret_absent(log)
@@ -425,7 +425,6 @@ def test_describe_discovers_unique_inbox(vault):
     assert desc["owned_address"] is True
     assert desc["address"] == OURS
     assert desc["needs_domain"] is False
-    assert TAKEN not in str(desc)
     _secret_absent(log)
 
 
@@ -618,6 +617,10 @@ def test_connect_no_token_zero_http(vault):
     desc = mb.connect(PRINCIPAL)
     assert desc["status"] == "input_required"
     assert desc["option"]["name"] == "credential"
+    selected = mb.connect(PRINCIPAL, address=OURS)
+    assert selected["status"] == "input_required"
+    assert selected["option"]["name"] == "credential"
+    assert not selected.get("owned_address")
     assert http.gets == []
     assert http.posts == []
     _secret_absent(log)
@@ -625,15 +628,36 @@ def test_connect_no_token_zero_http(vault):
     assert f"{PRINCIPAL}@agentmail.to" not in str(desc)
 
 
-def test_connect_hold_zero_http(vault):
+def test_connect_selected_address_verifies_live_ownership(vault):
     log = MemoryLog()
     http = Http()
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": "inb_selected", "email": OURS}]},
+    )
     mb = _box(vault, log, http)
     desc = mb.connect(PRINCIPAL, send_token=CANARY, address=OURS)
     assert desc["owned_address"] is True
     assert desc["address"] == OURS
-    assert http.gets == []
+    assert len(http.gets) == 1
     assert http.posts == []
+    _secret_absent(log)
+
+
+def test_connect_selected_unknown_address_fails_without_local_state(vault):
+    log = MemoryLog()
+    http = Http()
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": "inb_other", "email": TAKEN}]},
+    )
+    mb = _box(vault, log, http)
+    with pytest.raises(MailboxError, match="no inbox"):
+        mb.connect(PRINCIPAL, send_token=CANARY, address=OURS)
+    assert http.posts == []
+    assert not (identity_home(vault, PRINCIPAL) / "agentmail").exists()
     _secret_absent(log)
 
 
@@ -705,7 +729,7 @@ def test_connect_many_inboxes_need_address_no_post(vault):
     assert desc["option"]["name"] == "address"
     assert http.posts == []
     _secret_absent(log)
-    assert TAKEN not in str(desc)
+    assert desc["option"]["choices"] == [TAKEN, OURS]
 
 
 @pytest.mark.parametrize("status", [401, 403])

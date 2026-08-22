@@ -333,7 +333,7 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     assert connected["continue"].startswith(
         "agentself --json email connect --continue --state "
     )
-    assert connected["human_action_required"] is False
+    assert connected["human_action_required"] is True
     assert connected["option"]["name"] == "credential"
     shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
     assert shown["ready"] is False

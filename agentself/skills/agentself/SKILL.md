@@ -48,6 +48,28 @@ agentself backends wallet
 
 `--json email connect` never prompts. On exit 3, read `option.help` — that text is the procedure. If `message` is present, read it too. Obtain the value with other tools or ask the operator. Continue with `agentself --json email connect --continue --state STATE --result-file PATH`. Sensitive answers go in the file, not argv. If you cannot obtain the value, `agentself backends email` then `init --force --email OTHER`, or stop. Do not invent `{id}@domain`. Do not switch backends with `--continue`.
 
+## Human assistance
+
+When a setup response has `human_action_required: true`, first check the approved automated credential sources named by the generic option metadata (`source`, the isolated vault, or an already-authorized tool). Keep secret values out of logs, arguments, and chat. If no approved automated value is available, run the generic interactive flow:
+
+```bash
+agentself email connect
+```
+
+Use the link and instructions rendered by that flow. Give the human one simple instruction: open the displayed link, copy the requested value, and paste it into the secure prompt. Then wait for the command to finish and verify the result with `agentself --json email show`. The human does not create a result file, type a vault path, copy opaque state, or run a continuation command. The option's `type`, `sensitive`, `prompt`, `help`, and optional `action` metadata are backend-provided; keep the procedure provider-neutral.
+
+For AgentMail, use <https://docs.agentmail.to/api-reference/agent/sign-up> only for a first-time, unclaimed signup and capture the key from its HTTP response. This is not claimed-organization recovery. Otherwise, create a key under API Keys in the console. The OTP or confirmation email has no key. Keys are shown once; create another if one is lost. Treat console attachment to an already-claimed organization as unsupported unless AgentMail documents it.
+
+## Fresh sandbox
+
+Choose one mode:
+
+- Transient: provide `AGENTSELF_EMAIL_CREDENTIAL` or the backend alias on every email invocation. When the key owns multiple inboxes, also provide `AGENTSELF_EMAIL_ADDRESS` with a provider-listed address.
+- Durable: continue `email connect` with `--result-file`; this stores the credential in the current isolated identity.
+- Same-identity migration: use `backup` and `restore`; this clones the wallet and every secret.
+
+Give distinct agents distinct `AGENTSELF_VAULT_ROOT` directories and inject only the credentials each needs.
+
 ## Skills
 
 ```bash

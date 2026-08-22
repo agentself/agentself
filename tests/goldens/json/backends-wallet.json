@@ -49,7 +49,9 @@
             "default": null,
             "choices": [],
             "source": "AGENTSELF_ETH_RPC_URL",
-            "help": "JSON-RPC URL override"
+            "help": "JSON-RPC URL override",
+            "prompt": "rpc_url",
+            "action": null
           }
         ]
       }

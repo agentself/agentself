@@ -310,7 +310,7 @@ class CustodyManager:
                 incoming[asked] = raw_value
         else:
             incoming.pop("value", None)
-        address, credential, _sources = self._resolve_email_inputs(principal, incoming)
+        address, credential, sources = self._resolve_email_inputs(principal, incoming)
         mailbox = self._mailbox_for(principal, "email_connect")
         try:
             desc = mailbox.connect(
@@ -326,7 +326,7 @@ class CustodyManager:
         if status == SETUP_CONNECTED:
             self._persist_setup_answers(principal, incoming)
             view = _email_view(desc)
-            self._persist_email_success(principal, view)
+            self._persist_email_success(principal, view, sources.get(OPTION_ADDRESS))
             view["status"] = SETUP_CONNECTED
             self._log.record("email_connect", principal.id, None, "ok")
             return view
@@ -364,8 +364,9 @@ class CustodyManager:
         hold_owner: str | None = None,
     ) -> None:
         principal = self._own_hold(caller, hold_owner, "email_send", None)
-        token = self._optional_hold_value(principal, SEND_TOKEN_NAME, "email_send")
-        address = self._optional_hold_value(principal, EMAIL_ADDRESS_NAME, "email_send")
+        address, token, _sources = self._resolve_email_inputs(
+            principal, {}, "email_send"
+        )
         mailbox = self._mailbox_for(principal, "email_send")
         try:
             desc = mailbox.describe(principal.id, send_token=token, address=address)
@@ -396,8 +397,9 @@ class CustodyManager:
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         principal = self._own_hold(caller, hold_owner, "email_recv", None)
-        token = self._optional_hold_value(principal, SEND_TOKEN_NAME, "email_recv")
-        address = self._optional_hold_value(principal, EMAIL_ADDRESS_NAME, "email_recv")
+        address, token, _sources = self._resolve_email_inputs(
+            principal, {}, "email_recv"
+        )
         mailbox = self._mailbox_for(principal, "email_recv")
         try:
             messages = mailbox.recv(
@@ -416,8 +418,9 @@ class CustodyManager:
         self, caller: BoundCaller, hold_owner: str | None = None
     ) -> builtins.list[dict[str, str]]:
         principal = self._own_hold(caller, hold_owner, "email_list", None)
-        token = self._optional_hold_value(principal, SEND_TOKEN_NAME, "email_list")
-        address = self._optional_hold_value(principal, EMAIL_ADDRESS_NAME, "email_list")
+        address, token, _sources = self._resolve_email_inputs(
+            principal, {}, "email_list"
+        )
         mailbox = self._mailbox_for(principal, "email_list")
         try:
             items = mailbox.list(principal.id, send_token=token, address=address)
@@ -525,8 +528,7 @@ class CustodyManager:
     ) -> dict[str, object]:
         principal = self._own_hold(caller, hold_owner, "identity", None)
         mailbox = self._mailbox_for(principal, "identity")
-        token = self._optional_hold_value(principal, SEND_TOKEN_NAME, "identity")
-        address = self._optional_hold_value(principal, EMAIL_ADDRESS_NAME, "identity")
+        address, token, _sources = self._resolve_email_inputs(principal, {}, "identity")
         try:
             email = mailbox.describe(principal.id, send_token=token, address=address)
         except MailboxError as exc:
@@ -549,7 +551,10 @@ class CustodyManager:
         }
 
     def _resolve_email_inputs(
-        self, principal: Principal, answers: dict[str, str]
+        self,
+        principal: Principal,
+        answers: dict[str, str],
+        operation: str = "email_connect",
     ) -> tuple[str | None, str | None, dict[str, str]]:
         catalog = bind_of("email", self._email_backend)
         options = list(catalog.options) if catalog is not None else []
@@ -560,6 +565,7 @@ class CustodyManager:
             EMAIL_ADDRESS_NAME,
             answers,
             options,
+            operation,
         )
         credential, cred_src = self._resolve_email_field(
             principal,
@@ -568,6 +574,7 @@ class CustodyManager:
             SEND_TOKEN_NAME,
             answers,
             options,
+            operation,
         )
         sources = {}
         if address_src:
@@ -584,11 +591,12 @@ class CustodyManager:
         vault_name: str,
         answers: dict[str, str],
         options: builtins.list[dict[str, object]],
+        operation: str,
     ) -> tuple[str | None, str | None]:
         env_val = os.environ.get(env_generic, "").strip()
         if env_val:
             return env_val, "env"
-        held = self._optional_hold_value(principal, vault_name, "email_connect")
+        held = self._optional_hold_value(principal, vault_name, operation)
         if held:
             return held, "vault"
         alias = ""
@@ -619,9 +627,14 @@ class CustodyManager:
         self,
         principal: Principal,
         view: dict[str, object],
+        address_source: str | None,
     ) -> None:
         email = str(view.get("address") or "").strip()
-        if view.get("owned_address") and email:
+        if (
+            view.get("owned_address")
+            and email
+            and address_source not in {"env", "alias"}
+        ):
             self._store_put(principal, EMAIL_ADDRESS_NAME, email, "email_connect")
 
     def _store_put(

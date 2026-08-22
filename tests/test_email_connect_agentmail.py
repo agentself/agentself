@@ -57,9 +57,7 @@ def test_agentmail_connect_without_token_points_at_secret(tmp_path):
     assert "console.agentmail.to" in data["option"]["help"]
     assert "AGENTSELF_AGENTMAIL_API_KEY" in data["option"]["help"]
     assert "init --force --email imap" in data["option"]["help"]
-    assert data["next"].startswith(
-        "agentself --json email connect --continue --state "
-    )
+    assert data["next"].startswith("agentself --json email connect --continue --state ")
     assert "--result-file PATH" in data["next"]
 
 
@@ -101,7 +99,7 @@ def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys)
     again_out = capsys.readouterr()
     assert again == 0, again_out.out + again_out.err
     assert again_out.out == f"email: {OURS}\n"
-    assert len(http.gets) == 1
+    assert len(http.gets) == 3
     assert http.posts == []
 
 
@@ -181,9 +179,7 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     assert data["error"] == "missing"
     assert data["status"] == "input_required"
     assert data["option"]["name"] == "address"
-    assert data["next"].startswith(
-        "agentself --json email connect --continue --state "
-    )
+    assert data["next"].startswith("agentself --json email connect --continue --state ")
     assert "--result-file PATH" in data["next"]
 
 
@@ -246,3 +242,35 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert TOKEN not in captured.out + captured.err
     exists = run_cli(["--json", "secret", "exists", "email.send.token"], env)
     assert exists.returncode == 3
+
+
+def test_agentmail_connect_unknown_env_address_persists_nothing(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    start = run_cli(["init"], env)
+    assert start.returncode == 0, start.stderr
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", OURS)
+    monkeypatch.setenv("AGENTSELF_EMAIL_CREDENTIAL", TOKEN)
+    http = Http()
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": "inb_other", "email": TAKEN}]},
+    )
+    _patch_agentmail(monkeypatch, http)
+
+    code = main(["--json", "email", "connect"])
+    captured = capsys.readouterr()
+    assert code == 1
+    data = json.loads(captured.out)
+    assert data["ok"] is False
+    assert data["reason"] == "mailbox_error"
+    assert TOKEN not in captured.out + captured.err
+    assert http.posts == []
+    for name in ("email.address", "email.send.token"):
+        exists = run_cli(["--json", "secret", "exists", name], env)
+        assert exists.returncode == 3
+        assert json.loads(exists.stdout)["exists"] is False

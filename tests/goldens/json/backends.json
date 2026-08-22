@@ -54,7 +54,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_ETH_RPC_URL",
-              "help": "JSON-RPC URL override"
+              "help": "JSON-RPC URL override",
+              "prompt": "rpc_url",
+              "action": null
             }
           ]
         }
@@ -91,7 +93,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_AGENTMAIL_API_KEY",
-              "help": "AgentMail API key (starts with am_). Create it at https://console.agentmail.to under API Keys. Signup or confirm mail may contain the key or a link \u2014 read that inbox if you have it, else ask the operator. Env AGENTSELF_AGENTMAIL_API_KEY. Write the key to a file and continue with --result-file. Cannot obtain a key: agentself init --force --email imap, or stop."
+              "help": "AgentMail API key (starts with am_). For a first-time, unclaimed signup, follow https://docs.agentmail.to/api-reference/agent/sign-up and capture the key from its HTTP response. This path is not claimed-organization recovery. Otherwise, create a key under API Keys at https://console.agentmail.to. The OTP or confirmation email does not contain the key. A key is shown once and cannot be retrieved; if lost, create another. Signing into the console is not a documented way to attach an already-claimed organization. For transient use, provide AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email invocation. To store it in this identity, write the key to a file and continue with --result-file. Cannot obtain a key: agentself init --force --email imap, or stop.",
+              "prompt": "Paste the credential",
+              "action": null
             },
             {
               "name": "address",
@@ -101,7 +105,9 @@
               "default": null,
               "choices": [],
               "source": "",
-              "help": "Inbox address when this key owns more than one. Use an address the provider listed. Do not invent one."
+              "help": "Inbox address when this key owns more than one. Use an address the provider listed. Do not invent one.",
+              "prompt": "Mailbox address",
+              "action": null
             }
           ]
         },
@@ -128,7 +134,9 @@
               "default": null,
               "choices": [],
               "source": "",
-              "help": "Existing mailbox address (user@domain). Do not invent an address."
+              "help": "Existing mailbox address (user@domain). Do not invent an address.",
+              "prompt": "Mailbox address",
+              "action": null
             },
             {
               "name": "credential",
@@ -138,7 +146,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_MAIL_PASSWORD",
-              "help": "Password or app password for that mailbox. Gmail and Outlook need an app password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a file and continue with --result-file."
+              "help": "Password or app password for that mailbox. Gmail and Outlook need an app password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a file and continue with --result-file.",
+              "prompt": "Paste the credential",
+              "action": null
             },
             {
               "name": "mail_host",
@@ -148,7 +158,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_MAIL_HOST",
-              "help": "Shared mail host when IMAP and SMTP use the same hostname."
+              "help": "Shared mail host when IMAP and SMTP use the same hostname.",
+              "prompt": "mail_host",
+              "action": null
             },
             {
               "name": "imap_host",
@@ -158,7 +170,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_IMAP_HOST",
-              "help": "IMAP host override. Default is imap.<address-domain>."
+              "help": "IMAP host override. Default is imap.<address-domain>.",
+              "prompt": "imap_host",
+              "action": null
             },
             {
               "name": "smtp_host",
@@ -168,7 +182,9 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_SMTP_HOST",
-              "help": "SMTP host override. Default is smtp.<address-domain>."
+              "help": "SMTP host override. Default is smtp.<address-domain>.",
+              "prompt": "smtp_host",
+              "action": null
             }
           ]
         }

@@ -30,11 +30,17 @@ from agentself.internal.setup import (
     HELP_AGENTMAIL_ADDRESS,
     HELP_AGENTMAIL_CREDENTIAL,
     SOURCE_AGENTMAIL_CREDENTIAL,
+    SetupAction,
     address_option,
     credential_option,
 )
 
 _API = "https://api.agentmail.to"
+_API_KEYS_ACTION: SetupAction = {
+    "kind": "open_url",
+    "label": "Open AgentMail API Keys",
+    "url": "https://console.agentmail.to",
+}
 
 Poster = Callable[[str, dict[str, str], bytes], tuple[int, bytes]]
 Getter = Callable[[str, dict[str, str]], tuple[int, bytes]]
@@ -169,15 +175,14 @@ class AgentMailMailboxAccess(MailboxAccess):
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
         wanted = (address or "").strip()
-        if wanted:
-            return mailbox_view(wanted, owned_address=True)
-        if send_token:
-            inbox = self._inbox(principal_id, send_token, None)
-            email = str(inbox.get("email") or "").strip()
-            if not email:
-                raise MailboxError("no inbox")
-            return mailbox_view(email, owned_address=True)
-        return mailbox_view()
+        if not send_token:
+            return mailbox_view()
+        send_token = require_secret(send_token)
+        inbox = self._inbox(principal_id, send_token, wanted or None)
+        email = str(inbox.get("email") or "").strip()
+        if not email:
+            raise MailboxError("no inbox")
+        return mailbox_view(email, owned_address=True)
 
     def connect(
         self,
@@ -191,24 +196,47 @@ class AgentMailMailboxAccess(MailboxAccess):
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = send_token or extra.get("credential") or ""
-        if wanted:
-            return mailbox_view(wanted, owned_address=True)
         if not token:
             self._log.record("mailbox_connect", principal_id, None, "error")
             return setup_needed(
                 credential_option(
                     source=SOURCE_AGENTMAIL_CREDENTIAL,
                     help=HELP_AGENTMAIL_CREDENTIAL,
-                )
+                    prompt="Paste the API key",
+                    action=_API_KEYS_ACTION,
+                ),
+                human_action_required=True,
             )
         send_token = require_secret(token)
         live = _live_inboxes(self._listed_inboxes(send_token))
-        if len(live) > 1:
+        if wanted:
+            target = wanted.lower()
+            inbox = next(
+                (
+                    item
+                    for item in live
+                    if str(item.get("email") or "").strip().lower() == target
+                ),
+                None,
+            )
+            if inbox is None:
+                self._log.record("mailbox_connect", principal_id, None, "error")
+                raise MailboxError("no inbox")
+        elif len(live) > 1:
             self._log.record("mailbox_connect", principal_id, None, "error")
             return setup_needed(
-                address_option(required=True, help=HELP_AGENTMAIL_ADDRESS)
+                address_option(
+                    required=True,
+                    help=HELP_AGENTMAIL_ADDRESS,
+                    prompt="Choose the inbox for this identity",
+                    choices=[
+                        str(item.get("email") or "").strip()
+                        for item in live
+                        if str(item.get("email") or "").strip()
+                    ],
+                )
             )
-        if len(live) == 1:
+        elif len(live) == 1:
             inbox = live[0]
         else:
             inbox = self._create_inbox(principal_id, send_token)

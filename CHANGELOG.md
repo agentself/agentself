@@ -7,7 +7,9 @@ Provider-neutral CLI schema 3. Public commands describe resources and operations
 ### Commands
 
 - `email connect` is a generic, resumable setup. `--json` never prompts and exits 3 with one outstanding option plus opaque `state`. Continue with `--json --continue --state STATE --result-file PATH`. HTTP 401/403 is `invalid credentials`, not `rpc`.
+- Non-JSON `email connect` renders the same backend-provided setup protocol as a guided terminal flow: external actions are displayed as links, secrets use hidden input, and choices use numbered prompts. Agents check approved automated sources first, then use this interactive flow and wait for completion when human action is required.
 - Environment credentials are used at runtime and are not copied into the vault.
+- Fresh sandboxes can use `AGENTSELF_EMAIL_CREDENTIAL` or a backend alias on every email invocation, plus `AGENTSELF_EMAIL_ADDRESS` to select a verified-owned inbox. `--result-file` stores the credential in the current isolated identity.
 - Unconfigured `email show` is ready false, exit 0. `--json show` includes email readiness. `email connect` still exits 3 when input is required.
 - `init --force` is required to change identity or backends. Repeating the same init is unchanged.
 - `secret exists`, `secret get --file`, `secret get --meta`. Same-value `secret create` returns `unchanged: true`. Secret values from argv, `--file`, or stdin. Setup answers stay off argv (`--result-file`).
@@ -23,7 +25,9 @@ Provider-neutral CLI schema 3. Public commands describe resources and operations
 - Exit codes: 0 ok, 1 error, 2 refused, 3 missing.
 - Machine schema `cli` is `3`.
 - Credential resolution: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then vault, then backend-defined environment alias, then setup answer.
-- `agentself backends --json` publishes backend options with `name`, `type`, `required`, `sensitive`, `default`, `choices`, `source`, and `help`. Option `help` is the agent procedure (how to obtain the value, env alias, what to do if you cannot). Switching backends is `init --force`, not continue.
+- AgentMail keys come from the initial signup HTTP response or the console, not the OTP or confirmation email. Keys are shown once; create another if one is lost. Console attachment to an already-claimed organization is not a supported assumption.
+- `backup` / `restore` clones the whole identity, including the wallet and every secret. Use it for same-identity migration; distinct agents use isolated vaults.
+- `agentself backends --json` publishes backend options with `name`, `type`, `required`, `sensitive`, `default`, `choices`, `source`, `prompt`, `help`, and an optional generic `action` such as `open_url`. Option `help` is the agent procedure (how to obtain the value, env alias, what to do if you cannot); `prompt` and action labels/URLs are backend-provided renderer content. Switching backends is `init --force`, not continue.
 - UTF-8 stdin/file handling strips a BOM and one trailing newline (`\n` or `\r\n`). Byte counts and SHA-256 are UTF-8.
 
 ## 0.1.0a1

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict
 
 from agentself.internal.names import INTERNAL_PREFIX
 
@@ -27,15 +27,44 @@ OPTION_TYPE_STRING = "string"
 OPTION_TYPE_SECRET = "secret"
 OPTION_TYPE_CHOICE = "choice"
 
+
+class SetupAction(TypedDict):
+    """Backend-provided human assistance action."""
+
+    kind: Literal["open_url"]
+    label: str
+    url: str
+
+
+class SetupOption(TypedDict):
+    """Backend-neutral input requested by the shared setup renderer."""
+
+    name: str
+    type: Literal["string", "secret", "choice"]
+    required: bool
+    sensitive: bool
+    prompt: str
+    help: str
+    source: str | None
+    choices: list[str]
+    action: NotRequired[SetupAction | None]
+
+
 SOURCE_AGENTMAIL_CREDENTIAL = "AGENTSELF_AGENTMAIL_API_KEY"
 SOURCE_IMAP_CREDENTIAL = "AGENTSELF_MAIL_PASSWORD"
 
 HELP_AGENTMAIL_CREDENTIAL = (
-    "AgentMail API key (starts with am_). Create it at https://console.agentmail.to "
-    "under API Keys. Signup or confirm mail may contain the key or a link — read that "
-    "inbox if you have it, else ask the operator. Env AGENTSELF_AGENTMAIL_API_KEY. "
-    "Write the key to a file and continue with --result-file. Cannot obtain a key: "
-    "agentself init --force --email imap, or stop."
+    "AgentMail API key (starts with am_). For a first-time, unclaimed signup, follow "
+    "https://docs.agentmail.to/api-reference/agent/sign-up and capture the key from "
+    "its HTTP response. This path is not claimed-organization recovery. Otherwise, "
+    "create a key under API Keys at https://console.agentmail.to. The OTP or "
+    "confirmation email does not contain the key. A key is shown once and cannot be "
+    "retrieved; if lost, create another. Signing into the console is not a documented "
+    "way to attach an already-claimed organization. For transient use, provide "
+    "AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email "
+    "invocation. To store it in this identity, write the key to a file and continue "
+    "with --result-file. Cannot obtain a key: agentself init --force --email imap, "
+    "or stop."
 )
 HELP_AGENTMAIL_ADDRESS = (
     "Inbox address when this key owns more than one. Use an address the provider "
@@ -62,6 +91,8 @@ def setup_option(
     choices: list[str] | tuple[str, ...] | None = None,
     source: str = "",
     help: str = "",
+    prompt: str = "",
+    action: SetupAction | None = None,
 ) -> dict[str, Any]:
     """Backend discovery / setup option. Stable public fields only."""
 
@@ -74,6 +105,8 @@ def setup_option(
         "choices": list(choices or ()),
         "source": source or "",
         "help": help or "",
+        "prompt": prompt or name,
+        "action": action,
     }
 
 
@@ -82,6 +115,8 @@ def credential_option(
     required: bool = True,
     source: str = "",
     help: str = "Secret required to connect. Write it to --result-file and continue.",
+    prompt: str = "Paste the credential",
+    action: SetupAction | None = None,
 ) -> dict[str, Any]:
     return setup_option(
         name=OPTION_CREDENTIAL,
@@ -90,6 +125,8 @@ def credential_option(
         sensitive=True,
         source=source,
         help=help,
+        prompt=prompt,
+        action=action,
     )
 
 
@@ -98,14 +135,18 @@ def address_option(
     required: bool = False,
     source: str = "",
     help: str = "Mailbox address",
+    prompt: str = "Mailbox address",
+    choices: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     return setup_option(
         name=OPTION_ADDRESS,
-        type=OPTION_TYPE_STRING,
+        type=OPTION_TYPE_CHOICE if choices else OPTION_TYPE_STRING,
         required=required,
         sensitive=False,
         source=source,
         help=help,
+        prompt=prompt,
+        choices=choices,
     )
 
 
