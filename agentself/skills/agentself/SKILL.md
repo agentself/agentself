@@ -27,6 +27,8 @@ Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `email`, `wal
 
 Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 3). Ignore unknown keys.
 
+Start by checking `agentself --json --version`. This skill requires `cli: 3`. A different schema or an unexpected `package` / `executable` path means the installation is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
+
 No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey) and email readiness. Unconfigured `email show` is ready false, exit 0.
 
 Identity directory is `AGENTSELF_VAULT_ROOT` (default `~/.agentself`).
@@ -50,15 +52,15 @@ agentself backends wallet
 
 ## Human assistance
 
-When a setup response has `human_action_required: true`, first check the approved automated credential sources named by the generic option metadata (`source`, the isolated vault, or an already-authorized tool). Keep secret values out of logs, arguments, and chat. If no approved automated value is available, run the generic interactive flow:
+When a setup response has `human_action_required: true`, first check the approved automated credential sources named by the generic option metadata (`source`, the isolated vault, or an already-authorized tool). Source code, tests, browser sessions, personal inboxes, and provider signup endpoints are not approved credential sources. Keep secret values out of logs, arguments, and chat. If no approved automated value is available, run the generic interactive flow:
 
 ```bash
 agentself email connect
 ```
 
-Use the link and instructions rendered by that flow. Give the human one simple instruction: open the displayed link, copy the requested value, and paste it into the secure prompt. Then wait for the command to finish and verify the result with `agentself --json email show`. The human does not create a result file, type a vault path, copy opaque state, or run a continuation command. The option's `type`, `sensitive`, `prompt`, `help`, and optional `action` metadata are backend-provided; keep the procedure provider-neutral.
+Use the link and instructions rendered by that flow. Give the human one simple instruction: open the displayed link, copy the requested value, and paste it into the secure prompt. Then wait for the command to finish and verify the result with `agentself --json email show`. One validated credential completes discovery; continue setup with it and stop looking for alternatives. The human does not create a result file, type a vault path, copy opaque state, or run a continuation command. The option's `type`, `sensitive`, `prompt`, `help`, and optional `action` metadata are backend-provided; keep the procedure provider-neutral.
 
-For AgentMail, use <https://docs.agentmail.to/api-reference/agent/sign-up> only for a first-time, unclaimed signup and capture the key from its HTTP response. This is not claimed-organization recovery. Otherwise, create a key under API Keys in the console. The OTP or confirmation email has no key. Keys are shown once; create another if one is lost. Treat console attachment to an already-claimed organization as unsupported unless AgentMail documents it.
+Provider help describes available setup paths; it does not authorize external account creation. AgentMail signup requires the user's explicit approval to create a new organization. When approved, use the exact approved email identity for one first-time, unclaimed signup and capture the key from its HTTP response. A claimed, forbidden, or unavailable response ends that attempt: ask the user rather than trying aliases or disposable email providers. Without signup authorization, use the interactive flow and wait while the human creates or copies a key under API Keys in the console. The OTP or confirmation email has no key. Keys are shown once; create another in the console if one is lost. Treat console attachment to an already-claimed organization as unsupported unless AgentMail documents it.
 
 ## Fresh sandbox
 

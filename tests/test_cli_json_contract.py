@@ -335,6 +335,13 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     )
     assert connected["human_action_required"] is True
     assert connected["option"]["name"] == "credential"
+    help_text = connected["option"]["help"]
+    assert "wait for the operator to create and copy one" in help_text
+    assert "requires explicit user authorization" in help_text
+    assert "once with the approved email identity" in help_text
+    assert "stop and ask the user" in help_text
+    assert "do not probe aliases or disposable email providers" in help_text
+    assert "Stop credential discovery as soon as one key validates" in help_text
     shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
     assert shown["ready"] is False
     assert shown.get("owned_address") is False

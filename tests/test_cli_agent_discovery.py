@@ -74,6 +74,15 @@ def test_install_copies_bundled_skill(tmp_path):
     assert data["ok"] is True
     assert len(data["paths"]) == 1
     assert data["paths"][0].endswith("SKILL.md")
+    installed = (tmp_path / ".agents" / "skills" / "agentself" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "This skill requires `cli: 3`" in installed
+    assert "an unexpected `package` / `executable` path" in installed
+    assert "does not authorize external account creation" in installed
+    assert "One validated credential completes discovery" in installed
+    assert "ask the user rather than trying aliases" in installed
+    assert "wait while the human creates or copies a key" in installed
 
 
 def test_install_unknown_target_is_actionable(tmp_path):

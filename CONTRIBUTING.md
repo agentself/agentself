@@ -20,6 +20,7 @@ Pull requests are appreciated.
 - Return the same setup result for every caller. Agents consume it as JSON, while the CLI turns it into guided terminal prompts for people.
 - Do not report a connection until the provider has validated it. Never guess an address, resource, or credential, and ask for only one missing value at a time with an accurate next step.
 - Test the boundary, not just the adapter. A test backend must be able to finish setup without parser changes or new core orchestration methods. Also check that a fresh agent can find its way using CLI help and backend discovery, either completing the flow automatically or asking a person for one clear action.
+- Treat provider signup, OAuth, and account creation as external state changes. Setup text may explain those paths, but it must require explicit user authorization before an agent uses them. One validated credential ends discovery; provider errors lead back to the user instead of identity or service probing.
 
 ## Add a backend
 
