@@ -29,7 +29,6 @@ _FEATURED_TOP = (
     "backends",
     "diagnose",
     "secret",
-    "note",
     "email",
     "wallet",
     "backup",
@@ -64,7 +63,7 @@ def test_cli_help_has_no_vendor_names(tmp_path):
                     f"{alias} featured in --help: {text}"
                 )
             assert (
-                "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
+                "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
                 in text
             )
         if args == ["wallet", "--help"]:
@@ -114,6 +113,7 @@ def test_nested_help_shows_args_and_defaults(tmp_path):
     assert "--json" in create.stdout
     assert "NAME" in create.stdout
     assert "VALUE" in create.stdout
+    assert "--file" in create.stdout
     assert "Refuses if the name exists" in create.stdout
 
     send = run_cli(["wallet", "send", "--help"], env)

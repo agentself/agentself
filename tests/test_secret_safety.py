@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.support import cli_env, run_cli
+from tests.support import cli_env, run_cli, value_file
 
 
 def _init(tmp_path: Path) -> dict[str, str]:
@@ -43,7 +43,17 @@ def test_secret_exists_and_meta(tmp_path: Path) -> None:
     assert missing.returncode == 3
     absent = json.loads(missing.stdout)
     assert absent["exists"] is False
-    created = run_cli(["--json", "secret", "create", "demo.token", "alpha"], env)
+    created = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "demo.token",
+            "--file",
+            value_file(tmp_path, "alpha"),
+        ],
+        env,
+    )
     assert created.returncode == 0, created.stderr
     present = json.loads(
         run_cli(["--json", "secret", "exists", "demo.token"], env).stdout
@@ -61,24 +71,62 @@ def test_secret_exists_and_meta(tmp_path: Path) -> None:
 def test_same_value_create_is_unchanged(tmp_path: Path) -> None:
     env = _init(tmp_path)
     first = json.loads(
-        run_cli(["--json", "secret", "create", "demo.token", "alpha"], env).stdout
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "demo.token",
+                "--file",
+                value_file(tmp_path, "alpha"),
+            ],
+            env,
+        ).stdout
     )
     assert first == {"ok": True, "name": "demo.token"}
     second = json.loads(
-        run_cli(["--json", "secret", "create", "demo.token", "alpha"], env).stdout
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "demo.token",
+                "--file",
+                value_file(tmp_path, "alpha", "alpha2.txt"),
+            ],
+            env,
+        ).stdout
     )
     assert second["unchanged"] is True
-    clash = run_cli(["--json", "secret", "create", "demo.token", "beta"], env)
+    clash = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "demo.token",
+            "--file",
+            value_file(tmp_path, "beta", "beta.txt"),
+        ],
+        env,
+    )
     assert clash.returncode == 2
     assert json.loads(clash.stdout)["error"] == "refused"
 
 
 def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
     env = _init(tmp_path)
-    for name in ("internal.setup.demo", "note.demo"):
-        proc = run_cli(["--json", "secret", "create", name, "x"], env)
-        assert proc.returncode == 2
-        assert json.loads(proc.stdout)["error"] == "refused"
+    proc = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "internal.setup.demo",
+            "--file",
+            value_file(tmp_path, "x"),
+        ],
+        env,
+    )
+    assert proc.returncode == 2
+    assert json.loads(proc.stdout)["error"] == "refused"
     listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
     assert all(not item.startswith("internal.") for item in listed["names"])
-    assert all(not item.startswith("note.") for item in listed["names"])

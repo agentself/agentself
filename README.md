@@ -32,7 +32,7 @@ agentself wallet address
 agentself wallet balance
 
 # Secrets
-agentself secret create API_TOKEN --file PATH
+agentself secret create API_TOKEN VALUE
 agentself secret get API_TOKEN
 
 # Email
@@ -56,7 +56,6 @@ Run `agentself show` anytime to see the current identity. Repeat `init` is safe;
 |---|---|
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
-| Notes | `note create`, `get`, `update`, `list`, `delete` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list` |
 | Backends | `backends [CHANNEL]` |
@@ -109,14 +108,14 @@ Configuration precedence is:
 CLI flag > environment variable > saved configuration > default
 ```
 
-There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific requirements and configuration knobs. Public commands never grow provider verbs or flags.
+There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific options. Each option's `help` is the procedure: how to get the value, which env var to use, and what to do if you cannot. Public commands never grow provider verbs or flags. Switching email backends is `init --force --email NAME`, not continue.
 
-Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. `email connect --import-env` persists validated environment credentials; ordinary connect does not copy them into the vault.
+Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. Environment credentials are not copied into the vault.
 
 `--json email connect` never prompts. When input or a human action is required it exits `3` with a generic setup object. Continue with:
 
 ```text
-agentself email connect --continue SETUP_ID --result-file PATH
+agentself email connect --continue --state STATE --result-file PATH
 ```
 
 Sensitive answers come from `--result-file`, stdin, or a hidden prompt, never from argv.
@@ -154,12 +153,12 @@ Success and failure are one JSON object on stdout. Human errors stay on stderr. 
 
 Consumers should ignore unknown JSON keys. `agentself --json --version` includes `cli` (currently `3`), plus `package` and `executable` paths.
 
-An optional bundled skill gives compatible coding agents the same discovery guidance. Skills install under the user home directory unless `--local` writes into the current repository:
+An optional bundled skill gives compatible coding agents the same discovery guidance. Skills install into the current directory. `-g` writes them under the user home directory:
 
 ```bash
 agentself install --skills
-agentself install --skills --local
-agentself install --skills=agents --local
+agentself install --skills -g
+agentself install --skills=agents
 ```
 
 `--help` and `--json` are sufficient without the skill.

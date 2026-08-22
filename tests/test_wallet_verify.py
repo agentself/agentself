@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.support import cli_env, run_cli
+from tests.support import cli_env, run_cli, value_file
 
 MESSAGE = "prove custody"
 
@@ -57,7 +57,17 @@ def test_wallet_verify_valid_modified_mismatched_restored(tmp_path: Path) -> Non
     restored.mkdir()
     restored_env = cli_env(restored)
     assert run_cli(["--json", "init"], restored_env).returncode == 0
-    updated = run_cli(["--json", "secret", "update", "wallet.key", key], restored_env)
+    updated = run_cli(
+        [
+            "--json",
+            "secret",
+            "update",
+            "wallet.key",
+            "--file",
+            value_file(tmp_path, key, "wallet.key.txt"),
+        ],
+        restored_env,
+    )
     assert updated.returncode == 0, updated.stderr
     recovered = json.loads(
         run_cli(

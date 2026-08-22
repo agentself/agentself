@@ -75,28 +75,16 @@
   "secret_exists": {
     "exact": ["ok", "name", "exists"]
   },
-  "note_write": {
-    "required": ["ok", "name"],
-    "allowed": ["ok", "name", "unchanged"]
-  },
-  "note_get": {
-    "required": ["ok", "name"],
-    "allowed": ["ok", "name", "value", "bytes", "sha256", "path", "protected"]
-  },
-  "note_list": {
-    "exact": ["ok", "names"]
-  },
   "email_connect": {
     "required": ["ok"],
     "allowed": [
       "ok",
       "address",
       "status",
-      "setup_id",
-      "options",
+      "state",
+      "option",
       "human_action_required",
       "continue",
-      "expires_at",
       "message",
       "owned_address",
       "needs_domain"
@@ -122,8 +110,7 @@
       "scheme",
       "network",
       "message_sha256",
-      "authorization",
-      "signature"
+      "authorization"
     ]
   },
   "wallet_verify": {
@@ -152,7 +139,7 @@
     "allowed": ["address", "owned_address", "needs_domain"]
   },
   "wallet_view": {
-    "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind"]
+    "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind", "scheme"]
   },
   "mail_item": {
     "allowed": ["id", "from", "to", "subject", "body", "reason"]

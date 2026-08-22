@@ -52,37 +52,6 @@ class CustodyManager(Protocol):
         self, caller: BoundCaller, name: str, hold_owner: str | None = None
     ) -> None: ...
 
-    def note_create(
-        self,
-        caller: BoundCaller,
-        name: str,
-        value: str,
-        hold_owner: str | None = None,
-    ) -> bool: ...
-
-    def note_update(
-        self,
-        caller: BoundCaller,
-        name: str,
-        value: str,
-        hold_owner: str | None = None,
-    ) -> None: ...
-
-    def note_get(
-        self,
-        caller: BoundCaller,
-        name: str,
-        hold_owner: str | None = None,
-    ) -> str: ...
-
-    def note_list(
-        self, caller: BoundCaller, hold_owner: str | None = None
-    ) -> builtins.list[str]: ...
-
-    def note_delete(
-        self, caller: BoundCaller, name: str, hold_owner: str | None = None
-    ) -> None: ...
-
     def email_send(
         self,
         caller: BoundCaller,
@@ -109,8 +78,7 @@ class CustodyManager(Protocol):
         hold_owner: str | None = None,
         *,
         answers: dict[str, str] | None = None,
-        setup_id: str | None = None,
-        import_env: bool = False,
+        state: str | None = None,
     ) -> dict[str, object]: ...
 
     def wallet_address(
@@ -187,26 +155,6 @@ class Gateway:
         caller = self._require_caller()
         self._manager.delete(caller, name, hold_owner=hold_owner)
 
-    def note_create(self, name: str, value: str, hold_owner: str | None = None) -> bool:
-        caller = self._require_caller()
-        return self._manager.note_create(caller, name, value, hold_owner=hold_owner)
-
-    def note_update(self, name: str, value: str, hold_owner: str | None = None) -> None:
-        caller = self._require_caller()
-        self._manager.note_update(caller, name, value, hold_owner=hold_owner)
-
-    def note_get(self, name: str, hold_owner: str | None = None) -> str:
-        caller = self._require_caller()
-        return self._manager.note_get(caller, name, hold_owner=hold_owner)
-
-    def note_list(self, hold_owner: str | None = None) -> builtins.list[str]:
-        caller = self._require_caller()
-        return self._manager.note_list(caller, hold_owner=hold_owner)
-
-    def note_delete(self, name: str, hold_owner: str | None = None) -> None:
-        caller = self._require_caller()
-        self._manager.note_delete(caller, name, hold_owner=hold_owner)
-
     def email_send(
         self,
         to: str,
@@ -239,16 +187,14 @@ class Gateway:
         hold_owner: str | None = None,
         *,
         answers: dict[str, str] | None = None,
-        setup_id: str | None = None,
-        import_env: bool = False,
+        state: str | None = None,
     ) -> dict[str, object]:
         caller = self._require_caller()
         return self._manager.email_connect(
             caller,
             hold_owner=hold_owner,
             answers=answers,
-            setup_id=setup_id,
-            import_env=import_env,
+            state=state,
         )
 
     def email_receive(

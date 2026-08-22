@@ -617,8 +617,7 @@ def test_connect_no_token_zero_http(vault):
     mb = _box(vault, log, http)
     desc = mb.connect(PRINCIPAL)
     assert desc["status"] == "input_required"
-    names = [item["name"] for item in desc["options"]]
-    assert names == ["credential"]
+    assert desc["option"]["name"] == "credential"
     assert http.gets == []
     assert http.posts == []
     _secret_absent(log)
@@ -703,8 +702,7 @@ def test_connect_many_inboxes_need_address_no_post(vault):
     mb = _box(vault, log, http)
     desc = mb.connect(PRINCIPAL, send_token=CANARY)
     assert desc["status"] == "input_required"
-    names = [item["name"] for item in desc["options"]]
-    assert names == ["address"]
+    assert desc["option"]["name"] == "address"
     assert http.posts == []
     _secret_absent(log)
     assert TAKEN not in str(desc)

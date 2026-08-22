@@ -45,11 +45,10 @@ def mailbox_view(
 
 
 def setup_needed(
-    options: list[dict[str, object]],
+    option: dict[str, object] | None = None,
     *,
     status: str = SETUP_INPUT_REQUIRED,
     human_action_required: bool = False,
-    expires_at: float | None = None,
     message: str = "",
 ) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -57,11 +56,10 @@ def setup_needed(
         "address": None,
         "owned_address": False,
         "needs_domain": False,
-        "options": list(options),
         "human_action_required": human_action_required,
     }
-    if expires_at is not None:
-        payload["expires_at"] = expires_at
+    if option:
+        payload["option"] = dict(option)
     if message:
         payload["message"] = message
     return payload

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from tests.support import cli_env, run_cli
+from tests.support import cli_env, run_cli, value_file
 
 
 def test_init_show_secrets_and_silent_aliases(tmp_path):
@@ -32,7 +32,16 @@ def test_init_show_secrets_and_silent_aliases(tmp_path):
     assert f"vault: {vault}" in shown.stdout
     assert "AGE-SECRET-KEY" not in shown.stdout + shown.stderr
 
-    created = run_cli(["secret", "create", "notes", "only I can open this"], env)
+    created = run_cli(
+        [
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, "only I can open this"),
+        ],
+        env,
+    )
     assert created.returncode == 0, created.stderr
     got = run_cli(["secret", "get", "notes"], env)
     assert got.returncode == 0, got.stderr
@@ -41,9 +50,27 @@ def test_init_show_secrets_and_silent_aliases(tmp_path):
     assert listed.returncode == 0, listed.stderr
     assert "notes" in listed.stdout.splitlines()
     assert "only I can open this" not in listed.stdout
-    clash = run_cli(["secret", "create", "notes", "nope"], env)
+    clash = run_cli(
+        [
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, "nope", "nope.txt"),
+        ],
+        env,
+    )
     assert clash.returncode == 2, clash.stdout + clash.stderr
-    updated = run_cli(["secret", "update", "notes", "rotated"], env)
+    updated = run_cli(
+        [
+            "secret",
+            "update",
+            "notes",
+            "--file",
+            value_file(tmp_path, "rotated", "rotated.txt"),
+        ],
+        env,
+    )
     assert updated.returncode == 0, updated.stderr
     assert run_cli(["secret", "get", "notes"], env).stdout.strip() == "rotated"
 
@@ -59,13 +86,13 @@ def test_init_show_secrets_and_silent_aliases(tmp_path):
     assert run_cli(["doctor"], env).returncode == 2
 
     email_show = run_cli(["email", "show"], env)
-    assert email_show.returncode == 3, email_show.stdout + email_show.stderr
-    assert "not configured" in email_show.stderr
+    assert email_show.returncode == 0, email_show.stdout + email_show.stderr
+    assert email_show.stdout.strip() == "not configured"
     email_json = run_cli(["--json", "email", "show"], env)
-    assert email_json.returncode == 3, email_json.stdout + email_json.stderr
+    assert email_json.returncode == 0, email_json.stdout + email_json.stderr
     email_data = json.loads(email_json.stdout)
-    assert email_data.get("ok") is False
-    assert email_data.get("error") == "missing"
+    assert email_data.get("ok") is True
+    assert email_data.get("ready") is False
 
 
 def test_uninitialized_status_points_to_init(tmp_path):

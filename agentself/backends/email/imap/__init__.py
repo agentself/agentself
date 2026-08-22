@@ -22,7 +22,13 @@ from agentself.backends.email.contract import (
 from agentself.internal.files import VaultBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import address_option, credential_option
+from agentself.internal.setup import (
+    HELP_IMAP_ADDRESS,
+    HELP_IMAP_CREDENTIAL,
+    SOURCE_IMAP_CREDENTIAL,
+    address_option,
+    credential_option,
+)
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
@@ -214,14 +220,18 @@ class ImapMailboxAccess(MailboxAccess):
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = send_token or extra.get("credential") or ""
-        needed: list[dict[str, object]] = []
         if not wanted:
-            needed.append(address_option(required=True))
-        if not token:
-            needed.append(credential_option(required=True, help="Mailbox credential"))
-        if needed:
             self._log.record("mailbox_connect", principal_id, None, "error")
-            return setup_needed(needed)
+            return setup_needed(address_option(required=True, help=HELP_IMAP_ADDRESS))
+        if not token:
+            self._log.record("mailbox_connect", principal_id, None, "error")
+            return setup_needed(
+                credential_option(
+                    required=True,
+                    source=SOURCE_IMAP_CREDENTIAL,
+                    help=HELP_IMAP_CREDENTIAL,
+                )
+            )
         token = require_secret(token)
         inbox = self._inbox(wanted)
         box = self._imap_login(inbox, token)

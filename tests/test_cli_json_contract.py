@@ -17,6 +17,7 @@ from tests.support import (
     cli_env,
     compose_with_rpc,
     run_cli,
+    value_file,
 )
 
 GOLDENS = Path(__file__).resolve().parent / "goldens" / "json"
@@ -162,7 +163,6 @@ def test_featured_parser_matches_golden_commands():
     subs = action.choices
     for group, dest in (
         ("secret", "secret_command"),
-        ("note", "note_command"),
         ("email", "email_command"),
         ("wallet", "wallet_command"),
     ):
@@ -228,12 +228,32 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
 def test_json_secrets_and_missing(tmp_path):
     _vault, env, _started = _init(tmp_path)
     created = assert_ok(
-        run_cli(["--json", "secret", "create", "notes", "only I can open this"], env),
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "only I can open this"),
+            ],
+            env,
+        ),
         "secret_write",
     )
     assert created == {"ok": True, "name": "notes"}
     same = assert_ok(
-        run_cli(["--json", "secret", "create", "notes", "only I can open this"], env),
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "only I can open this", "same.txt"),
+            ],
+            env,
+        ),
         "secret_write",
     )
     assert same == {"ok": True, "name": "notes", "unchanged": True}
@@ -248,7 +268,17 @@ def test_json_secrets_and_missing(tmp_path):
     got = assert_ok(run_cli(["--json", "secret", "get", "notes"], env), "secret_get")
     assert got == {"ok": True, "name": "notes", "value": "only I can open this"}
     updated = assert_ok(
-        run_cli(["--json", "secret", "update", "notes", "rotated"], env),
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "update",
+                "notes",
+                "--file",
+                value_file(tmp_path, "rotated", "rotated.txt"),
+            ],
+            env,
+        ),
         "secret_write",
     )
     assert updated == {"ok": True, "name": "notes"}
@@ -261,7 +291,17 @@ def test_json_secrets_and_missing(tmp_path):
     )
     assert missing["next"] == "agentself secret list"
     clash = assert_err(
-        run_cli(["--json", "secret", "create", "notes", "nope"], env),
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "nope", "nope.txt"),
+            ],
+            env,
+        ),
         error="refused",
     )
     assert "next" in clash
@@ -289,14 +329,15 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
         run_cli(["--json", "email", "connect"], env), error="missing"
     )
     assert connected["status"] == "input_required"
-    assert connected["setup_id"]
-    assert connected["continue"].startswith("agentself email connect --continue ")
+    assert connected["state"]
+    assert connected["continue"].startswith(
+        "agentself email connect --continue --state "
+    )
     assert connected["human_action_required"] is False
-    names = [item["name"] for item in connected["options"]]
-    assert "credential" in names
-    shown = assert_err(run_cli(["--json", "email", "show"], env), error="missing")
-    assert shown["reason"] == "not configured"
-    assert shown["next"] == "agentself email connect"
+    assert connected["option"]["name"] == "credential"
+    shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
+    assert shown["ready"] is False
+    assert shown.get("owned_address") is False
 
 
 def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, capsys):
@@ -315,7 +356,7 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
         monkeypatch, capsys, env, ["wallet", "authorize", "hello"], "wallet_authorize"
     )
     assert auth["authorization"].startswith("0x")
-    assert auth["signature"] == auth["authorization"]
+    assert "signature" not in auth
     assert auth["address"] == started["address"]
     assert auth["scheme"] == "eip191"
     assert auth["network"] == "base"
@@ -381,7 +422,7 @@ def test_json_install_and_doctor_fresh(tmp_path):
     assert diagnose["wallet_backend"] is None
     assert diagnose["ready"]["email"] is False
     installed = assert_ok(
-        run_cli(["--json", "install", "--skills=agents", "--local"], env, cwd=tmp_path),
+        run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path),
         "install",
     )
     assert len(installed["paths"]) == 1

@@ -30,6 +30,12 @@ from agentself.local import ensure_age_key
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def value_file(folder: Path, text: str, name: str = "value.txt") -> str:
+    path = folder / name
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
 def plant_host_binaries(bin_dir: Path, *names: str) -> Path:
     """Copy PATH hits into bin_dir using each file's real name (Windows .exe)."""
 
@@ -562,12 +568,6 @@ FEATURED_HELPS = [
     ["secret", "list", "--help"],
     ["secret", "delete", "--help"],
     ["secret", "exists", "--help"],
-    ["note", "--help"],
-    ["note", "create", "--help"],
-    ["note", "get", "--help"],
-    ["note", "update", "--help"],
-    ["note", "list", "--help"],
-    ["note", "delete", "--help"],
     ["email", "--help"],
     ["email", "connect", "--help"],
     ["email", "show", "--help"],

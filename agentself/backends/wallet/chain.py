@@ -126,6 +126,7 @@ class ChainWalletAccess(WalletAccess):
             "chain_label": self.chain_label,
             "chain_id": self.chain_id,
             "asset": USDC_ASSET,
+            "scheme": "eip191",
         }
 
     def verify(

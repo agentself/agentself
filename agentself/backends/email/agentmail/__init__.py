@@ -26,7 +26,13 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import address_option, credential_option
+from agentself.internal.setup import (
+    HELP_AGENTMAIL_ADDRESS,
+    HELP_AGENTMAIL_CREDENTIAL,
+    SOURCE_AGENTMAIL_CREDENTIAL,
+    address_option,
+    credential_option,
+)
 
 _API = "https://api.agentmail.to"
 
@@ -189,12 +195,19 @@ class AgentMailMailboxAccess(MailboxAccess):
             return mailbox_view(wanted, owned_address=True)
         if not token:
             self._log.record("mailbox_connect", principal_id, None, "error")
-            return setup_needed([credential_option()])
+            return setup_needed(
+                credential_option(
+                    source=SOURCE_AGENTMAIL_CREDENTIAL,
+                    help=HELP_AGENTMAIL_CREDENTIAL,
+                )
+            )
         send_token = require_secret(token)
         live = _live_inboxes(self._listed_inboxes(send_token))
         if len(live) > 1:
             self._log.record("mailbox_connect", principal_id, None, "error")
-            return setup_needed([address_option(required=True)])
+            return setup_needed(
+                address_option(required=True, help=HELP_AGENTMAIL_ADDRESS)
+            )
         if len(live) == 1:
             inbox = live[0]
         else:

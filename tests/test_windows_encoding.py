@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.support import cli_env, run_cli
+from tests.support import cli_env, run_cli, value_file
 
 
 def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(
@@ -43,7 +43,17 @@ def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(
 def test_json_unicode_round_trip(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
-    created = run_cli(["--json", "secret", "create", "demo.token", "café"], env)
+    created = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "demo.token",
+            "--file",
+            value_file(tmp_path, "café"),
+        ],
+        env,
+    )
     assert created.returncode == 0, created.stderr
     assert json.loads(created.stdout)["ok"] is True
     got = json.loads(run_cli(["--json", "secret", "get", "demo.token"], env).stdout)

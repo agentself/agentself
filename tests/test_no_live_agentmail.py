@@ -10,7 +10,7 @@ from agentself.backends.email.agentmail import AgentMailMailboxAccess
 from agentself.backends.email.http import refuse_live_agentmail, request
 from agentself.internal.log import MemoryLog
 
-from tests.support import cli_env, run_cli
+from tests.support import cli_env, run_cli, value_file
 
 
 def test_urlopen_to_agentmail_is_forbidden():
@@ -39,7 +39,16 @@ def test_cli_connect_with_token_does_not_dial_live(tmp_path):
     env = cli_env(tmp_path / "vault")
     started = run_cli(["init"], env)
     assert started.returncode == 0, started.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", "am_test_token"], env)
+    sealed = run_cli(
+        [
+            "secret",
+            "create",
+            "email.send.token",
+            "--file",
+            value_file(tmp_path, "am_test_token"),
+        ],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     proc = run_cli(["email", "connect"], env)
     assert proc.returncode != 0, proc.stdout + proc.stderr

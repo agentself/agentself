@@ -1,9 +1,8 @@
-"""Generic email setup: resumable, encrypted, provider-neutral."""
+"""Generic email setup: resumable, one option at a time, provider-neutral."""
 
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 from agentself.backends.email.contract import (
@@ -19,7 +18,7 @@ from agentself.internal.setup import (
     credential_option,
 )
 
-from tests.support import apply_cli_env, cli_env, run_cli
+from tests.support import apply_cli_env, cli_env, run_cli, value_file
 
 ADDRESS = "agent@example.com"
 CREDENTIAL = "app-password-do-not-leak"
@@ -82,42 +81,40 @@ def test_new_backend_uses_existing_connect_without_parser_changes(
         wanted = (address or answers.get("address") or "").strip()
         secret = (token or answers.get("credential") or "").strip()
         if not secret:
-            return setup_needed([credential_option()])
+            return setup_needed(credential_option())
         if not wanted:
-            return setup_needed([address_option(required=True)])
+            return setup_needed(address_option(required=True))
         return mailbox_view(wanted, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
     code, first = _connect(monkeypatch, capsys, env)
     assert code == 3
     assert first["status"] == "input_required"
-    assert first["setup_id"]
-    assert first["continue"].startswith("agentself email connect --continue ")
+    assert first["state"]
+    assert first["continue"].startswith("agentself email connect --continue --state ")
     assert "agentmail" not in json.dumps(first).lower()
-    assert [item["name"] for item in first["options"]] == ["credential"]
-    assert first["options"][0]["sensitive"] is True
+    assert first["option"]["name"] == "credential"
+    assert first["option"]["sensitive"] is True
     listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
     assert all(not name.startswith("internal.") for name in listed["names"])
 
-    cred = tmp_path / "credential.txt"
-    cred.write_text(CREDENTIAL, encoding="utf-8")
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
     code, second = _connect(
         monkeypatch,
         capsys,
         env,
-        ["--continue", first["setup_id"], "--result-file", str(cred)],
+        ["--continue", "--state", first["state"], "--result-file", cred],
     )
     assert code == 3
-    assert second["setup_id"] == first["setup_id"]
-    assert [item["name"] for item in second["options"]] == ["address"]
+    assert second["state"] != first["state"]
+    assert second["option"]["name"] == "address"
 
-    addr = tmp_path / "address.txt"
-    addr.write_text(ADDRESS, encoding="utf-8")
+    addr = value_file(tmp_path, ADDRESS, "address.txt")
     code, done = _connect(
         monkeypatch,
         capsys,
         env,
-        ["--continue", second["setup_id"], "--result-file", str(addr)],
+        ["--continue", "--state", second["state"], "--result-file", addr],
     )
     assert code == 0
     assert done["ok"] is True
@@ -137,7 +134,7 @@ def test_human_action_and_pending_states(tmp_path: Path, monkeypatch, capsys) ->
 
     def action(_token, _address, _answers):
         return setup_needed(
-            [],
+            None,
             status=SETUP_ACTION_REQUIRED,
             human_action_required=True,
             message="Confirm this identity in the mail provider",
@@ -148,13 +145,13 @@ def test_human_action_and_pending_states(tmp_path: Path, monkeypatch, capsys) ->
     assert code == 3
     assert payload["status"] == "action_required"
     assert payload["human_action_required"] is True
-    assert payload["setup_id"]
+    assert payload["state"]
     blob = json.dumps(payload).lower()
     assert "oauth" not in blob
     assert "otp" not in blob
 
     def pending(_token, _address, _answers):
-        return setup_needed([], status=SETUP_PENDING, message="Provisioning")
+        return setup_needed(None, status=SETUP_PENDING, message="Provisioning")
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(pending))
     code, waiting = _connect(monkeypatch, capsys, env)
@@ -163,45 +160,33 @@ def test_human_action_and_pending_states(tmp_path: Path, monkeypatch, capsys) ->
     assert waiting["human_action_required"] is False
 
 
-def test_expired_and_unknown_setup_are_failed(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
 
     def connect(_token, _address, _answers):
-        return setup_needed([credential_option()], expires_at=time.time() - 5)
+        return setup_needed(credential_option())
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    code, first = _connect(monkeypatch, capsys, env)
-    assert code == 3
-    cred = tmp_path / "credential.txt"
-    cred.write_text(CREDENTIAL, encoding="utf-8")
-    code, expired = _connect(
-        monkeypatch,
-        capsys,
-        env,
-        ["--continue", first["setup_id"], "--result-file", str(cred)],
-    )
-    assert code == 1
-    assert expired["ok"] is False
-    assert expired["status"] == "failed"
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
     code, unknown = _connect(
         monkeypatch,
         capsys,
         env,
         [
             "--continue",
-            "deadbeefdeadbeefdeadbeefdeadbeef",
+            "--state",
+            "not-a-state",
             "--result-file",
-            str(cred),
+            cred,
         ],
     )
     assert code == 1
+    assert unknown["ok"] is False
     assert unknown["status"] == "failed"
 
 
-def test_import_env_persists_credentials_ordinary_connect_does_not(
+def test_env_connects_without_copying_into_vault(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -211,7 +196,7 @@ def test_import_env_persists_credentials_ordinary_connect_does_not(
         wanted = (address or answers.get("address") or "").strip()
         secret = (token or answers.get("credential") or "").strip()
         if not secret or not wanted:
-            return setup_needed([address_option(required=True), credential_option()])
+            return setup_needed(address_option(required=True))
         return mailbox_view(wanted, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
@@ -223,18 +208,3 @@ def test_import_env_persists_credentials_ordinary_connect_does_not(
     missing = run_cli(["--json", "secret", "exists", "email.send.token"], env)
     assert missing.returncode == 3
     assert json.loads(missing.stdout)["exists"] is False
-
-    other = tmp_path / "imported"
-    other.mkdir()
-    imported_env = cli_env(other)
-    assert run_cli(["--json", "init"], imported_env).returncode == 0
-    imported_env["AGENTSELF_EMAIL_ADDRESS"] = ADDRESS
-    imported_env["AGENTSELF_EMAIL_CREDENTIAL"] = CREDENTIAL
-    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    code, imported = _connect(monkeypatch, capsys, imported_env, ["--import-env"])
-    assert code == 0, imported
-    present = run_cli(["--json", "secret", "exists", "email.send.token"], imported_env)
-    assert present.returncode == 0
-    assert json.loads(present.stdout)["exists"] is True
-    leaked = run_cli(["--json", "secret", "get", "email.send.token"], imported_env)
-    assert json.loads(leaked.stdout)["value"] == CREDENTIAL

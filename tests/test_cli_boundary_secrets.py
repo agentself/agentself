@@ -33,7 +33,14 @@ from agentself.internal.log import MemoryLog
 from agentself.internal.registry import FilePrincipalAccess, RegistryError
 from agentself.local import VaultStateError, ensure_age_key, resolve_age_key_file
 
-from tests.support import build_app, cli_env, enroll_principal, run_cli, symlink_or_skip
+from tests.support import (
+    build_app,
+    cli_env,
+    enroll_principal,
+    run_cli,
+    symlink_or_skip,
+    value_file,
+)
 
 AGE_CANARY = "AGE-SECRET-KEY-1CANARYBOUNDARYTEST"
 TOKEN_CANARY = "hold-token-CANARY-boundary"
@@ -129,7 +136,16 @@ def test_flag_tokens_after_doubledash_are_stored_as_values(tmp_path):
         ("machineflag", "--machine"),
         ("versionflag", "--version"),
     ):
-        created = run_cli(["secret", "create", name, "--", value], env)
+        created = run_cli(
+            [
+                "secret",
+                "create",
+                name,
+                "--file",
+                value_file(tmp_path, value, name + ".txt"),
+            ],
+            env,
+        )
         assert created.returncode == 0, created.stderr
         assert value not in created.stdout
         got = run_cli(["secret", "get", name], env)
@@ -161,7 +177,17 @@ def test_secret_create_value_stays_off_stderr_logs_and_list(tmp_path):
     assert AGE_CANARY not in start.stdout + start.stderr
     assert WALLET_CANARY not in start.stdout + start.stderr
 
-    created = run_cli(["--json", "secret", "create", "notes", PLAIN_CANARY], env)
+    created = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, PLAIN_CANARY),
+        ],
+        env,
+    )
     assert created.returncode == 0, created.stderr
     blob = _blob(created.stdout, created.stderr)
     assert PLAIN_CANARY not in blob

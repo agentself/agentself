@@ -404,8 +404,8 @@ def test_cli_imap_bind_is_usable_and_fails_closed(tmp_path):
     assert start.returncode == 0, start.stderr
     assert "email_backend: imap" in start.stdout
     shown = run_cli(["email", "show"], env)
-    assert shown.returncode == 3, shown.stdout + shown.stderr
-    assert "not configured" in shown.stderr
+    assert shown.returncode == 0, shown.stdout + shown.stderr
+    assert shown.stdout.strip() == "not configured"
     sent = run_cli(["email", "send", TO, "hello", "body"], env)
     assert sent.returncode == 1, sent.stdout + sent.stderr
     assert "Traceback" not in sent.stderr
@@ -416,5 +416,5 @@ def test_cli_imap_bind_is_usable_and_fails_closed(tmp_path):
     backends = run_cli(["backends", "email"], env)
     assert backends.returncode == 0, backends.stderr
     assert "imap" in backends.stdout
-    assert "email.address" in backends.stdout
+    assert "address" in backends.stdout
     assert "AGENTSELF_MAIL_HOST" in backends.stdout

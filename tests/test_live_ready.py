@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.support import cli_env, plant_host_binaries, run_cli
+from tests.support import cli_env, plant_host_binaries, run_cli, value_file
 
 
 def _path_with_age_without_sops(tmp_path: Path) -> str:
@@ -20,7 +20,9 @@ def test_set_missing_sops_one_error_line(tmp_path):
 
     env = dict(env)
     env["PATH"] = _path_with_age_without_sops(tmp_path)
-    proc = run_cli(["secret", "create", "notes", "x"], env)
+    proc = run_cli(
+        ["secret", "create", "notes", "--file", value_file(tmp_path, "x")], env
+    )
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "Traceback" not in proc.stderr
     assert "Traceback" not in proc.stdout
@@ -37,7 +39,17 @@ def test_set_missing_sops_json_error(tmp_path):
 
     env = dict(env)
     env["PATH"] = _path_with_age_without_sops(tmp_path)
-    proc = run_cli(["secret", "create", "--json", "notes", "x"], env)
+    proc = run_cli(
+        [
+            "secret",
+            "create",
+            "--json",
+            "notes",
+            "--file",
+            value_file(tmp_path, "x"),
+        ],
+        env,
+    )
     assert proc.returncode == 1, proc.stdout + proc.stderr
     err = json.loads(proc.stdout or proc.stderr)
     assert err == {

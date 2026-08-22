@@ -23,11 +23,11 @@ agentself backends
 agentself diagnose
 ```
 
-Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `note`, `email`, `wallet`, `backup`, `restore`, `install`.
+Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `email`, `wallet`, `backup`, `restore`, `install`.
 
 Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 3). Ignore unknown keys.
 
-No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey) and email readiness. Unconfigured `email show` exits 3.
+No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey) and email readiness. Unconfigured `email show` is ready false, exit 0.
 
 Identity directory is `AGENTSELF_VAULT_ROOT` (default `~/.agentself`).
 
@@ -44,14 +44,16 @@ agentself backends wallet
 
 ## Live vs not
 
-`agentself backends` lists shipped backends and their setup options. Default wallet is live Base (`--wallet base`) and can move real funds. Email is optional: `email connect` is a generic, resumable setup. `--json email connect` never prompts. Continue with `agentself email connect --continue SETUP_ID --result-file PATH`. Do not invent `{id}@domain`. See `agentself backends email` for inputs. Sensitive answers are never passed on argv.
+`agentself backends` lists shipped backends and their setup options. Default wallet is live Base (`--wallet base`) and can move real funds. Email is optional.
+
+`--json email connect` never prompts. On exit 3, read `option.help` and `message` — that text is the procedure. Obtain the value with other tools or ask the operator. Continue with `agentself email connect --continue --state STATE --result-file PATH`. Sensitive answers go in the file, not argv. If you cannot obtain the value, `agentself backends email` then `init --force --email OTHER`, or stop. Do not invent `{id}@domain`. Do not switch backends with `--continue`.
 
 ## Skills
 
 ```bash
 agentself install --skills
-agentself install --skills --local
-agentself install --skills=agents --local
+agentself install --skills -g
+agentself install --skills=agents
 ```
 
-Skills install under the user home directory unless `--local`.
+Skills install into the current directory unless `-g`.

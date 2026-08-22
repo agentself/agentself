@@ -33,7 +33,6 @@ def test_unknown_command_does_not_list_aliases(tmp_path):
         "backends",
         "diagnose",
         "secret",
-        "note",
         "email",
         "wallet",
         "backup",
@@ -61,7 +60,7 @@ def test_install_copies_bundled_skill(tmp_path):
     bare = run_cli(["install"], env, cwd=tmp_path)
     assert bare.returncode == 2, bare.stdout + bare.stderr
     assert "next: agentself install --skills" in bare.stderr
-    proc = run_cli(["install", "--skills", "--local"], env, cwd=tmp_path)
+    proc = run_cli(["install", "--skills"], env, cwd=tmp_path)
     assert proc.returncode == 0, proc.stderr
     dest = tmp_path / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
@@ -69,9 +68,7 @@ def test_install_copies_bundled_skill(tmp_path):
     assert "installed" in proc.stdout
     assert not (tmp_path / ".grok" / "skills" / "agentself" / "SKILL.md").exists()
 
-    one = run_cli(
-        ["--json", "install", "--skills=agents", "--local"], env, cwd=tmp_path
-    )
+    one = run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path)
     assert one.returncode == 0, one.stderr
     data = json.loads(one.stdout)
     assert data["ok"] is True
@@ -89,7 +86,7 @@ def test_install_unknown_target_is_actionable(tmp_path):
 def test_install_io_error_is_one_line(tmp_path):
     env = cli_env(tmp_path / "vault")
     (tmp_path / ".agents").write_text("blocked", encoding="utf-8")
-    proc = run_cli(["install", "--skills=agents", "--local"], env, cwd=tmp_path)
+    proc = run_cli(["install", "--skills=agents"], env, cwd=tmp_path)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "Traceback" not in proc.stderr
     assert "Traceback" not in proc.stdout
@@ -97,7 +94,7 @@ def test_install_io_error_is_one_line(tmp_path):
     assert len(lines) == 1, proc.stderr
     assert "error" in proc.stderr.lower()
 
-    js = run_cli(["--json", "install", "--skills=agents", "--local"], env, cwd=tmp_path)
+    js = run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path)
     assert js.returncode == 1, js.stdout + js.stderr
     data = json.loads(js.stdout)
     assert data["ok"] is False

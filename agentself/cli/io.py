@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -37,15 +36,3 @@ def store_value_file(path: str, value: str) -> None:
 
 def value_meta(value: str) -> dict[str, object]:
     return {"bytes": byte_count(value), "sha256": sha256_text(value)}
-
-
-def parse_result_payload(text: str) -> dict[str, str]:
-    stripped = text.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        try:
-            data = json.loads(stripped)
-        except json.JSONDecodeError:
-            data = None
-        if isinstance(data, dict):
-            return {str(key): str(value) for key, value in data.items()}
-    return {}

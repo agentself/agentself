@@ -6,8 +6,6 @@ WALLET_KEY_NAME = "wallet.key"
 SEND_TOKEN_NAME = "email.send.token"
 EMAIL_ADDRESS_NAME = "email.address"
 INTERNAL_PREFIX = "internal."
-SETUP_PREFIX = "internal.setup."
-NOTE_PREFIX = "note."
 PROTECTED_HOLD_NAMES = frozenset({WALLET_KEY_NAME})
 
 

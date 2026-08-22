@@ -11,7 +11,6 @@
       {
         "name": "sops",
         "summary": "age files on this computer",
-        "knobs": [],
         "live": false,
         "verbs": [
           "create",
@@ -22,12 +21,12 @@
         ],
         "custody": "age-files",
         "network": "",
-        "asset": ""
+        "asset": "",
+        "options": []
       },
       {
         "name": "pass",
         "summary": "gpg password store",
-        "knobs": [],
         "live": false,
         "verbs": [
           "create",
@@ -38,7 +37,8 @@
         ],
         "custody": "gpg-pass",
         "network": "",
-        "asset": ""
+        "asset": "",
+        "options": []
       }
     ]
   }

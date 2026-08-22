@@ -24,6 +24,7 @@ from tests.support import (
     compose_with_rpc,
     run_cli,
     setup_principal,
+    value_file,
 )
 
 
@@ -118,9 +119,10 @@ def test_email_set_does_not_print_invented_maildir_inbox(tmp_path):
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert "unrecognized arguments: --domain" in proc.stderr
     shown = run_cli(["--json", "email", "show"], env)
-    assert shown.returncode == 3, shown.stdout + shown.stderr
+    assert shown.returncode == 0, shown.stdout + shown.stderr
     email = json.loads(shown.stdout)
-    assert email["ok"] is False
+    assert email["ok"] is True
+    assert email["ready"] is False
     assert "agent@example.com" not in shown.stdout
 
 
@@ -360,7 +362,16 @@ def test_cli_json_email_recv_list_injected_rpc(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", "hold-value"], env)
+    sealed = run_cli(
+        [
+            "secret",
+            "create",
+            "email.send.token",
+            "--file",
+            value_file(tmp_path, "hold-value"),
+        ],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     assert "hold-value" not in sealed.stdout
     assert "hold-value" not in sealed.stderr
@@ -541,7 +552,16 @@ def test_cli_json_email_recv_mixed_is_ok(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init", "--email", "agentmail"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", "hold-value"], env)
+    sealed = run_cli(
+        [
+            "secret",
+            "create",
+            "email.send.token",
+            "--file",
+            value_file(tmp_path, "hold-value"),
+        ],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
@@ -627,7 +647,16 @@ def test_cli_json_email_recv_one_id_is_ok(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init", "--email", "agentmail"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", "hold-value"], env)
+    sealed = run_cli(
+        [
+            "secret",
+            "create",
+            "email.send.token",
+            "--file",
+            value_file(tmp_path, "hold-value"),
+        ],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
@@ -722,4 +751,4 @@ def test_cli_json_wallet_authorize_has_authorization(tmp_path, monkeypatch, caps
     data = json.loads(captured.out)
     assert data["ok"] is True
     assert data["authorization"].startswith("0x")
-    assert data.get("signature") == data["authorization"]
+    assert "signature" not in data

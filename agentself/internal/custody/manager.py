@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import builtins
-import json
 import os
-import time
 from typing import NoReturn, Protocol
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
@@ -60,13 +58,10 @@ from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
     SETUP_FAILED,
-    SETUP_TTL_SECONDS,
     continue_command,
+    decode_state,
+    encode_state,
     is_reserved_secret_name,
-    new_setup_id,
-    note_hold_name,
-    note_public_name,
-    setup_hold_name,
     setup_status_of,
 )
 from agentself.internal.types import BoundCaller, Principal
@@ -80,6 +75,7 @@ _WALLET_VIEW_KEYS = (
     "chain_id",
     "asset",
     "kind",
+    "scheme",
 )
 _BALANCE_KEYS = (
     "asset",
@@ -287,121 +283,13 @@ class CustodyManager:
             self._fail_store("delete", principal.id, name, exc)
         self._log.record("delete", principal.id, name, "ok")
 
-    def note_create(
-        self,
-        caller: BoundCaller,
-        name: str,
-        value: str,
-        hold_owner: str | None = None,
-    ) -> bool:
-        return self._note_write(caller, name, value, hold_owner, replace=False)
-
-    def note_update(
-        self,
-        caller: BoundCaller,
-        name: str,
-        value: str,
-        hold_owner: str | None = None,
-    ) -> None:
-        self._note_write(caller, name, value, hold_owner, replace=True)
-
-    def note_get(
-        self,
-        caller: BoundCaller,
-        name: str,
-        hold_owner: str | None = None,
-    ) -> str:
-        principal = self._own_hold(caller, hold_owner, "note_get", name)
-        hold = note_hold_name(name)
-        store = self._store_for(principal, "note_get", hold)
-        try:
-            value = store.reveal(principal.id, hold)
-        except HoldNameMissing:
-            self._log.record("note_get", principal.id, hold, "missing")
-            raise MissingHoldName("missing") from None
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("note_get", principal.id, hold, exc)
-        self._log.record("note_get", principal.id, hold, "ok")
-        return value
-
-    def note_list(
-        self,
-        caller: BoundCaller,
-        hold_owner: str | None = None,
-    ) -> builtins.list[str]:
-        principal = self._own_hold(caller, hold_owner, "note_list", None)
-        store = self._store_for(principal, "note_list", None)
-        try:
-            names = store.list(principal.id)
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("note_list", principal.id, None, exc)
-        public = [note_public_name(name) for name in names if name.startswith("note.")]
-        self._log.record("note_list", principal.id, None, "ok")
-        return public
-
-    def note_delete(
-        self,
-        caller: BoundCaller,
-        name: str,
-        hold_owner: str | None = None,
-    ) -> None:
-        principal = self._own_hold(caller, hold_owner, "note_delete", name)
-        hold = note_hold_name(name)
-        store = self._store_for(principal, "note_delete", hold)
-        try:
-            store.delete(principal.id, hold)
-        except HoldNameMissing:
-            self._log.record("note_delete", principal.id, hold, "missing")
-            raise MissingHoldName("missing") from None
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("note_delete", principal.id, hold, exc)
-        self._log.record("note_delete", principal.id, hold, "ok")
-
-    def _note_write(
-        self,
-        caller: BoundCaller,
-        name: str,
-        value: str,
-        hold_owner: str | None,
-        *,
-        replace: bool,
-    ) -> bool:
-        op = "note_update" if replace else "note_create"
-        principal = self._own_hold(caller, hold_owner, op, name)
-        hold = note_hold_name(name)
-        store = self._store_for(principal, op, hold)
-        try:
-            if replace:
-                store.replace(principal.id, hold, value)
-                self._log.record(op, principal.id, hold, "ok")
-                return False
-            store.seal(principal.id, hold, value)
-        except HoldNameExists:
-            try:
-                existing = store.reveal(principal.id, hold)
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store(op, principal.id, hold, exc)
-            if existing == value:
-                self._log.record(op, principal.id, hold, "ok")
-                return True
-            self._log.record(op, principal.id, hold, "exists")
-            raise Refused("refused") from None
-        except HoldNameMissing:
-            self._log.record(op, principal.id, hold, "missing")
-            raise MissingHoldName("missing") from None
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store(op, principal.id, hold, exc)
-        self._log.record(op, principal.id, hold, "ok")
-        return False
-
     def email_connect(
         self,
         caller: BoundCaller,
         hold_owner: str | None = None,
         *,
         answers: dict[str, str] | None = None,
-        setup_id: str | None = None,
-        import_env: bool = False,
+        state: str | None = None,
     ) -> dict[str, object]:
         principal = self._own_hold(caller, hold_owner, "email_connect", None)
         incoming = {
@@ -409,43 +297,21 @@ class CustodyManager:
             for key, value in (answers or {}).items()
             if str(value).strip()
         }
-        state: dict[str, object] | None = None
-        if setup_id:
-            state = self._load_setup(principal, setup_id)
-            if state is None:
+        asked = ""
+        token = (state or "").strip()
+        if token:
+            decoded = decode_state(token)
+            if decoded is None:
                 self._log.record("email_connect", principal.id, None, "error")
-                return {
-                    "status": SETUP_FAILED,
-                    "reason": "unknown setup",
-                    "setup_id": setup_id,
-                }
-            stored_answers = state.get("answers")
-            merged: dict[str, str] = {}
-            if isinstance(stored_answers, dict):
-                merged.update(
-                    {
-                        str(key): str(value)
-                        for key, value in stored_answers.items()
-                        if str(value).strip()
-                    }
-                )
-            merged.update(incoming)
-            incoming = merged
+                return {"status": SETUP_FAILED, "reason": "unknown setup"}
+            asked = str(decoded.get("option") or "").strip()
             raw_value = incoming.pop("value", "").strip()
-            if raw_value:
-                pending = state.get("options")
-                if isinstance(pending, list):
-                    for item in pending:
-                        if not isinstance(item, dict):
-                            continue
-                        name = str(item.get("name") or "").strip()
-                        if name and name not in incoming:
-                            incoming[name] = raw_value
-                elif raw_value and OPTION_CREDENTIAL not in incoming:
-                    incoming[OPTION_CREDENTIAL] = raw_value
+            if asked and raw_value and asked not in incoming:
+                incoming[asked] = raw_value
         else:
             incoming.pop("value", None)
-        address, credential, sources = self._resolve_email_inputs(principal, incoming)
+        self._persist_setup_answers(principal, incoming)
+        address, credential, _sources = self._resolve_email_inputs(principal, incoming)
         mailbox = self._mailbox_for(principal, "email_connect")
         try:
             desc = mailbox.connect(
@@ -460,52 +326,29 @@ class CustodyManager:
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
             view = _email_view(desc)
-            self._persist_email_success(
-                principal,
-                view,
-                incoming,
-                sources,
-                import_env=import_env,
-            )
-            if setup_id:
-                self._delete_setup(principal, setup_id)
+            self._persist_email_success(principal, view)
             view["status"] = SETUP_CONNECTED
             self._log.record("email_connect", principal.id, None, "ok")
             return view
         if status == SETUP_FAILED:
-            if setup_id:
-                self._delete_setup(principal, setup_id)
             self._log.record("email_connect", principal.id, None, "error")
             reason = str(desc.get("reason") or "error")
             return {"status": SETUP_FAILED, "reason": reason}
-        record_id = setup_id or new_setup_id()
-        expires_at = desc.get("expires_at")
-        if not isinstance(expires_at, (int, float)):
-            expires_at = time.time() + SETUP_TTL_SECONDS
-        options = desc.get("options")
-        option_list = options if isinstance(options, list) else []
+        option = _setup_option_of(desc)
         human = (
             bool(desc.get("human_action_required")) or status == SETUP_ACTION_REQUIRED
         )
-        self._save_setup(
-            principal,
-            record_id,
-            {
-                "answers": incoming,
-                "status": status,
-                "options": option_list,
-                "expires_at": expires_at,
-                "backend": self._email_backend,
-            },
+        next_state = encode_state(
+            {"option": str(option.get("name") or "")} if option else {"status": status}
         )
         payload: dict[str, object] = {
             "status": status,
-            "setup_id": record_id,
-            "options": option_list,
+            "state": next_state,
             "human_action_required": human,
-            "continue": continue_command(record_id),
-            "expires_at": expires_at,
+            "continue": continue_command(next_state),
         }
+        if option:
+            payload["option"] = option
         if desc.get("message"):
             payload["message"] = desc["message"]
         self._log.record("email_connect", principal.id, None, "ok")
@@ -761,35 +604,23 @@ class CustodyManager:
             return setup_val, "setup"
         return None, None
 
+    def _persist_setup_answers(
+        self, principal: Principal, answers: dict[str, str]
+    ) -> None:
+        credential = (answers.get(OPTION_CREDENTIAL) or "").strip()
+        if credential:
+            self._store_put(principal, SEND_TOKEN_NAME, credential, "email_connect")
+        address = (answers.get(OPTION_ADDRESS) or "").strip()
+        if address:
+            self._store_put(principal, EMAIL_ADDRESS_NAME, address, "email_connect")
+
     def _persist_email_success(
         self,
         principal: Principal,
         view: dict[str, object],
-        answers: dict[str, str],
-        sources: dict[str, str],
-        *,
-        import_env: bool,
     ) -> None:
         email = str(view.get("address") or "").strip()
         if view.get("owned_address") and email:
-            self._store_put(principal, EMAIL_ADDRESS_NAME, email, "email_connect")
-        cred_source = sources.get(OPTION_CREDENTIAL)
-        credential = answers.get(OPTION_CREDENTIAL) or ""
-        if cred_source == "setup" and credential:
-            self._store_put(principal, SEND_TOKEN_NAME, credential, "email_connect")
-        elif import_env and cred_source in {"env", "alias"}:
-            env_cred = os.environ.get(ENV_EMAIL_CREDENTIAL, "").strip()
-            if not env_cred:
-                catalog = bind_of("email", self._email_backend)
-                for item in list(catalog.options) if catalog is not None else []:
-                    if item.get("name") == OPTION_CREDENTIAL:
-                        alias = str(item.get("source") or "").strip()
-                        if alias:
-                            env_cred = os.environ.get(alias, "").strip()
-            if env_cred:
-                self._store_put(principal, SEND_TOKEN_NAME, env_cred, "email_connect")
-        addr_source = sources.get(OPTION_ADDRESS)
-        if import_env and addr_source in {"env", "alias"} and email:
             self._store_put(principal, EMAIL_ADDRESS_NAME, email, "email_connect")
 
     def _store_put(
@@ -811,54 +642,6 @@ class CustodyManager:
                 self._fail_store(operation, principal.id, name, exc)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, principal.id, name, exc)
-
-    def _load_setup(
-        self, principal: Principal, setup_id: str
-    ) -> dict[str, object] | None:
-        try:
-            hold = setup_hold_name(setup_id)
-        except ValueError:
-            return None
-        store = self._store_for(principal, "email_connect", hold)
-        try:
-            raw = store.reveal(principal.id, hold)
-        except HoldNameMissing:
-            return None
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("email_connect", principal.id, hold, exc)
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            self._delete_setup(principal, setup_id)
-            return None
-        if not isinstance(data, dict):
-            self._delete_setup(principal, setup_id)
-            return None
-        expires = data.get("expires_at")
-        if isinstance(expires, (int, float)) and expires < time.time():
-            self._delete_setup(principal, setup_id)
-            return None
-        return data
-
-    def _save_setup(
-        self, principal: Principal, setup_id: str, payload: dict[str, object]
-    ) -> None:
-        hold = setup_hold_name(setup_id)
-        body = json.dumps(payload, sort_keys=True)
-        self._store_put(principal, hold, body, "email_connect")
-
-    def _delete_setup(self, principal: Principal, setup_id: str) -> None:
-        try:
-            hold = setup_hold_name(setup_id)
-        except ValueError:
-            return
-        store = self._store_for(principal, "email_connect", hold)
-        try:
-            store.delete(principal.id, hold)
-        except HoldNameMissing:
-            return
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("email_connect", principal.id, hold, exc)
 
     def _own_hold(
         self,
@@ -1052,6 +835,18 @@ def _pick(data: object, keys: tuple[str, ...]) -> dict:
     if not isinstance(data, dict):
         return {}
     return {key: data[key] for key in keys if key in data}
+
+
+def _setup_option_of(desc: dict[str, object]) -> dict[str, object] | None:
+    option = desc.get("option")
+    if isinstance(option, dict) and str(option.get("name") or "").strip():
+        return dict(option)
+    options = desc.get("options")
+    if isinstance(options, list):
+        for item in options:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                return dict(item)
+    return None
 
 
 def _email_view(desc: object) -> dict[str, object]:

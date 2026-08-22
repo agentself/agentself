@@ -8,9 +8,7 @@ from agentself.host import CHANNELS, ENV_VAULT_ROOT, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
-_FEATURED = (
-    "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
-)
+_FEATURED = "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -168,7 +166,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself backends\n"
             "  agentself diagnose\n"
             "  agentself --json show\n"
-            "  agentself secret create NAME --file PATH\n"
+            "  agentself secret create NAME VALUE\n"
             "  agentself wallet address\n"
             "  agentself install --skills\n"
             "\n"
@@ -235,7 +233,7 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="List shipped backends",
         description=(
-            "List shipped host backends and their host knobs. Same command tree on "
+            "List shipped host backends and their setup options. Same command tree on "
             "every backend; each backend lists live/local and supported verbs. "
             "Pick with init flags or AGENTSELF_*_BACKEND. "
             "Flag, then env, then identity-directory config, then default. No failover. "
@@ -288,6 +286,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Examples:\n"
+            "  agentself secret create NAME VALUE\n"
             "  agentself secret create NAME --file PATH\n"
             "  agentself secret get NAME\n"
             "  agentself secret exists NAME\n"
@@ -312,14 +311,13 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Write a named secret. Refuses if the name exists with a different value. "
             "Repeating the same value is unchanged. "
-            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH. "
-            "Prefer --file or stdin; a positional value is still accepted."
+            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH."
         ),
         epilog=(
             "Examples:\n"
+            "  agentself secret create NAME VALUE\n"
             "  agentself secret create NAME --file PATH\n"
-            "  agentself secret create NAME\n"
-            "  agentself --json secret create NAME --file PATH"
+            "  agentself --json secret create NAME VALUE"
         ),
     )
     _add_secret_write_args(create_p)
@@ -364,7 +362,7 @@ def _parser() -> argparse.ArgumentParser:
         "update",
         json_parent,
         help="Update a named secret. The name must exist",
-        description="Update a named secret. The name must exist. Same VALUE rules as create.",
+        description="Update a named secret. The name must exist. Same value rules as create.",
         epilog="Examples:\n  agentself secret update NAME VALUE",
     )
     _add_secret_write_args(update_p)
@@ -396,91 +394,6 @@ def _parser() -> argparse.ArgumentParser:
         epilog="Examples:\n  agentself secret exists NAME\n  agentself --json secret exists NAME",
     )
     exists_p.add_argument("name", metavar="NAME", help="Secret name")
-
-    note = _cmd(
-        sub,
-        "note",
-        json_parent,
-        help="Encrypted notes for process handoff",
-        description=(
-            "Encrypted notes. Separate from secrets. "
-            "create refuses if the name exists with a different value. "
-            "list prints names only."
-        ),
-        epilog=(
-            "Examples:\n"
-            "  agentself note create NAME --file PATH\n"
-            "  agentself note get NAME\n"
-            "  agentself --json note list\n"
-            "\n"
-            "Use agentself note <command> --help to drill in."
-        ),
-    )
-    note_sub = note.add_subparsers(
-        dest="note_command",
-        required=True,
-        metavar="{create,get,update,list,delete}",
-        parser_class=_Parser,
-        prog="agentself note",
-    )
-    note_create = _cmd(
-        note_sub,
-        "create",
-        json_parent,
-        help="Write an encrypted note. Refuses if the name exists",
-        description=(
-            "Write an encrypted note. Refuses if the name exists with a different value. "
-            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH."
-        ),
-        epilog="Examples:\n  agentself note create NAME --file PATH",
-    )
-    _add_secret_write_args(note_create)
-    note_get = _cmd(
-        note_sub,
-        "get",
-        json_parent,
-        help="Print an encrypted note",
-        description="Print an encrypted note. Exits 3 if the name is missing.",
-        epilog="Examples:\n  agentself note get NAME",
-    )
-    note_get.add_argument("name", metavar="NAME", help="Note name")
-    note_get.add_argument(
-        "--file",
-        dest="to_file",
-        default="",
-        metavar="PATH",
-        help="Write the value to a file instead of stdout",
-    )
-    note_get.add_argument(
-        "--meta",
-        action="store_true",
-        help="Print size and SHA-256 without the value",
-    )
-    note_update = _cmd(
-        note_sub,
-        "update",
-        json_parent,
-        help="Update an encrypted note. The name must exist",
-        description="Update an encrypted note. Same VALUE rules as create.",
-        epilog="Examples:\n  agentself note update NAME --file PATH",
-    )
-    _add_secret_write_args(note_update)
-    _cmd(
-        note_sub,
-        "list",
-        json_parent,
-        help="List note names. Never print values",
-        epilog="Examples:\n  agentself note list\n  agentself --json note list",
-    )
-    note_delete = _cmd(
-        note_sub,
-        "delete",
-        json_parent,
-        help="Delete an encrypted note",
-        description="Delete an encrypted note. No prompt.",
-        epilog="Examples:\n  agentself note delete NAME",
-    )
-    note_delete.add_argument("name", metavar="NAME", help="Note name")
 
     email = _cmd(
         sub,
@@ -520,38 +433,37 @@ def _parser() -> argparse.ArgumentParser:
             "Interactive use continues setup until connected. "
             "--json never prompts: it returns a generic setup object and exit 3 "
             "when input or a human action is required. "
-            "Continue with --continue SETUP_ID. "
+            "Continue with --continue --state STATE. "
             "Sensitive answers come from --result-file, stdin, or a hidden prompt, "
-            "never from argv. "
-            "--import-env persists validated environment credentials."
+            "never from argv."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email connect\n"
-            "  agentself email connect --continue SETUP_ID --result-file PATH\n"
+            "  agentself email connect --continue --state STATE --result-file PATH\n"
             "  agentself --json email connect\n"
             "  agentself backends email"
         ),
     )
     connect_p.add_argument(
         "--continue",
-        dest="setup_id",
+        dest="do_continue",
+        action="store_true",
+        help="Continue a pending setup with --state",
+    )
+    connect_p.add_argument(
+        "--state",
+        dest="setup_state",
         default="",
-        metavar="SETUP_ID",
-        help="Resume a pending setup by opaque id",
+        metavar="STATE",
+        help="Opaque state from the previous setup response",
     )
     connect_p.add_argument(
         "--result-file",
         dest="result_file",
         default="",
         metavar="PATH",
-        help="Read a setup answer from a file",
-    )
-    connect_p.add_argument(
-        "--import-env",
-        dest="import_env",
-        action="store_true",
-        help="Persist successfully validated environment credentials",
+        help="Read the current setup answer from a file",
     )
     _cmd(
         email_sub,
@@ -560,7 +472,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Print the live email address",
         description=(
             "Print the live email address. Does not invent an address. "
-            "Exits 3 when email is not configured."
+            "Prints 'not configured' when email is optional and not set up."
         ),
         epilog="Examples:\n  agentself email show\n  agentself --json email show",
     )
@@ -785,17 +697,17 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Copy the optional agent skill, or fetch pinned host tools. "
             "agentself install with neither --skills nor --tools is an error. "
-            "Skills install under the user home directory unless --local. "
-            "-g / --global is for skills, not tools. "
+            "Skills install into the current directory. "
+            "-g / --global writes them under the user home directory. "
             "Skills-less operation is fine: --help and --json are enough."
         ),
         epilog=(
             "Examples:\n"
             "  agentself install --tools\n"
             "  agentself install --skills\n"
-            "  agentself install --skills --local\n"
+            "  agentself install --skills -g\n"
             "  agentself install --skills=agents\n"
-            "  agentself install --skills=agents --local"
+            "  agentself install --skills=agents -g"
         ),
     )
     install_p.add_argument(
@@ -816,12 +728,6 @@ def _parser() -> argparse.ArgumentParser:
         "--global",
         dest="global_install",
         action="store_true",
-        help="Install skills under the user home directory (default)",
-    )
-    install_p.add_argument(
-        "--local",
-        dest="local_install",
-        action="store_true",
-        help="Install skills into the current directory",
+        help="Install skills under the user home directory",
     )
     return parser

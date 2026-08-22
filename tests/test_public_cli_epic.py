@@ -18,18 +18,13 @@ def test_install_skills_project_and_global(tmp_path):
     project.mkdir()
     proc = run_cli(["install", "--skills"], env, cwd=project)
     assert proc.returncode == 0, proc.stderr
-    gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
-    assert gdest.is_file()
-    local = run_cli(["install", "--skills", "--local"], env, cwd=project)
-    assert local.returncode == 0, local.stderr
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
+    gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
     glob = run_cli(["install", "--skills", "-g"], env, cwd=project)
     assert glob.returncode == 0, glob.stderr
     assert gdest.is_file()
-    agents = run_cli(
-        ["--json", "install", "--skills=agents", "--local"], env, cwd=project
-    )
+    agents = run_cli(["--json", "install", "--skills=agents"], env, cwd=project)
     assert agents.returncode == 0, agents.stderr
     data = json.loads(agents.stdout)
     assert data["ok"] is True

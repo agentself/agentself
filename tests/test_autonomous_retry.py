@@ -35,6 +35,7 @@ from tests.support import (
     enroll_principal,
     plant_email,
     run_cli,
+    value_file,
 )
 
 _TO = "0x" + "11" * 20
@@ -179,9 +180,39 @@ def test_cli_secret_create_retry_same_value(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["init"], env).returncode == 0
-    first = run_cli(["--json", "secret", "create", "notes", "alpha"], env)
-    second = run_cli(["--json", "secret", "create", "notes", "alpha"], env)
-    clash = run_cli(["--json", "secret", "create", "notes", "beta"], env)
+    first = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, "alpha"),
+        ],
+        env,
+    )
+    second = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, "alpha", "alpha2.txt"),
+        ],
+        env,
+    )
+    clash = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "notes",
+            "--file",
+            value_file(tmp_path, "beta", "beta.txt"),
+        ],
+        env,
+    )
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
     assert clash.returncode == 2, clash.stderr

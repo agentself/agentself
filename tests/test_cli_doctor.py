@@ -1,4 +1,4 @@
-"""Host catalog: identity-directory path, per-backend knobs, --version, and diagnose."""
+"""Host catalog: identity-directory path, per-backend options, --version, and diagnose."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ def test_backends_mailbox_lists_send_holds(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["backends", "email"], env)
     assert proc.returncode == 0, proc.stderr
-    assert "email.send.token" in proc.stdout
-    assert "email.address" in proc.stdout
+    assert "credential" in proc.stdout
+    assert "address" in proc.stdout
     assert "imap" in proc.stdout
     assert "AGENTSELF_IMAP_HOST" in proc.stdout
     assert "AGENTSELF_SMTP_HOST" in proc.stdout

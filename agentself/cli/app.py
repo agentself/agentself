@@ -12,7 +12,6 @@ from agentself import __version__
 from agentself.bind import public_recipient
 from agentself.cli.io import (
     load_value_file,
-    parse_result_payload,
     read_stdin_text,
     store_value_file,
     value_meta,
@@ -178,8 +177,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "secret":
             return _secret(gateway, args)
-        if args.command == "note":
-            return _note(gateway, args)
         if args.command == "email":
             return _email(gateway, args)
         if args.command == "wallet":
@@ -400,7 +397,7 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
             nxt="agentself --help",
         )
     rel = _SKILL_TARGETS[target]
-    dest_root = Path.cwd() if getattr(args, "local_install", False) else Path.home()
+    dest_root = Path.home() if getattr(args, "global_install", False) else Path.cwd()
     dest_dir = dest_root / rel
     try:
         body = src.read_text(encoding="utf-8")
@@ -454,8 +451,6 @@ def _print_version(as_json: bool) -> int:
             },
         )
     sys.stdout.write(f"agentself {__version__}\n")
-    sys.stdout.write(f"package: {paths['package']}\n")
-    sys.stdout.write(f"executable: {paths['executable']}\n")
     return 0
 
 
@@ -931,8 +926,7 @@ def _email_connect(vault: Path, args) -> int:
             return err
         result = _gateway(vault).email_connect(
             answers=answers or None,
-            setup_id=(getattr(args, "setup_id", "") or "").strip() or None,
-            import_env=bool(getattr(args, "import_env", False)),
+            state=(getattr(args, "setup_state", "") or "").strip() or None,
         )
     except UnknownBind as exc:
         return _bind_error(args, exc)
@@ -964,9 +958,10 @@ def _email_connect(vault: Path, args) -> int:
 
 
 def _connect_answers(args) -> tuple[dict[str, str], int | None]:
-    setup_id = (getattr(args, "setup_id", "") or "").strip()
+    do_continue = bool(getattr(args, "do_continue", False))
+    state = (getattr(args, "setup_state", "") or "").strip()
     path = (getattr(args, "result_file", "") or "").strip()
-    if path and not setup_id:
+    if path and not do_continue:
         return {}, _fail(
             args,
             2,
@@ -975,8 +970,26 @@ def _connect_answers(args) -> tuple[dict[str, str], int | None]:
             "--result-file needs --continue",
             nxt="agentself email connect --help",
         )
-    if not setup_id:
+    if state and not do_continue:
+        return {}, _fail(
+            args,
+            2,
+            "refused: --state needs --continue\n",
+            "refused",
+            "--state needs --continue",
+            nxt="agentself email connect --help",
+        )
+    if not do_continue:
         return {}, None
+    if not state:
+        return {}, _fail(
+            args,
+            2,
+            "refused: --continue needs --state\n",
+            "refused",
+            "--continue needs --state",
+            nxt="agentself email connect --help",
+        )
     if path:
         try:
             text = load_value_file(path)
@@ -989,19 +1002,11 @@ def _connect_answers(args) -> tuple[dict[str, str], int | None]:
                 "file",
                 nxt="agentself email connect --help",
             )
-        parsed = parse_result_payload(text)
-        if parsed:
-            return parsed, None
-        return {"value": text}, None
+        return {"value": text} if text else {}, None
     if sys.stdin.isatty():
         return {}, None
     text = read_stdin_text()
-    parsed = parse_result_payload(text)
-    if parsed:
-        return parsed, None
-    if text:
-        return {"value": text}, None
-    return {}, None
+    return {"value": text} if text else {}, None
 
 
 def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
@@ -1034,59 +1039,53 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
         and not _as_json(args)
         and sys.stdin.isatty()
         and sys.stdout.isatty()
-        and not (getattr(args, "setup_id", "") or "").strip()
+        and not bool(getattr(args, "do_continue", False))
     ):
-        prompted = _prompt_setup_options(result)
+        prompted = _prompt_setup_option(result)
         if prompted:
             nxt = _gateway(vault).email_connect(
                 answers=prompted,
-                setup_id=str(result.get("setup_id") or "") or None,
-                import_env=bool(getattr(args, "import_env", False)),
+                state=str(result.get("state") or "") or None,
             )
             return _email_connect_result(vault, args, nxt)
     return _email_setup_pending(args, result, status)
 
 
-def _prompt_setup_options(result: dict[str, object]) -> dict[str, str]:
-    options = result.get("options")
-    if not isinstance(options, list):
+def _prompt_setup_option(result: dict[str, object]) -> dict[str, str]:
+    option = result.get("option")
+    if not isinstance(option, dict):
         return {}
-    answers: dict[str, str] = {}
-    for item in options:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        help_text = str(item.get("help") or name)
-        sensitive = bool(item.get("sensitive"))
-        try:
-            if sensitive:
-                value = getpass.getpass(f"{name}: ")
-            else:
-                value = input(f"{name} ({help_text}): ")
-        except EOFError:
-            return {}
-        if value:
-            answers[name] = value
-    return answers
+    name = str(option.get("name") or "").strip()
+    if not name:
+        return {}
+    help_text = str(option.get("help") or name)
+    sensitive = bool(option.get("sensitive"))
+    try:
+        if sensitive:
+            value = getpass.getpass(f"{name}: ")
+        else:
+            value = input(f"{name} ({help_text}): ")
+    except EOFError:
+        return {}
+    if not value:
+        return {}
+    return {name: value}
 
 
 def _setup_public(result: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {}
     for key in (
         "status",
-        "setup_id",
-        "options",
+        "state",
+        "option",
         "human_action_required",
         "continue",
-        "expires_at",
         "message",
     ):
         if key in result:
             payload[key] = result[key]
-    if "continue" not in payload and result.get("setup_id"):
-        payload["continue"] = continue_command(str(result["setup_id"]))
+    if "continue" not in payload and result.get("state"):
+        payload["continue"] = continue_command(str(result["state"]))
     if "human_action_required" not in payload:
         payload["human_action_required"] = (
             setup_status_of(result) == SETUP_ACTION_REQUIRED
@@ -1095,9 +1094,9 @@ def _setup_public(result: dict[str, object]) -> dict[str, object]:
 
 
 def _email_setup_pending(args, result: dict[str, object], status: str) -> int:
-    setup_id = str(result.get("setup_id") or "")
+    token = str(result.get("state") or "")
     nxt = str(result.get("continue") or "") or (
-        continue_command(setup_id) if setup_id else "agentself email connect --help"
+        continue_command(token) if token else "agentself email connect --help"
     )
     extra = _setup_public(result)
     reason = "input required"
@@ -1106,13 +1105,9 @@ def _email_setup_pending(args, result: dict[str, object], status: str) -> int:
     elif status == SETUP_PENDING:
         reason = "pending"
     human = f"{reason}\n"
-    if extra.get("options"):
-        names = []
-        for item in extra["options"] if isinstance(extra["options"], list) else []:
-            if isinstance(item, dict) and item.get("name"):
-                names.append(str(item["name"]))
-        if names:
-            human = f"{reason}: {', '.join(names)}\n"
+    option = extra.get("option")
+    if isinstance(option, dict) and option.get("name"):
+        human = f"{reason}: {option['name']}\n"
     return _fail(
         args,
         3,
@@ -1133,7 +1128,7 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "need email.send.token\n",
             "missing",
             "need email.send.token",
-            nxt="agentself secret create email.send.token",
+            nxt="agentself email connect",
         )
     if reason == "need_address":
         return _fail(
@@ -1142,7 +1137,7 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
             "need email.address\n",
             "missing",
             "need email.address",
-            nxt="agentself secret create email.address",
+            nxt="agentself email connect",
         )
     return _fail(
         args,
@@ -1168,7 +1163,7 @@ def _secret(gateway, args) -> int:
             return _emit_ok(args, payload)
         return 0
     if verb == "get":
-        return _secret_get(gateway, args, protected=True)
+        return _secret_get(gateway, args)
     if verb == "exists":
         found = gateway.exists(args.name)
         if not found:
@@ -1210,13 +1205,9 @@ def _secret(gateway, args) -> int:
     return 1
 
 
-def _secret_get(gateway, args, *, protected: bool) -> int:
+def _secret_get(gateway, args) -> int:
     name = args.name
-    if (
-        protected
-        and name in PROTECTED_HOLD_NAMES
-        and not bool(getattr(args, "unsafe", False))
-    ):
+    if name in PROTECTED_HOLD_NAMES and not bool(getattr(args, "unsafe", False)):
         return _fail(
             args,
             2,
@@ -1225,7 +1216,7 @@ def _secret_get(gateway, args, *, protected: bool) -> int:
             f"{name} is protected",
             nxt="agentself secret get NAME --unsafe",
         )
-    value = gateway.reveal(name) if protected else gateway.note_get(name)
+    value = gateway.reveal(name)
     meta = value_meta(value)
     path = (getattr(args, "to_file", None) or "").strip()
     if getattr(args, "meta", False):
@@ -1250,72 +1241,18 @@ def _secret_get(gateway, args, *, protected: bool) -> int:
     return 0
 
 
-def _note(gateway, args) -> int:
-    verb = args.note_command
-    if verb == "create":
-        value, err = _secret_from_args(args)
-        if err is not None:
-            return _secret_value_error(args, err, kind="note")
-        unchanged = gateway.note_create(args.name, value)
-        payload: dict[str, object] = {"name": args.name}
-        if unchanged:
-            payload["unchanged"] = True
-        if _as_json(args):
-            return _emit_ok(args, payload)
-        return 0
-    if verb == "get":
-        return _secret_get(gateway, args, protected=False)
-    if verb == "update":
-        value, err = _secret_from_args(args)
-        if err is not None:
-            return _secret_value_error(args, err, kind="note")
-        gateway.note_update(args.name, value)
-        if _as_json(args):
-            return _emit_ok(args, {"name": args.name})
-        return 0
-    if verb == "list":
-        names = gateway.note_list()
-        if _as_json(args):
-            return _emit_ok(args, {"names": names})
-        for name in names:
-            sys.stdout.write(name + "\n")
-        return 0
-    if verb == "delete":
-        gateway.note_delete(args.name)
-        if _as_json(args):
-            return _emit_ok(args, {"name": args.name})
-        sys.stdout.write("ok\n")
-        return 0
-    return 1
-
-
 def _email(gateway, args) -> int:
     if args.email_command == "show":
         email = gateway.identity().get("email")
         email = email if isinstance(email, dict) else {}
+        ready = bool(email.get("owned_address") and email.get("address"))
         if _as_json(args):
-            if not (email.get("owned_address") and email.get("address")):
-                return _fail(
-                    args,
-                    3,
-                    "not configured\n",
-                    "missing",
-                    "not configured",
-                    nxt="agentself email connect",
-                    extra={**email, "ready": False},
-                )
-            return _emit_ok(args, {**email, "ready": True})
-        if email.get("owned_address") and email.get("address"):
+            return _emit_ok(args, {**email, "ready": ready})
+        if ready:
             sys.stdout.write(str(email["address"]) + "\n")
-            return 0
-        return _fail(
-            args,
-            3,
-            "not configured\n",
-            "missing",
-            "not configured",
-            nxt="agentself email connect",
-        )
+        else:
+            sys.stdout.write("not configured\n")
+        return 0
     if args.email_command == "send":
         gateway.email_send(args.to, args.subject, args.body)
         if _as_json(args):
@@ -1368,11 +1305,10 @@ def _wallet(gateway, args) -> int:
         wallet = view if isinstance(view, dict) else {}
         payload = {
             "address": addr,
-            "scheme": "eip191",
+            "scheme": str(wallet.get("scheme") or ""),
             "network": str(wallet.get("chain") or ""),
             "message_sha256": sha256_text(message),
             "authorization": token,
-            "signature": token,
         }
         if _as_json(args):
             return _emit_ok(args, payload)
@@ -1568,8 +1504,6 @@ def _default_json_next(args, error: str) -> str:
             return "agentself secret update --help"
         if verb in ("get", "delete", "list", "exists"):
             return "agentself secret list"
-        if getattr(args, "note_command", None) in ("get", "delete", "list"):
-            return "agentself note list"
         return "agentself --help"
     if error == "refused":
         return _channel_next(args)

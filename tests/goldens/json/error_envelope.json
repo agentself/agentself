@@ -27,11 +27,10 @@
   ],
   "setup_extra": [
     "status",
-    "setup_id",
-    "options",
+    "state",
+    "option",
     "human_action_required",
     "continue",
-    "expires_at",
     "message",
     "name",
     "exists",

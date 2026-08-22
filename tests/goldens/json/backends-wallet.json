@@ -11,7 +11,6 @@
       {
         "name": "base",
         "summary": "USDC destination on Base",
-        "knobs": [],
         "live": true,
         "verbs": [
           "show",
@@ -23,14 +22,12 @@
         ],
         "custody": "eoa-key",
         "network": "base",
-        "asset": "USDC"
+        "asset": "USDC",
+        "options": []
       },
       {
         "name": "ethereum",
         "summary": "USDC destination on Ethereum",
-        "knobs": [
-          "AGENTSELF_ETH_RPC_URL"
-        ],
         "live": true,
         "verbs": [
           "show",
@@ -42,7 +39,19 @@
         ],
         "custody": "eoa-key",
         "network": "ethereum",
-        "asset": "USDC"
+        "asset": "USDC",
+        "options": [
+          {
+            "name": "rpc_url",
+            "type": "string",
+            "required": false,
+            "sensitive": false,
+            "default": null,
+            "choices": [],
+            "source": "AGENTSELF_ETH_RPC_URL",
+            "help": "JSON-RPC URL override"
+          }
+        ]
       }
     ]
   }

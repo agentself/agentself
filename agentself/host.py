@@ -3,7 +3,20 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass, field
 
-from agentself.internal.setup import address_option, credential_option, setup_option
+from agentself.internal.setup import (
+    HELP_AGENTMAIL_ADDRESS,
+    HELP_AGENTMAIL_CREDENTIAL,
+    HELP_IMAP_ADDRESS,
+    HELP_IMAP_CREDENTIAL,
+    HELP_IMAP_IMAP_HOST,
+    HELP_IMAP_MAIL_HOST,
+    HELP_IMAP_SMTP_HOST,
+    SOURCE_AGENTMAIL_CREDENTIAL,
+    SOURCE_IMAP_CREDENTIAL,
+    address_option,
+    credential_option,
+    setup_option,
+)
 
 ENV_PREFIX = "AGENTSELF_"
 ENV_VAULT_ROOT = "AGENTSELF_VAULT_ROOT"
@@ -16,8 +29,8 @@ ENV_SMTP_PORT = "AGENTSELF_SMTP_PORT"
 ENV_MAIL_USER = "AGENTSELF_MAIL_USER"
 ENV_EMAIL_ADDRESS = "AGENTSELF_EMAIL_ADDRESS"
 ENV_EMAIL_CREDENTIAL = "AGENTSELF_EMAIL_CREDENTIAL"
-ENV_AGENTMAIL_API_KEY = "AGENTSELF_AGENTMAIL_API_KEY"
-ENV_MAIL_PASSWORD = "AGENTSELF_MAIL_PASSWORD"
+ENV_AGENTMAIL_API_KEY = SOURCE_AGENTMAIL_CREDENTIAL
+ENV_MAIL_PASSWORD = SOURCE_IMAP_CREDENTIAL
 ENV_ETH_RPC_URL = "AGENTSELF_ETH_RPC_URL"
 ENV_WALLET_BACKEND = "AGENTSELF_WALLET_BACKEND"
 ENV_EMAIL_BACKEND = "AGENTSELF_EMAIL_BACKEND"
@@ -37,37 +50,37 @@ _AGENTMAIL_OPTIONS = (
     credential_option(
         required=True,
         source=ENV_AGENTMAIL_API_KEY,
-        help="Send credential",
+        help=HELP_AGENTMAIL_CREDENTIAL,
     ),
     address_option(
         required=False,
-        help="Inbox address when more than one exists",
+        help=HELP_AGENTMAIL_ADDRESS,
     ),
 )
 _IMAP_OPTIONS = (
-    address_option(required=True, help="Mailbox address"),
+    address_option(required=True, help=HELP_IMAP_ADDRESS),
     credential_option(
         required=True,
         source=ENV_MAIL_PASSWORD,
-        help="Mailbox credential",
+        help=HELP_IMAP_CREDENTIAL,
     ),
     setup_option(
         name="mail_host",
         type="string",
         source=ENV_MAIL_HOST,
-        help="Shared mail host when IMAP and SMTP share a name",
+        help=HELP_IMAP_MAIL_HOST,
     ),
     setup_option(
         name="imap_host",
         type="string",
         source=ENV_IMAP_HOST,
-        help="IMAP host override",
+        help=HELP_IMAP_IMAP_HOST,
     ),
     setup_option(
         name="smtp_host",
         type="string",
         source=ENV_SMTP_HOST,
-        help="SMTP host override",
+        help=HELP_IMAP_SMTP_HOST,
     ),
 )
 
@@ -83,7 +96,6 @@ class UnknownBind(ValueError):
 class Bind:
     name: str
     summary: str
-    knobs: tuple[str, ...] = ()
     live: bool = False
     verbs: tuple[str, ...] = ()
     custody: str = ""
@@ -92,19 +104,16 @@ class Bind:
     options: tuple[dict[str, object], ...] = field(default_factory=tuple)
 
     def as_json(self) -> dict[str, object]:
-        payload: dict[str, object] = {
+        return {
             "name": self.name,
             "summary": self.summary,
-            "knobs": list(self.knobs),
             "live": self.live,
             "verbs": list(self.verbs),
             "custody": self.custody,
             "network": self.network,
             "asset": self.asset,
+            "options": [dict(item) for item in self.options],
         }
-        if self.options:
-            payload["options"] = [dict(item) for item in self.options]
-        return payload
 
 
 @dataclass(frozen=True)
@@ -154,12 +163,19 @@ CHANNELS: dict[str, Channel] = {
             Bind(
                 "ethereum",
                 "USDC destination on Ethereum",
-                knobs=(ENV_ETH_RPC_URL,),
                 live=True,
                 verbs=_WALLET_LIVE_VERBS,
                 custody="eoa-key",
                 network="ethereum",
                 asset="USDC",
+                options=(
+                    setup_option(
+                        name="rpc_url",
+                        type="string",
+                        source=ENV_ETH_RPC_URL,
+                        help="JSON-RPC URL override",
+                    ),
+                ),
             ),
         ),
         note=f"RPC override: {ENV_ETH_RPC_URL}",
@@ -173,7 +189,6 @@ CHANNELS: dict[str, Channel] = {
             Bind(
                 "agentmail",
                 "HTTP inbox. Connect provisions or selects an owned address",
-                knobs=("email.send.token", "email.address", ENV_AGENTMAIL_API_KEY),
                 live=True,
                 verbs=_MAIL_VERBS,
                 custody="none",
@@ -183,14 +198,6 @@ CHANNELS: dict[str, Channel] = {
             Bind(
                 "imap",
                 "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
-                knobs=(
-                    "email.send.token",
-                    "email.address",
-                    ENV_MAIL_HOST,
-                    ENV_IMAP_HOST,
-                    ENV_SMTP_HOST,
-                    ENV_MAIL_PASSWORD,
-                ),
                 live=True,
                 verbs=_MAIL_VERBS,
                 custody="none",
@@ -326,6 +333,17 @@ def _channel_json(spec: Channel) -> dict[str, object]:
     }
 
 
+def _format_options(item: Bind) -> str:
+    parts: list[str] = []
+    for opt in item.options:
+        name = str(opt.get("name") or "")
+        source = str(opt.get("source") or "")
+        if not name:
+            continue
+        parts.append(f"{name} ({source})" if source else name)
+    return "  ".join(parts)
+
+
 def _format_caps(item: Bind) -> str:
     parts = [f"live:{str(item.live).lower()}"]
     if item.custody:
@@ -354,8 +372,8 @@ def _format_channel(spec: Channel) -> str:
     width = max(len(label) for label in labels)
     for item, label in zip(spec.binds, labels):
         lines.append(f"  {label.ljust(width)}  {item.summary}")
-        if item.knobs:
-            lines.append(f"  {' ' * width}  {'  '.join(item.knobs)}")
+        if item.options:
+            lines.append(f"  {' ' * width}  {_format_options(item)}")
         lines.append(f"  {' ' * width}  {_format_caps(item)}")
     if spec.note:
         lines.append(f"  {spec.note}")

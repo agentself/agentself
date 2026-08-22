@@ -16,7 +16,6 @@
         {
           "name": "base",
           "summary": "USDC destination on Base",
-          "knobs": [],
           "live": true,
           "verbs": [
             "show",
@@ -28,14 +27,12 @@
           ],
           "custody": "eoa-key",
           "network": "base",
-          "asset": "USDC"
+          "asset": "USDC",
+          "options": []
         },
         {
           "name": "ethereum",
           "summary": "USDC destination on Ethereum",
-          "knobs": [
-            "AGENTSELF_ETH_RPC_URL"
-          ],
           "live": true,
           "verbs": [
             "show",
@@ -47,7 +44,19 @@
           ],
           "custody": "eoa-key",
           "network": "ethereum",
-          "asset": "USDC"
+          "asset": "USDC",
+          "options": [
+            {
+              "name": "rpc_url",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_ETH_RPC_URL",
+              "help": "JSON-RPC URL override"
+            }
+          ]
         }
       ]
     },
@@ -62,11 +71,6 @@
         {
           "name": "agentmail",
           "summary": "HTTP inbox. Connect provisions or selects an owned address",
-          "knobs": [
-            "email.send.token",
-            "email.address",
-            "AGENTSELF_AGENTMAIL_API_KEY"
-          ],
           "live": true,
           "verbs": [
             "connect",
@@ -87,7 +91,7 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_AGENTMAIL_API_KEY",
-              "help": "Send credential"
+              "help": "AgentMail API key (starts with am_). Create it at https://console.agentmail.to under API Keys. Signup or confirm mail may contain the key or a link \u2014 read that inbox if you have it, else ask the operator. Env AGENTSELF_AGENTMAIL_API_KEY. Write the key to a file and continue with --result-file. Cannot obtain a key: agentself init --force --email imap, or stop."
             },
             {
               "name": "address",
@@ -97,21 +101,13 @@
               "default": null,
               "choices": [],
               "source": "",
-              "help": "Inbox address when more than one exists"
+              "help": "Inbox address when this key owns more than one. Use an address the provider listed. Do not invent one."
             }
           ]
         },
         {
           "name": "imap",
           "summary": "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
-          "knobs": [
-            "email.send.token",
-            "email.address",
-            "AGENTSELF_MAIL_HOST",
-            "AGENTSELF_IMAP_HOST",
-            "AGENTSELF_SMTP_HOST",
-            "AGENTSELF_MAIL_PASSWORD"
-          ],
           "live": true,
           "verbs": [
             "connect",
@@ -132,7 +128,7 @@
               "default": null,
               "choices": [],
               "source": "",
-              "help": "Mailbox address"
+              "help": "Existing mailbox address (user@domain). Do not invent an address."
             },
             {
               "name": "credential",
@@ -142,7 +138,7 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_MAIL_PASSWORD",
-              "help": "Mailbox credential"
+              "help": "Password or app password for that mailbox. Gmail and Outlook need an app password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a file and continue with --result-file."
             },
             {
               "name": "mail_host",
@@ -152,7 +148,7 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_MAIL_HOST",
-              "help": "Shared mail host when IMAP and SMTP share a name"
+              "help": "Shared mail host when IMAP and SMTP use the same hostname."
             },
             {
               "name": "imap_host",
@@ -162,7 +158,7 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_IMAP_HOST",
-              "help": "IMAP host override"
+              "help": "IMAP host override. Default is imap.<address-domain>."
             },
             {
               "name": "smtp_host",
@@ -172,7 +168,7 @@
               "default": null,
               "choices": [],
               "source": "AGENTSELF_SMTP_HOST",
-              "help": "SMTP host override"
+              "help": "SMTP host override. Default is smtp.<address-domain>."
             }
           ]
         }
@@ -189,7 +185,6 @@
         {
           "name": "sops",
           "summary": "age files on this computer",
-          "knobs": [],
           "live": false,
           "verbs": [
             "create",
@@ -200,12 +195,12 @@
           ],
           "custody": "age-files",
           "network": "",
-          "asset": ""
+          "asset": "",
+          "options": []
         },
         {
           "name": "pass",
           "summary": "gpg password store",
-          "knobs": [],
           "live": false,
           "verbs": [
             "create",
@@ -216,7 +211,8 @@
           ],
           "custody": "gpg-pass",
           "network": "",
-          "asset": ""
+          "asset": "",
+          "options": []
         }
       ]
     }

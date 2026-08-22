@@ -7,7 +7,7 @@ import json
 from agentself.backends.email.agentmail import AgentMailMailboxAccess
 from agentself.cli.app import main
 
-from tests.support import apply_cli_env, cli_env, run_cli
+from tests.support import apply_cli_env, cli_env, run_cli, value_file
 from tests.test_agentmail_mailbox import (
     API,
     INBOXES,
@@ -53,8 +53,11 @@ def test_agentmail_connect_without_token_points_at_secret(tmp_path):
     assert data["ok"] is False
     assert data["error"] == "missing"
     assert data["status"] == "input_required"
-    assert "credential" in [item["name"] for item in data["options"]]
-    assert data["next"].startswith("agentself email connect --continue ")
+    assert data["option"]["name"] == "credential"
+    assert "console.agentmail.to" in data["option"]["help"]
+    assert "AGENTSELF_AGENTMAIL_API_KEY" in data["option"]["help"]
+    assert "init --force --email imap" in data["option"]["help"]
+    assert data["next"].startswith("agentself email connect --continue --state ")
 
 
 def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys):
@@ -62,7 +65,10 @@ def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys)
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", TOKEN], env)
+    sealed = run_cli(
+        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
@@ -101,7 +107,10 @@ def test_agentmail_connect_creates_when_empty(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", TOKEN], env)
+    sealed = run_cli(
+        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
@@ -135,7 +144,10 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", TOKEN], env)
+    sealed = run_cli(
+        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
@@ -165,9 +177,8 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     assert data["ok"] is False
     assert data["error"] == "missing"
     assert data["status"] == "input_required"
-    names = [item["name"] for item in data["options"]]
-    assert "address" in names
-    assert data["next"].startswith("agentself email connect --continue ")
+    assert data["option"]["name"] == "address"
+    assert data["next"].startswith("agentself email connect --continue --state ")
 
 
 def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
@@ -175,7 +186,10 @@ def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    sealed = run_cli(["secret", "create", "email.send.token", TOKEN], env)
+    sealed = run_cli(
+        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        env,
+    )
     assert sealed.returncode == 0, sealed.stderr
     apply_cli_env(monkeypatch, env)
     http = Http()
