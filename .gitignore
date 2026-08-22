@@ -33,5 +33,16 @@ tokens
 tokens/
 *.pem
 
+# local skill copies from `install --skills` (canonical: agentself/skills/)
+.claude/skills/
+.agents/skills/
+
+# editor / agent session dumps
+.claude/logs/
+.cursor/
+.playwright-mcp/
+
 # os
 .DS_Store
+Thumbs.db
+Desktop.ini
