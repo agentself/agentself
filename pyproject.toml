@@ -70,6 +70,10 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 files = ["agentself"]
 
+[[tool.mypy.overrides]]
+module = ["eth_account", "eth_account.*", "eth_utils"]
+ignore_missing_imports = true
+
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "UP", "W"]
 ignore = ["E501"]

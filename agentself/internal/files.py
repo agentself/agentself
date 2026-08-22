@@ -232,7 +232,7 @@ def _try_lock(fd: int) -> bool:
         import msvcrt
 
         try:
-            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            getattr(msvcrt, "locking")(fd, getattr(msvcrt, "LK_NBLCK"), 1)
             return True
         except OSError:
             return False
@@ -252,7 +252,7 @@ def _unlock_file(fd: int) -> None:
         if os.name == "nt":
             import msvcrt
 
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            getattr(msvcrt, "locking")(fd, getattr(msvcrt, "LK_UNLCK"), 1)
         else:
             import fcntl
 
