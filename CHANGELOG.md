@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0a2
+
 Provider-neutral CLI schema 3. Public commands describe resources and operations; provider signup, OTP, OAuth, presets, and environment aliases stay adapter details.
 
 ### Commands
