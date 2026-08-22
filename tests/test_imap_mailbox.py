@@ -9,7 +9,13 @@ import pytest
 
 from agentself.backends.email.contract import MailboxError
 from agentself.backends.email.factory import MailboxAccessFactory
-from agentself.backends.email.imap import ImapMailboxAccess
+from agentself.backends.email.imap import (
+    _UNSEEN_RECV_CAP,
+    ImapMailboxAccess,
+    _port,
+    _require_host,
+)
+from agentself.internal.custody.manager import _channel_from_mailbox
 from agentself.internal.log import MemoryLog
 
 from tests.support import cli_env, run_cli
@@ -317,6 +323,77 @@ def test_recv_unseen_then_empty_list_still_shows(vault):
     assert imap.logout_count >= 1
 
 
+def test_recv_unseen_is_capped_and_remainder_stays_unseen(vault):
+    log = MemoryLog()
+    imap = FakeImap(
+        [
+            {
+                "uid": str(i),
+                "raw": _raw(subject=f"s{i}", body=f"b{i}", uid=str(i)),
+                "seen": False,
+            }
+            for i in range(1, 81)
+        ]
+    )
+    smtp = FakeSmtp()
+    mb = _box(vault, log, imap, smtp)
+    first = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    assert len(first) == _UNSEEN_RECV_CAP
+    assert [item["id"] for item in first] == [
+        str(i) for i in range(1, _UNSEEN_RECV_CAP + 1)
+    ]
+    for item in first:
+        assert set(item) >= {"id", "from", "to", "subject", "body"}
+    for item in imap.messages[:_UNSEEN_RECV_CAP]:
+        assert item["seen"] is True
+    for item in imap.messages[_UNSEEN_RECV_CAP:]:
+        assert item["seen"] is not True
+    second = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    assert len(second) == 80 - _UNSEEN_RECV_CAP
+    assert [item["id"] for item in second] == [
+        str(i) for i in range(_UNSEEN_RECV_CAP + 1, 81)
+    ]
+    for item in imap.messages:
+        assert item["seen"] is True
+    _secret_absent(log)
+
+
+def test_require_host_and_port_are_local_not_rpc(vault):
+    for host in ("bad host", "host name", "\x00", "", "   ", "imap.example.com\x00"):
+        with pytest.raises(MailboxError) as err:
+            _require_host(host)
+        assert str(err.value) == "invalid host"
+        assert "rpc" not in str(err.value)
+    for port in ("not-a-port", "12a", "0", "65536"):
+        with pytest.raises(MailboxError) as err:
+            _port(port, 993)
+        assert str(err.value) == "invalid port"
+        assert "rpc" not in str(err.value)
+    assert _port("", 993) == 993
+    assert _port("   ", 587) == 587
+    log = MemoryLog()
+    imap = FakeImap()
+    smtp = FakeSmtp()
+    bad_host = _box(vault, log, imap, smtp, imap_host="bad host")
+    with pytest.raises(MailboxError) as err:
+        bad_host.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    assert str(err.value) == "invalid host"
+    assert "rpc" not in str(err.value)
+    assert imap.opened == []
+    bad_port = _box(vault, log, imap, smtp, imap_port="65536")
+    with pytest.raises(MailboxError) as err:
+        bad_port.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    assert str(err.value) == "invalid port"
+    assert imap.opened == []
+    host_fail = _channel_from_mailbox(MailboxError("invalid host"))
+    assert host_fail.reason == "invalid host"
+    port_fail = _channel_from_mailbox(MailboxError("invalid port"))
+    assert port_fail.reason == "invalid port"
+    assert _channel_from_mailbox(MailboxError("rpc failed")).reason == "rpc"
+    assert _channel_from_mailbox(MailboxError("http failed")).reason == "rpc"
+    assert _channel_from_mailbox(MailboxError("no inbox")).reason == "mailbox_error"
+
+
 def test_transport_error_is_rpc_failed_without_secret(vault):
     log = MemoryLog()
     imap = FakeImap()
@@ -346,7 +423,7 @@ def test_invalid_address_and_port_fail_closed(vault):
         mb.send(PRINCIPAL, TO, "s", "b", send_token=CANARY, address="not-an-address")
     assert smtp.opened == []
     bad_port = _box(vault, log, imap, smtp, smtp_port="not-a-port")
-    with pytest.raises(MailboxError, match="rpc failed"):
+    with pytest.raises(MailboxError, match="invalid port"):
         bad_port.send(PRINCIPAL, TO, "s", "b", send_token=CANARY, address=ADDRESS)
     assert smtp.opened == []
 

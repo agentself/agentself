@@ -374,6 +374,8 @@ def test_channel_from_mailbox_local_input_is_not_rpc() -> None:
     local = MailboxError("no inbox")
     local.__cause__ = FileNotFoundError("missing")
     assert _channel_from_mailbox(local).reason == "mailbox_error"
+    assert _channel_from_mailbox(MailboxError("invalid host")).reason == "invalid host"
+    assert _channel_from_mailbox(MailboxError("invalid port")).reason == "invalid port"
     http = MailboxError("http failed")
     assert _channel_from_mailbox(http).reason == "rpc"
     rpc = MailboxError("rpc failed")

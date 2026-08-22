@@ -32,6 +32,7 @@ from agentself.internal.setup import (
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
+_UNSEEN_RECV_CAP = 50
 
 ImapOpener = Callable[[str, int, str], "ImapBox"]
 SmtpOpener = Callable[[str, int, str], "SmtpBox"]
@@ -143,7 +144,7 @@ class ImapMailboxAccess(MailboxAccess):
                         messages = self._take_one(box, wanted)
                     else:
                         messages = []
-                        for uid in box.uids(unseen_only=True):
+                        for uid in box.uids(unseen_only=True)[:_UNSEEN_RECV_CAP]:
                             parsed = _take(box, uid, mark=False)
                             if parsed is not None:
                                 messages.append(parsed)
@@ -397,7 +398,7 @@ def _rfc822(from_addr: str, to: str, subject: str, body: str) -> bytes:
 def _require_host(host: str) -> str:
     value = (host or "").strip()
     if not value or any(ch.isspace() for ch in value) or "\x00" in value:
-        raise MailboxError("rpc failed")
+        raise MailboxError("invalid host")
     return value
 
 
@@ -406,10 +407,10 @@ def _port(value: str, default: int) -> int:
     if not text:
         return default
     if not text.isdigit():
-        raise MailboxError("rpc failed")
+        raise MailboxError("invalid port")
     port = int(text)
     if port < 1 or port > 65535:
-        raise MailboxError("rpc failed")
+        raise MailboxError("invalid port")
     return port
 
 

@@ -803,6 +803,8 @@ def _channel_from_mailbox(
         reason = "invalid_credential"
     elif "need address" in low:
         reason = "need_address"
+    elif msg in {"invalid host", "invalid port"}:
+        reason = msg
     elif _mailbox_rpc_failure(low, exc.__cause__):
         reason = "rpc"
     else:
