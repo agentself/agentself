@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.0
+## 0.1.0a1
 
-First version.
+First published alpha.
 
 Local identity for an agent: wallet, encrypted secrets, and optional email. One CLI.
 

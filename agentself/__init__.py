@@ -5,4 +5,4 @@ from __future__ import annotations
 from agentself.client import Gateway
 
 __all__ = ["Gateway"]
-__version__ = "0.1.0"
+__version__ = "0.1.0a1"
