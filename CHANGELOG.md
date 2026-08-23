@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- `sops` encrypt no longer inherits parent `SOPS_AGE_RECIPIENTS` / `SOPS_AGE_KEY` / `AGE_SECRET_KEY` (or other sops master-key env vars), so secrets are not encrypted to extra recipients and parent keys stay out of the child environment.
 
 ## 0.1.0a3 - 2026-08-23
 

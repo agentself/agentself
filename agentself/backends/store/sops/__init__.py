@@ -27,6 +27,28 @@ from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 from agentself.internal.store_tools import store_required_tools
 
+_SOPS_FOREIGN_KEYS = (
+    "SOPS_AGE_KEY",
+    "AGE_SECRET_KEY",
+    "SOPS_AGE_KEY_FILE",
+    "SOPS_AGE_RECIPIENTS",
+    "SOPS_PGP_FP",
+    "SOPS_KMS_ARN",
+    "SOPS_GCP_KMS_IDS",
+    "SOPS_AZURE_KEYVAULT_URL",
+    "SOPS_VAULT_URIS",
+    "SOPS_HUAWEICLOUD_KMS_IDS",
+)
+
+
+def _sops_env(*, key_file: Path | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    for name in _SOPS_FOREIGN_KEYS:
+        env.pop(name, None)
+    if key_file is not None:
+        env["SOPS_AGE_KEY_FILE"] = str(key_file)
+    return env
+
 
 class SopsStoreAccess(StoreAccess):
     def __init__(self, vault_root: Path, log: Log) -> None:
@@ -146,6 +168,7 @@ class SopsStoreAccess(StoreAccess):
                     "binary",
                     tmp_name,
                 ],
+                env=_sops_env(),
             )
             if proc.returncode != 0 or not proc.stdout:
                 raise StoreResourceError("create failed")
@@ -155,10 +178,7 @@ class SopsStoreAccess(StoreAccess):
 
     def _decrypt(self, identity_id: str, path: Path) -> str:
         key = self._key_file(identity_id)
-        env = os.environ.copy()
-        env.pop("SOPS_AGE_KEY", None)
-        env.pop("AGE_SECRET_KEY", None)
-        env["SOPS_AGE_KEY_FILE"] = str(key)
+        env = _sops_env(key_file=key)
         proc = run_cmd(
             [
                 "sops",
