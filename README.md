@@ -1,13 +1,11 @@
 # agentself
 
-Persistent local identity for an agent.
+`agentself` gives an agent a persistent local identity: a wallet, encrypted
+secrets, and optional email. It is a CLI first, with one command tree across
+the supported backends.
 
-Give your agent the ability to hold funds, store credentials, and send email.
-Configure different providers and the commands stay the same.
-
-Run init once and every later process reuses the same identity.
-
-Beta / pre-1.0. Linux, macOS, and Windows. Python 3.11+.
+Linux, macOS, and Windows. Python 3.11+. This is the first public alpha, so
+review [COMPATIBILITY.md](COMPATIBILITY.md) before automating against it.
 
 ## Install
 
@@ -15,7 +13,7 @@ Beta / pre-1.0. Linux, macOS, and Windows. Python 3.11+.
 uv tool install agentself
 ```
 
-Or with pipx:
+Or:
 
 ```bash
 pipx install agentself
@@ -26,34 +24,19 @@ pipx install agentself
 ```bash
 agentself install --tools
 agentself init
-
-# Wallet
 agentself wallet address
-agentself wallet balance
-
-# Secrets
 agentself secret create API_TOKEN VALUE
-agentself secret get API_TOKEN
-
-# Email
 agentself email connect
-agentself email show
 ```
 
-Run `agentself show` anytime to see the current identity. Repeat `init` is safe; `--force` is required to change the identity or backends.
-
-`agentself install --tools` installs the required `age` and `sops` host tools. Email is optional and does not block init. `agentself backends email` lists the generic setup inputs for the current backend.
-
-## Why agentself?
-
-- Give an agent a persistent wallet, secrets, and email identity.
-- Use the same commands even when the underlying provider changes.
-- Built for unattended use with encrypted secrets, structured output, and safe failures.
+`init` creates one identity directory. Run `agentself show` to inspect it;
+repeat `init` is safe, and `--force` is required to change an existing
+identity or its backends. Email setup is optional and does not block init.
 
 ## Commands
 
 | Area | Commands |
-|---|---|
+| --- | --- |
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
@@ -62,18 +45,18 @@ Run `agentself show` anytime to see the current identity. Repeat `init` is safe;
 | Recovery | `backup`, `restore` |
 | Setup | `install --tools`, `install --skills` |
 
-Discover exact arguments and flags from the CLI:
+Use the CLI for the exact current flags and input rules:
 
 ```bash
 agentself --help
 agentself wallet --help
-agentself wallet send --help
 agentself email --help
 ```
 
 ## Backends & configuration
 
-See the available implementations and what each supports:
+Backends keep the public commands stable while allowing the implementation to
+change:
 
 ```bash
 agentself backends
@@ -83,111 +66,78 @@ agentself backends store
 ```
 
 | Capability | Default | Alternatives |
-|---|---|---|
+| --- | --- | --- |
 | Wallet | `base` | `ethereum` |
 | Email | `agentmail` | `imap` |
 | Secrets | `sops` | `pass` |
 
-Choose backends when initializing:
+Choose a backend during initialization:
 
 ```bash
 agentself init --wallet ethereum --email imap --store pass
 ```
 
-Wallet and email can also be selected with environment variables:
+Wallet and email backends can also be selected with
+`AGENTSELF_WALLET_BACKEND` and `AGENTSELF_EMAIL_BACKEND`. The precedence is
+CLI flag, environment variable, saved identity configuration, then default;
+there is no automatic failover. Backend-specific setup, credential sources,
+and required host settings are exposed by `agentself backends` and
+`agentself email connect`.
 
-```bash
-export AGENTSELF_WALLET_BACKEND=ethereum
-export AGENTSELF_EMAIL_BACKEND=imap
-agentself init
-```
-
-Configuration precedence is:
-
-```text
-CLI flag > environment variable > saved configuration > default
-```
-
-There is no automatic backend failover. `agentself backends` is the authoritative source for backend-specific options. Each option's `help` is the procedure: how to get the value, which env var to use, and what to do if you cannot. Public commands never grow provider verbs or flags. Switching email backends is `init --force --email NAME`, not continue.
-
-Email credentials resolve in this order: `AGENTSELF_EMAIL_ADDRESS` / `AGENTSELF_EMAIL_CREDENTIAL`, then the encrypted vault, then a backend-defined environment alias, then a setup answer. Environment credentials are transient and are not copied into the vault. Provide `AGENTSELF_EMAIL_CREDENTIAL` or the backend alias on every email invocation that needs a transient credential. If the credential owns multiple inboxes, also provide `AGENTSELF_EMAIL_ADDRESS`; the selected address must be one the provider lists as owned.
-
-`--json email connect` never prompts. When input or a human action is required it exits `3` with a generic setup object. Continue with:
-
-```text
-agentself --json email connect --continue --state STATE --result-file PATH
-```
-
-Sensitive answers come from `--result-file`, stdin, or a hidden prompt, never from argv.
-
-Non-JSON `agentself email connect` uses the same generic setup protocol as JSON, but renders it as a guided terminal flow. When a backend requests human action, it displays the backend-provided link and help, collects secrets with hidden input, and renders choices as a numbered prompt. An agent should first check the approved automated sources in the setup option; if none is available, run the interactive command and tell the human: open the displayed link, copy the requested value, and paste it into the secure prompt. The human does not create a result file, copy opaque state, or run a continuation command.
-
-For AgentMail, use an existing approved key. If none is available, start the interactive flow and wait while the human creates or copies one under API Keys at <https://console.agentmail.to>. Creating a new organization is an external account action and requires explicit user authorization. When authorized, follow the [official signup procedure](https://docs.agentmail.to/api-reference/agent/sign-up) once with the approved email identity for a first-time, unclaimed signup and capture the API key from its HTTP response. If the provider reports that the identity is claimed, forbidden, or unavailable, stop and ask the user instead of trying aliases or disposable email providers. The OTP or confirmation email does not contain the key. Stop credential discovery once one key validates. A key is shown once and cannot be retrieved; create another in the console if it is lost.
-
-One identity lives in one directory, `~/.agentself` by default. Use `AGENTSELF_VAULT_ROOT` to isolate identities:
+The identity directory is `~/.agentself` by default. Set
+`AGENTSELF_VAULT_ROOT` to isolate identities, for example:
 
 ```bash
 AGENTSELF_VAULT_ROOT=~/.agent-a agentself init
 AGENTSELF_VAULT_ROOT=~/.agent-b agentself init
 ```
 
-Choose the identity flow deliberately:
-
-- Fresh sandbox, transient credential: set `AGENTSELF_EMAIL_CREDENTIAL` or the backend alias on every email invocation. Set `AGENTSELF_EMAIL_ADDRESS` when selecting among multiple verified-owned inboxes.
-- Fresh sandbox, durable identity: complete `email connect` with `--result-file`; the credential is encrypted into that isolated identity.
-- Same identity on another host: use `backup` and `restore`. This copies the whole identity, including its wallet and every secret.
-- Distinct agents: give each agent an isolated vault and inject only the credentials it needs. Do not share a whole vault between distinct agents.
+Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient
+email configuration when appropriate. Runtime environment credentials are
+not copied into the identity; complete `email connect` with its secure result
+file when the credential should be encrypted into the identity.
 
 ## Automation and agents
 
-The CLI is designed to be discovered directly from the shell. An agent does not need an MCP server or skill to use it.
+The CLI is designed to be discovered from a shell. No MCP server or Python
+import is required:
 
 ```bash
 agentself --help
-agentself <command> --help
 agentself backends
 agentself diagnose
 ```
 
-For automation, prefer `--json`.
+For automation, prefer `--json`. Successful and failed commands emit one JSON
+object; human-readable errors stay on stderr. Exit codes are `0` for success,
+`1` for an error, `2` for a refusal, and `3` when an input, dependency, or
+resource is missing. `agentself --json --version` reports the package version
+and machine-output schema version. Consumers should ignore unknown JSON keys.
 
-Success and failure are one JSON object on stdout. Human errors stay on stderr. Exit codes are `0` success, `1` error, `2` refused, and `3` missing dependency or resource.
-
-```json
-{
-  "ok": false,
-  "error": "...",
-  "reason": "...",
-  "next": "..."
-}
-```
-
-Consumers should ignore unknown JSON keys. `agentself --json --version` includes `cli` (currently `3`), plus `package` and `executable` paths.
-
-An optional bundled skill gives compatible coding agents the same discovery guidance. Skills install into the current directory. `-g` writes them under the user home directory:
+An optional bundled skill provides the same discovery guidance to compatible
+coding agents:
 
 ```bash
 agentself install --skills
 agentself install --skills -g
-agentself install --skills=agents
 ```
-
-`--help` and `--json` are sufficient without the skill.
 
 ## Security
 
 - Secret values are encrypted at rest by the configured store.
-- `secret list` returns names, not values. `wallet.key` is protected and needs `--unsafe` to export.
-- Logs and structured errors do not print secret values.
-- Missing backends, credentials, or tools fail instead of silently switching implementations.
-- Wallet backends are live and `wallet send` can move real assets.
-- Identity files are replaced atomically, and wallet-send retries do not construct a second payment.
+- Secret listings return names, not values; `wallet.key` requires `--unsafe` to export.
+- Logs and structured errors redact secret values.
+- Missing credentials and host tools fail instead of silently switching backends.
+- Wallet backends are live; `wallet send` can move real assets.
+- Identity files are replaced atomically, and wallet-send retries do not create a second payment.
 
-Back up the identity with `agentself backup PATH`. Report vulnerabilities through [SECURITY.md](SECURITY.md).
+Back up an identity with `agentself backup PATH`. Report vulnerabilities
+through [SECURITY.md](SECURITY.md).
 
 ## Extending agentself
 
-To add a backend, implement the existing channel contract rather than adding vendor-specific CLI verbs. See [CONTRIBUTING.md](CONTRIBUTING.md).
+New backends implement the existing channel contract and do not add
+provider-specific CLI verbs. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
@@ -196,9 +146,11 @@ git clone https://github.com/agentself/agentself
 cd agentself
 uv sync
 uv run pytest
-uv run agentself --help
-uv run agentself init
+uv run ruff check .
+uv run mypy agentself
 ```
+
+See [RELEASE.md](RELEASE.md) for the small-project release checklist.
 
 ## License
 

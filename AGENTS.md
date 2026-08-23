@@ -1,52 +1,36 @@
 # agentself
 
-`agentself` is a Python 3.11+ CLI that gives an agent a persistent local identity
-(wallet, encrypted secrets, and optional email). Entry point is
-`agentself.__main__:run`; backends live under `agentself/backends/<channel>/<name>/`.
+`agentself` is a Python 3.11+ CLI that gives an agent a persistent local
+identity (wallet, encrypted secrets, and optional email). The entry point is
+`agentself.__main__:run`; backends live under
+`agentself/backends/<channel>/<name>/`.
 
-Standard commands and config live in `pyproject.toml`, `README.md` (see the
-"Development" section), `CONTRIBUTING.md`, and `.github/workflows/test.yml`.
-Prefer those sources for anything not called out below.
+The package, tests, and release metadata live together in this repository.
+Use `pyproject.toml`, `README.md`, `CONTRIBUTING.md`, and
+`.github/workflows/` as the source of truth for project commands and CI.
 
-## Cursor Cloud specific instructions
+## Development environment
 
-### Layout note
-The real project (the `agentself` package, `tests/`, `pyproject.toml`) lives on the
-`test-ci` branch and branches based on it. The `main` branch is only a GitHub
-profile `README.md` and has no application code, so environment/dev work must be
-done on a branch that contains the package.
+- The CLI and dev tools can be installed with `uv sync`, or with a user pip
+  install when `uv` is unavailable.
+- `age` and `sops` are installed by `agentself install --tools`.
+- Use `python -m pytest` (or `pytest`) for the test suite.
+- Match CI lint checks with `python -m ruff check .`,
+  `python -m ruff format --check .`, and `python -m mypy agentself`.
 
-### Where things are installed / PATH
-- The `agentself` CLI and dev tools (`pytest`, `mypy`, `ruff`) are installed as a
-  pip user install into `~/.local/bin`.
-- Host tools `age` and `sops` are installed by `agentself install --tools` into
-  `~/.local/share/agentself/bin`.
-- Both directories are added to `PATH` in `~/.bashrc`. If a tool is "not found",
-  re-source `~/.bashrc` or invoke via `python3 -m` (e.g. `python3 -m pytest`,
-  `python3 -m ruff`, `python3 -m mypy`, `python3 -m agentself`).
+The tests set `AGENTSELF_FETCH_TOOLS=0`; host tools therefore need to be
+installed before running tests. The `pass` backend also needs `gpg` and
+`pass`. On Windows, use the project-provided test setup or a short temporary
+`GNUPGHOME` when gpg-agent socket paths would otherwise be too long.
 
-### Running the test suite (important gotchas)
-- Run with `python3 -m pytest` (or `pytest`).
-- The suite sets `AGENTSELF_FETCH_TOOLS=0`, so it does NOT download host tools;
-  `age`, `sops`, `pass`, and `gpg` must already be on `PATH`. `pass` and `gnupg`
-  come from apt; `age`/`sops` come from `agentself install --tools`.
-- The `pass` backend keeps keys in the vault `gnupg/` dir but points
-  `GNUPGHOME` at a short `/tmp/as-gpg-*` symlink so gpg-agent sockets fit the
-  unix sockaddr limit. Long `AGENTSELF_VAULT_ROOT` / pytest temp paths should
-  work without a `--basetemp` workaround.
+## Running the CLI
 
-### Lint (matches the CI `lint` job)
-`ruff` is in `[dependency-groups] dev` alongside `pytest` and `mypy`.
-- `python3 -m ruff check .`
-- `python3 -m ruff format --check .`
-- `python3 -m mypy agentself`
+Use an isolated identity directory so local runs do not touch the default
+`~/.agentself`:
 
-### Running the CLI
-Use an isolated identity directory via `AGENTSELF_VAULT_ROOT` so runs do not touch
-`~/.agentself`, e.g. `AGENTSELF_VAULT_ROOT=/tmp/demo agentself init`. Default
-backends are wallet `base`, store `sops`, email `agentmail`. `sops` needs `age`;
-`--store pass` needs `gpg` + `pass`.
+```text
+AGENTSELF_VAULT_ROOT=/tmp/demo agentself init
+```
 
-### uv note
-`README.md` documents a `uv sync` / `uv run` dev flow. This environment uses a
-pip user install instead; both are valid. There is no committed `uv.lock`.
+The default backends are wallet `base`, store `sops`, and email `agentmail`.
+Use `agentself backends` for the current catalog and setup requirements.
