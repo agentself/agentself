@@ -1,0 +1,145 @@
+{
+  "version": {
+    "exact": ["ok", "version", "cli", "package", "executable"]
+  },
+  "init": {
+    "exact": [
+      "ok",
+      "id",
+      "recipient",
+      "address",
+      "wallet_backend",
+      "email_backend"
+    ]
+  },
+  "show": {
+    "exact": [
+      "ok",
+      "id",
+      "recipient",
+      "address",
+      "wallet_backend",
+      "email_backend",
+      "identity_dir",
+      "email",
+      "ready"
+    ]
+  },
+  "diagnose": {
+    "exact": [
+      "ok",
+      "initialized",
+      "ready",
+      "version",
+      "python",
+      "identity_dir",
+      "tools",
+      "wallet_backend",
+      "email_backend",
+      "store_backend",
+      "package",
+      "executable"
+    ]
+  },
+  "install": {
+    "exact": ["ok", "paths"]
+  },
+  "install_tools": {
+    "exact": ["ok", "path"]
+  },
+  "backup": {
+    "exact": ["ok", "path"]
+  },
+  "restore": {
+    "exact": ["ok", "path"]
+  },
+  "backends": {
+    "exact": ["ok", "prefix", "identity_dir", "order", "failover", "channels"]
+  },
+  "backends_channel": {
+    "exact": ["ok", "channel"]
+  },
+  "secret_write": {
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "unchanged"]
+  },
+  "secret_get": {
+    "required": ["ok", "name"],
+    "allowed": ["ok", "name", "value", "bytes", "sha256", "path", "protected", "exists"]
+  },
+  "secret_list": {
+    "exact": ["ok", "names", "protected"]
+  },
+  "secret_exists": {
+    "exact": ["ok", "name", "exists"]
+  },
+  "email_connect": {
+    "required": ["ok"],
+    "allowed": [
+      "ok",
+      "address",
+      "status",
+      "state",
+      "option",
+      "human_action_required",
+      "continue",
+      "message",
+      "owned_address",
+      "needs_domain"
+    ]
+  },
+  "email_show": {
+    "required": ["ok"],
+    "allowed": ["ok", "address", "owned_address", "needs_domain", "ready", "status"]
+  },
+  "email_send": {
+    "exact": ["ok", "to", "subject"]
+  },
+  "email_messages": {
+    "exact": ["ok", "messages"]
+  },
+  "wallet_address": {
+    "exact": ["ok", "address"]
+  },
+  "wallet_authorize": {
+    "exact": [
+      "ok",
+      "address",
+      "scheme",
+      "network",
+      "message_sha256",
+      "authorization"
+    ]
+  },
+  "wallet_verify": {
+    "required": ["ok", "valid", "address"],
+    "allowed": ["ok", "valid", "address", "scheme"]
+  },
+  "wallet_send": {
+    "exact": ["ok", "to", "amount", "asset"]
+  },
+  "wallet_balance": {
+    "required": ["ok"],
+    "allowed": [
+      "ok",
+      "asset",
+      "chain",
+      "chain_id",
+      "address",
+      "amount",
+      "raw",
+      "gas_asset",
+      "gas_raw",
+      "gas_amount"
+    ]
+  },
+  "email_view": {
+    "allowed": ["address", "owned_address", "needs_domain"]
+  },
+  "wallet_view": {
+    "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind", "scheme"]
+  },
+  "mail_item": {
+    "allowed": ["id", "from", "to", "subject", "body", "reason"]
+  }
+}

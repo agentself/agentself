@@ -1,0 +1,240 @@
+{
+  "ok": true,
+  "prefix": "AGENTSELF_",
+  "identity_dir": "AGENTSELF_IDENTITY_DIR",
+  "order": "flag, then env, then identity-directory config, then default",
+  "failover": false,
+  "channels": [
+    {
+      "name": "wallet",
+      "env": "AGENTSELF_WALLET_BACKEND",
+      "flag": "--wallet",
+      "config": "wallet_backend",
+      "default": "base",
+      "note": "RPC override: AGENTSELF_ETH_RPC_URL",
+      "backends": [
+        {
+          "name": "base",
+          "summary": "USDC destination on Base",
+          "live": true,
+          "verbs": [
+            "show",
+            "address",
+            "balance",
+            "authorize",
+            "send",
+            "verify"
+          ],
+          "custody": "eoa-key",
+          "network": "base",
+          "asset": "USDC",
+          "options": []
+        },
+        {
+          "name": "ethereum",
+          "summary": "USDC destination on Ethereum",
+          "live": true,
+          "verbs": [
+            "show",
+            "address",
+            "balance",
+            "authorize",
+            "send",
+            "verify"
+          ],
+          "custody": "eoa-key",
+          "network": "ethereum",
+          "asset": "USDC",
+          "options": [
+            {
+              "name": "rpc_url",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_ETH_RPC_URL",
+              "help": "JSON-RPC URL override",
+              "prompt": "rpc_url",
+              "action": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "env": "AGENTSELF_EMAIL_BACKEND",
+      "flag": "--email",
+      "config": "email_backend",
+      "default": "agentmail",
+      "note": "email connect does not block init.",
+      "backends": [
+        {
+          "name": "agentmail",
+          "summary": "HTTP inbox. Connect provisions or selects an owned address",
+          "live": true,
+          "verbs": [
+            "connect",
+            "show",
+            "send",
+            "receive",
+            "list"
+          ],
+          "custody": "none",
+          "network": "agentmail",
+          "asset": "",
+          "options": [
+            {
+              "name": "credential",
+              "type": "secret",
+              "required": true,
+              "sensitive": true,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_AGENTMAIL_API_KEY",
+              "help": "AgentMail API key (starts with am_). Use an existing approved key. If none is available, open API Keys at https://console.agentmail.to and wait for the operator to create and copy one. Creating a new AgentMail organization through signup is an external account action and requires explicit user authorization. When that exact action is authorized for a first-time, unclaimed signup, follow https://docs.agentmail.to/api-reference/agent/sign-up once with the approved email identity and capture the key from its HTTP response. If signup reports that the identity is claimed, forbidden, or unavailable, stop and ask the user; do not probe aliases or disposable email providers. The OTP or confirmation email does not contain the key. A key is shown once and cannot be retrieved; if lost, create another in the console. Stop credential discovery as soon as one key validates. For transient use, provide AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email invocation. To store it in this identity, write the key to a file and continue with --result-file. Cannot obtain a key: agentself init --force --email imap, or stop.",
+              "prompt": "Paste the credential",
+              "action": {
+                "kind": "open_url",
+                "label": "Open AgentMail API Keys",
+                "url": "https://console.agentmail.to"
+              }
+            },
+            {
+              "name": "address",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "",
+              "help": "Inbox address when this key owns more than one. Use an address the provider listed. Do not invent one.",
+              "prompt": "Mailbox address",
+              "action": null
+            }
+          ]
+        },
+        {
+          "name": "imap",
+          "summary": "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
+          "live": true,
+          "verbs": [
+            "connect",
+            "show",
+            "send",
+            "receive",
+            "list"
+          ],
+          "custody": "none",
+          "network": "imap-smtp",
+          "asset": "",
+          "options": [
+            {
+              "name": "address",
+              "type": "string",
+              "required": true,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "",
+              "help": "Existing mailbox address (user@domain). Do not invent an address.",
+              "prompt": "Mailbox address",
+              "action": null
+            },
+            {
+              "name": "credential",
+              "type": "secret",
+              "required": true,
+              "sensitive": true,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_MAIL_PASSWORD",
+              "help": "Password or app password for that mailbox. Gmail and Outlook need an app password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a file and continue with --result-file.",
+              "prompt": "Paste the credential",
+              "action": null
+            },
+            {
+              "name": "mail_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_MAIL_HOST",
+              "help": "Shared mail host when IMAP and SMTP use the same hostname.",
+              "prompt": "mail_host",
+              "action": null
+            },
+            {
+              "name": "imap_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_IMAP_HOST",
+              "help": "IMAP host override. Default is imap.<address-domain>.",
+              "prompt": "imap_host",
+              "action": null
+            },
+            {
+              "name": "smtp_host",
+              "type": "string",
+              "required": false,
+              "sensitive": false,
+              "default": null,
+              "choices": [],
+              "source": "AGENTSELF_SMTP_HOST",
+              "help": "SMTP host override. Default is smtp.<address-domain>.",
+              "prompt": "smtp_host",
+              "action": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "store",
+      "env": null,
+      "flag": "--store",
+      "config": null,
+      "default": "sops",
+      "note": "Recorded on the identity at init. Not an env override.",
+      "backends": [
+        {
+          "name": "sops",
+          "summary": "age files on this computer",
+          "live": false,
+          "verbs": [
+            "create",
+            "get",
+            "update",
+            "list",
+            "delete"
+          ],
+          "custody": "age-files",
+          "network": "",
+          "asset": "",
+          "options": []
+        },
+        {
+          "name": "pass",
+          "summary": "gpg password store",
+          "live": false,
+          "verbs": [
+            "create",
+            "get",
+            "update",
+            "list",
+            "delete"
+          ],
+          "custody": "gpg-pass",
+          "network": "",
+          "asset": "",
+          "options": []
+        }
+      ]
+    }
+  ]
+}

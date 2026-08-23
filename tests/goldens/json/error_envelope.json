@@ -1,0 +1,47 @@
+{
+  "ok": false,
+  "keys": ["ok", "error", "reason", "next"],
+  "error": ["error", "refused", "missing"],
+  "exit": {
+    "error": 1,
+    "refused": 2,
+    "missing": 3
+  },
+  "streams": {
+    "success": "stdout",
+    "failure": "stdout"
+  },
+  "diagnose_extra": [
+    "version",
+    "python",
+    "identity_dir",
+    "initialized",
+    "ready",
+    "tools",
+    "wallet_backend",
+    "email_backend",
+    "store_backend",
+    "problems",
+    "package",
+    "executable"
+  ],
+  "setup_extra": [
+    "status",
+    "state",
+    "option",
+    "human_action_required",
+    "continue",
+    "message",
+    "name",
+    "exists",
+    "address",
+    "owned_address",
+    "needs_domain",
+    "ready",
+    "valid",
+    "scheme",
+    "network",
+    "message_sha256",
+    "authorization"
+  ]
+}

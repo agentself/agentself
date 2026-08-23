@@ -1,0 +1,5 @@
+{
+  "age_key_file": "identities/agent/agent.agekey",
+  "format_version": 1,
+  "identity_id": "agent"
+}
