@@ -21,3 +21,8 @@ undocumented filenames or fields are not compatibility promises.
 Within a CLI schema version, JSON consumers should ignore unknown object keys.
 For example, mail header objects may gain additive metadata such as local task
 state while retaining provider read state in `status`.
+
+`note` is a public CLI command group in schema 1. Note values are deliberately
+non-secret and may appear in human or JSON output. The identity-local notes
+directory is copied by whole-identity backup/restore, but its undocumented
+filename layout is not a compatibility promise.
