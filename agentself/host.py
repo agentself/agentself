@@ -3,8 +3,7 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 
-from agentself.backends.email.agentmail_options import OPTIONS as AGENTMAIL_OPTIONS
-from agentself.backends.email.imap_options import OPTIONS as IMAP_OPTIONS
+from agentself.email_catalog import AGENTMAIL_OPTIONS, IMAP_OPTIONS
 from agentself.internal.setup import public_setup_option, setup_option
 
 ENV_PREFIX = "AGENTSELF_"

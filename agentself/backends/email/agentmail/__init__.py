@@ -9,10 +9,6 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
-from agentself.backends.email.agentmail_options import (
-    OPTIONS,
-    SOURCE_AGENTMAIL_CREDENTIAL,
-)
 from agentself.backends.email.contract import (
     MailboxAccess,
     MailboxError,
@@ -23,6 +19,8 @@ from agentself.backends.email.contract import (
     setup_needed,
 )
 from agentself.backends.email.http import request as http_request
+from agentself.email_catalog import AGENTMAIL_OPTIONS as OPTIONS
+from agentself.email_catalog import SOURCE_AGENTMAIL_CREDENTIAL
 from agentself.internal.files import (
     IdentityBusy,
     atomic_write_text,

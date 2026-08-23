@@ -20,7 +20,8 @@ from agentself.backends.email.contract import (
     secret_or_env,
     setup_needed,
 )
-from agentself.backends.email.imap_options import OPTIONS, SOURCE_IMAP_CREDENTIAL
+from agentself.email_catalog import IMAP_OPTIONS as OPTIONS
+from agentself.email_catalog import SOURCE_IMAP_CREDENTIAL
 from agentself.internal.files import IdentityBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token

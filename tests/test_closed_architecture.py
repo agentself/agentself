@@ -126,19 +126,24 @@ def test_client_cli_and_main_do_not_import_backends_or_vendor_sdks():
         assert not _mentions(names, *VENDOR_ROOTS), path
 
 
-def test_host_imports_option_modules_not_bind_packages():
+def test_host_does_not_import_backends():
     names = _imported_modules(PKG / "host.py")
-    for name in names:
-        if not _is_under(name, "agentself.backends"):
-            continue
-        assert not _is_channel_factory(name), name
-        assert not _is_under(name, "agentself.backends.email.http"), name
-        rest = name[len("agentself.backends.") :].split(".")
-        assert len(rest) >= 2, name
-        bind = rest[1]
-        assert bind.endswith("_options"), name
-        package = ".".join(("agentself.backends", rest[0], bind[: -len("_options")]))
-        assert name != package and not _is_under(name, package), name
+    assert not _mentions(names, "agentself.backends"), names
+    assert "agentself.email_catalog" in names
+
+
+def test_email_adapters_use_neutral_option_catalog():
+    for path in (
+        BACKENDS / "email" / "agentmail" / "__init__.py",
+        BACKENDS / "email" / "imap" / "__init__.py",
+    ):
+        names = _imported_modules(path)
+        assert "agentself.email_catalog" in names, path
+        assert not _mentions(
+            names,
+            "agentself.backends.email.agentmail_options",
+            "agentself.backends.email.imap_options",
+        ), path
 
 
 def test_host_and_help_do_not_load_email_adapters():
@@ -151,11 +156,10 @@ def test_host_and_help_do_not_load_email_adapters():
         "    'agentself.backends.email.imap',\n"
         "]\n"
         "def loaded():\n"
-        "    return sorted(name for name in banned if name in sys.modules)\n"
+        "    return sorted(name for name in sys.modules if name == 'agentself.backends' or name.startswith('agentself.backends.'))\n"
         "import agentself.host\n"
         "assert loaded() == [], loaded()\n"
-        "assert 'agentself.backends.email.agentmail_options' in sys.modules\n"
-        "assert 'agentself.backends.email.imap_options' in sys.modules\n"
+        "assert 'agentself.email_catalog' in sys.modules\n"
         "from agentself.cli.app import main\n"
         "try:\n"
         "    code = main(['--help'])\n"
