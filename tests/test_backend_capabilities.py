@@ -4,14 +4,35 @@ from __future__ import annotations
 
 import json
 
+from agentself.backends.email.contract import MailboxAccess
+from agentself.backends.email.factory import MailboxAccessFactory
+from agentself.backends.store.contract import StoreAccess
 from agentself.backends.store.factory import StoreAccessFactory
+from agentself.backends.wallet.contract import WalletAccess
+from agentself.backends.wallet.factory import WalletAccessFactory
 from agentself.host import CHANNELS
 from agentself.internal.log import MemoryLog
 
-from tests.support import cli_env, run_cli, value_file
+from tests.support import MockRpc, cli_env, run_cli, value_file
 
 TOKEN_CANARY = "hold-token-CANARY-doctor-mailbox"
 ADDRESS_CANARY = "imap-address-CANARY@example.com"
+
+
+def test_catalog_bindings_construct_channel_contracts(tmp_path):
+    log = MemoryLog()
+    channels = {
+        "wallet": (WalletAccessFactory(log, rpc=MockRpc()), WalletAccess),
+        "email": (MailboxAccessFactory(tmp_path, log), MailboxAccess),
+        "store": (StoreAccessFactory(tmp_path, log), StoreAccess),
+    }
+    assert set(channels) == set(CHANNELS)
+    for channel, (factory, contract) in channels.items():
+        for binding in CHANNELS[channel].names:
+            assert isinstance(factory.for_binding(binding), contract), (
+                channel,
+                binding,
+            )
 
 
 def test_store_catalog_tools_match_runtime_requirements(tmp_path):

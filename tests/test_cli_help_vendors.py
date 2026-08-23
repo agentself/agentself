@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
+from agentself.host import CHANNELS
+
 from tests.support import cli_env, run_cli
 
 _FEATURED_TOP = (
@@ -16,6 +20,31 @@ _FEATURED_TOP = (
     "restore",
     "install",
 )
+
+_OPERATION_HELPS = (
+    ("secret", "--help"),
+    ("secret", "create", "--help"),
+    ("secret", "get", "--help"),
+    ("email", "--help"),
+    ("email", "connect", "--help"),
+    ("email", "show", "--help"),
+    ("email", "send", "--help"),
+    ("email", "receive", "--help"),
+    ("email", "list", "--help"),
+    ("wallet", "--help"),
+    ("wallet", "show", "--help"),
+    ("wallet", "address", "--help"),
+    ("wallet", "balance", "--help"),
+    ("wallet", "authorize", "--help"),
+    ("wallet", "verify", "--help"),
+    ("wallet", "send", "--help"),
+)
+
+
+def _has_token(text: str, token: str) -> bool:
+    return (
+        re.search(rf"(?<![a-z]){re.escape(token)}(?![a-z])", text.lower()) is not None
+    )
 
 
 def test_top_help_lists_commands_and_flags(tmp_path):
@@ -62,6 +91,19 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "--store" in init.stdout
     assert "base (default)" in init.stdout
     assert "agentmail (default)" in init.stdout
+
+
+def test_operation_help_stays_provider_neutral(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    provider_names = {
+        name.lower() for channel in CHANNELS.values() for name in channel.names
+    }
+    for args in _OPERATION_HELPS:
+        proc = run_cli(list(args), env)
+        assert proc.returncode == 0, (args, proc.stderr)
+        text = proc.stdout + proc.stderr
+        for provider in provider_names:
+            assert not _has_token(text, provider), (args, provider, text)
 
 
 def test_help_does_not_print_status(tmp_path):

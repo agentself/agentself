@@ -101,6 +101,15 @@ def _py_files(root: Path) -> list[Path]:
     )
 
 
+def _channel_dirs(channel: str) -> set[str]:
+    root = BACKENDS / channel
+    return {
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+
+
 def _is_channel_factory(name: str) -> bool:
     if not name.startswith("agentself.backends."):
         return False
@@ -293,6 +302,28 @@ def test_secret_commands_do_not_select_a_store():
             for option in action.option_strings
         }
         assert "--store" not in flags
+
+
+def test_backend_adapter_folders_are_wired_by_factories():
+    found = {
+        path.name
+        for path in BACKENDS.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+    assert found == CHANNELS
+    for channel in CHANNELS:
+        root = BACKENDS / channel
+        assert (root / "contract.py").is_file()
+        assert (root / "factory.py").is_file()
+        imported: set[str] = set()
+        prefix = f"agentself.backends.{channel}."
+        for name in _imported_modules(root / "factory.py"):
+            if not name.startswith(prefix):
+                continue
+            part = name[len(prefix) :].split(".", 1)[0]
+            if (root / part).is_dir():
+                imported.add(part)
+        assert imported == _channel_dirs(channel), (channel, imported)
 
 
 def test_channel_resource_access_is_not_under_internal():
