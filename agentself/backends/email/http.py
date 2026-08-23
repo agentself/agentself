@@ -4,6 +4,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
+_MAX_RESPONSE_BYTES = 1_048_576
+
 
 def request(
     url: str,
@@ -22,9 +24,22 @@ def request(
     )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            return int(resp.status), resp.read()
+            return int(resp.status), _read_limited(resp)
     except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read() if exc.fp else b""
+        return int(exc.code), _read_limited(exc) if exc.fp else b""
+
+
+def _read_limited(stream: object) -> bytes:
+    read = getattr(stream, "read", None)
+    if read is None:
+        raise OSError("response too large")
+    try:
+        body = read(_MAX_RESPONSE_BYTES + 1)
+    except TypeError:
+        body = read()
+    if not isinstance(body, bytes) or len(body) > _MAX_RESPONSE_BYTES:
+        raise OSError("response too large")
+    return body
 
 
 def refuse_live_hosts(url: str, hosts: tuple[str, ...] = ()) -> None:

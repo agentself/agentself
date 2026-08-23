@@ -10,6 +10,7 @@ import pytest
 from agentself.backends.email.contract import MailboxError
 from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.email.imap import (
+    _MESSAGE_BYTES,
     _UNSEEN_RECV_CAP,
     ImapMailboxAccess,
     _port,
@@ -86,6 +87,24 @@ class FakeImap:
 
     def logout(self) -> None:
         self.logout_count += 1
+
+
+def test_receive_rejects_oversized_message_before_mime_parse(vault):
+    imap = FakeImap(
+        messages=[{"uid": "1", "raw": b"x" * (_MESSAGE_BYTES + 1), "seen": False}]
+    )
+    mb = _box(vault, MemoryLog(), imap, FakeSmtp())
+    with pytest.raises(MailboxError, match="rpc failed"):
+        mb.receive(PRINCIPAL, credential=CANARY, address=ADDRESS)
+
+
+def test_list_rejects_too_many_uids(vault):
+    imap = FakeImap(
+        messages=[{"uid": str(i), "raw": _raw(uid=str(i))} for i in range(1, 102)]
+    )
+    mb = _box(vault, MemoryLog(), imap, FakeSmtp())
+    with pytest.raises(MailboxError, match="rpc failed"):
+        mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
 
 
 class FakeSmtp:

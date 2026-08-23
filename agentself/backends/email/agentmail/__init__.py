@@ -32,6 +32,9 @@ from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 from agentself.internal.setup import option_named
 
+_MESSAGE_COUNT_CAP = 100
+_RETRIEVAL_BYTE_BUDGET = 4_194_304
+
 _API = "https://api.agentmail.to"
 _INBOXES_URL = _API + "/v0/inboxes"
 _FORBID_LIVE = "AGENTSELF_FORBID_LIVE_AGENTMAIL"
@@ -122,7 +125,8 @@ class AgentMailMailboxAccess(MailboxAccess):
     ) -> builtins.list[dict[str, str]]:
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
-        listed = self._list_messages(inbox_id, credential, "recv failed")
+        budget = [_RETRIEVAL_BYTE_BUDGET]
+        listed = self._list_messages(inbox_id, credential, "recv failed", budget)
         seen = self._seen_dir(identity_id)
         ensure_private_dir(seen)
         wanted = (message_id or "").strip()
@@ -144,7 +148,7 @@ class AgentMailMailboxAccess(MailboxAccess):
                 if wanted:
                     break
                 continue
-            fetched = self._get_message(_message_url(inbox_id, mid), credential)
+            fetched = self._get_message(_message_url(inbox_id, mid), credential, budget)
             if fetched is None:
                 parsed["body"] = str(item.get("preview") or "")
                 parsed["reason"] = "mailbox_error"
@@ -170,7 +174,9 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential = self._require_credential(identity_id, credential, "mailbox_list")
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
-        listed = self._list_messages(inbox_id, credential, "list failed")
+        listed = self._list_messages(
+            inbox_id, credential, "list failed", [_RETRIEVAL_BYTE_BUDGET]
+        )
         seen = self._seen_dir(identity_id)
         items = []
         for item in listed:
@@ -310,17 +316,28 @@ class AgentMailMailboxAccess(MailboxAccess):
         raise MailboxError("no inbox")
 
     def _list_messages(
-        self, inbox_id: str, token: str, fail: str
+        self, inbox_id: str, token: str, fail: str, budget: builtins.list[int]
     ) -> builtins.list[dict[str, object]]:
-        data = _object(self._request(_messages_url(inbox_id), token), fail)
+        data = _object(
+            self._request(_messages_url(inbox_id), token, budget=budget), fail
+        )
         messages = data.get("messages")
         if messages is None:
             return []
         if not isinstance(messages, list):
             raise MailboxError(fail)
+        if len(messages) > _MESSAGE_COUNT_CAP:
+            raise MailboxError(fail)
         return [item for item in messages if isinstance(item, dict)]
 
-    def _request(self, url: str, token: str, payload: bytes | None = None) -> bytes:
+    def _request(
+        self,
+        url: str,
+        token: str,
+        payload: bytes | None = None,
+        *,
+        budget: builtins.list[int] | None = None,
+    ) -> bytes:
         token = require_secret(token)
         headers = {"Authorization": "Bearer " + token}
         try:
@@ -333,11 +350,17 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError("rpc failed") from exc
         if not 200 <= status < 300:
             raise MailboxError(_http_error(status))
+        if budget is not None:
+            budget[0] -= len(body)
+            if budget[0] < 0:
+                raise MailboxError("rpc failed")
         return body
 
-    def _get_message(self, url: str, token: str) -> dict[str, object] | None:
+    def _get_message(
+        self, url: str, token: str, budget: builtins.list[int]
+    ) -> dict[str, object] | None:
         try:
-            data = _json(self._request(url, token))
+            data = _json(self._request(url, token, budget=budget))
         except MailboxError:
             return None
         return data if isinstance(data, dict) else None

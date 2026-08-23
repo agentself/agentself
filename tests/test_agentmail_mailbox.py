@@ -521,6 +521,25 @@ def test_receive_message_id_returns_seen(vault):
     _no_local_outbox(vault)
 
 
+def test_list_rejects_too_many_remote_messages(vault):
+    log = MemoryLog()
+    http = Http()
+    inbox_id = "inb_many"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        200,
+        {"messages": [{"message_id": f"m{i}"} for i in range(101)]},
+    )
+    mb = _box(vault, log, http)
+    with pytest.raises(MailboxError, match="list failed"):
+        mb.list(PRINCIPAL, credential=CANARY, address=OURS)
+
+
 ISSUED = "glint-otter@agentmail.to"
 
 
