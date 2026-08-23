@@ -28,6 +28,11 @@ from agentself.internal.registry import FileIdentityAccess
 from agentself.internal.types import Identity
 from agentself.local import ensure_age_key
 
+from tests.maildir_mailbox import MaildirMailboxAccess
+from tests.synthetic_email import SyntheticEmailAccess
+from tests.synthetic_store import MemoryStoreAccess
+from tests.synthetic_wallet import SyntheticWalletAccess
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -121,10 +126,7 @@ class InstrumentedStoreFactory:
 
     @property
     def calls(self) -> list[tuple]:
-        out: list[tuple] = []
-        for inst in self.instances:
-            out.extend(inst.calls)
-        return out
+        return [call for inst in self.instances for call in inst.calls]
 
 
 class InstrumentedMailboxAccess:
@@ -193,12 +195,8 @@ class DoubleMailboxFactory:
 
     def for_binding(self, binding: str) -> MailboxAccess:
         if binding == "maildir":
-            from tests.maildir_mailbox import MaildirMailboxAccess
-
             return MaildirMailboxAccess(self._root, self._log, domain=self._domain)
         if binding == "oauthish":
-            from tests.synthetic_email import SyntheticEmailAccess
-
             return SyntheticEmailAccess()
         return self.inner.for_binding(binding)
 
@@ -217,10 +215,7 @@ class InstrumentedMailboxFactory:
 
     @property
     def calls(self) -> list[tuple]:
-        out: list[tuple] = []
-        for inst in self.instances:
-            out.extend(inst.calls)
-        return out
+        return [call for inst in self.instances for call in inst.calls]
 
 
 class DoubleStoreFactory:
@@ -232,8 +227,6 @@ class DoubleStoreFactory:
 
     def for_binding(self, binding: str) -> StoreAccess:
         if binding == "memory":
-            from tests.synthetic_store import MemoryStoreAccess
-
             return MemoryStoreAccess(self._memory)
         return self.inner.for_binding(binding)
 
@@ -246,8 +239,6 @@ class DoubleWalletFactory:
 
     def for_binding(self, binding: str) -> WalletAccess:
         if binding == "synthetic":
-            from tests.synthetic_wallet import SyntheticWalletAccess
-
             return SyntheticWalletAccess()
         return self.inner.for_binding(binding)
 
@@ -308,10 +299,7 @@ class InstrumentedWalletFactory:
 
     @property
     def calls(self) -> list[tuple]:
-        out: list[tuple] = []
-        for inst in self.instances:
-            out.extend(inst.calls)
-        return out
+        return [call for inst in self.instances for call in inst.calls]
 
 
 class MockRpc:
@@ -375,15 +363,7 @@ class FakeRpcOpener:
     def __call__(self, req, timeout=None):
         url = req.full_url
         self.urls.append(url)
-        hdrs: dict[str, str] = {}
-        items = getattr(req, "header_items", None)
-        if callable(items):
-            hdrs.update({str(k): str(v) for k, v in items()})
-        else:
-            for attr in ("headers", "unredirected_hdrs"):
-                src = getattr(req, attr, None) or {}
-                hdrs.update({str(k): str(v) for k, v in dict(src).items()})
-        self.headers.append(hdrs)
+        self.headers.append({str(k): str(v) for k, v in req.header_items()})
         spec = self._status.get(url, self._default)
         if spec is None:
             raise AssertionError(f"unexpected rpc url {url}")
@@ -587,18 +567,15 @@ def init_identity(app: App, monkeypatch, identity_id: str = "P", store: str = "s
 def apply_cli_env(monkeypatch, env: dict[str, str]) -> None:
     monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
     monkeypatch.setenv("PATH", env["PATH"])
-    if "AGENTSELF_TOOLS" in env:
-        monkeypatch.setenv("AGENTSELF_TOOLS", env["AGENTSELF_TOOLS"])
-    if "AGENTSELF_FETCH_TOOLS" in env:
-        monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", env["AGENTSELF_FETCH_TOOLS"])
-    if "AGENTSELF_FORBID_LIVE_AGENTMAIL" in env:
-        monkeypatch.setenv(
-            "AGENTSELF_FORBID_LIVE_AGENTMAIL", env["AGENTSELF_FORBID_LIVE_AGENTMAIL"]
-        )
-    if "HOME" in env:
-        monkeypatch.setenv("HOME", env["HOME"])
-    if "USERPROFILE" in env:
-        monkeypatch.setenv("USERPROFILE", env["USERPROFILE"])
+    for key in (
+        "AGENTSELF_TOOLS",
+        "AGENTSELF_FETCH_TOOLS",
+        "AGENTSELF_FORBID_LIVE_AGENTMAIL",
+        "HOME",
+        "USERPROFILE",
+    ):
+        if key in env:
+            monkeypatch.setenv(key, env[key])
     for key in (
         "AGENTSELF_EMAIL_BACKEND",
         "AGENTSELF_WALLET_BACKEND",
@@ -621,39 +598,3 @@ def compose_with_rpc(monkeypatch, rpc) -> None:
         return real(*args, **kwargs)
 
     monkeypatch.setattr("agentself.cli.app.compose", wrapped, raising=False)
-
-
-FEATURED_HELPS = [
-    ["--help"],
-    ["init", "--help"],
-    ["show", "--help"],
-    ["backends", "--help"],
-    ["diagnose", "--help"],
-    ["secret", "--help"],
-    ["secret", "create", "--help"],
-    ["secret", "get", "--help"],
-    ["secret", "update", "--help"],
-    ["secret", "list", "--help"],
-    ["secret", "delete", "--help"],
-    ["secret", "exists", "--help"],
-    ["email", "--help"],
-    ["email", "connect", "--help"],
-    ["email", "show", "--help"],
-    ["email", "send", "--help"],
-    ["email", "receive", "--help"],
-    ["email", "list", "--help"],
-    ["wallet", "--help"],
-    ["wallet", "show", "--help"],
-    ["wallet", "address", "--help"],
-    ["wallet", "balance", "--help"],
-    ["wallet", "authorize", "--help"],
-    ["wallet", "verify", "--help"],
-    ["wallet", "send", "--help"],
-    ["backup", "--help"],
-    ["restore", "--help"],
-    ["install", "--help"],
-]
-
-ALIAS_HELPS: list[list[str]] = []
-
-CLI_HELPS = FEATURED_HELPS + ALIAS_HELPS

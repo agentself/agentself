@@ -20,7 +20,6 @@ from agentself.host import (
     ENV_SMTP_HOST,
     ENV_SMTP_PORT,
     UnknownBind,
-    unknown_bind,
 )
 from agentself.internal.custody.manager import CustodyManager
 from agentself.internal.files import ensure_private_dir
@@ -53,9 +52,9 @@ def compose(
     identities = FileIdentityAccess(root, log, allowed_bindings=allowed)
     stores = StoreAccessFactory(root, log)
     domain = (
-        mail_domain
-        if mail_domain is not None
-        else resolve_setting(root, "mail_domain", ENV_MAIL_DOMAIN)
+        resolve_setting(root, "mail_domain", ENV_MAIL_DOMAIN)
+        if mail_domain is None
+        else mail_domain
     )
     mailboxes = MailboxAccessFactory(
         root,
@@ -75,9 +74,7 @@ def compose(
         log,
         rpc=rpc,
         eth_rpc_url=(
-            eth_rpc_url
-            if eth_rpc_url is not None
-            else os.environ.get(ENV_ETH_RPC_URL, "")
+            os.environ.get(ENV_ETH_RPC_URL, "") if eth_rpc_url is None else eth_rpc_url
         ),
         vault_root=root,
         rpc_opener=rpc_opener,
@@ -104,6 +101,6 @@ def _resolved_backend(root: Path, channel: str, explicit: str | None) -> str:
         spec.default,
         explicit,
     )
-    if unknown_bind(channel, value):
+    if value not in spec.names:
         raise UnknownBind(channel, value)
     return value

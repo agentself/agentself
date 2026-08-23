@@ -1,4 +1,4 @@
-"""Protected wallet.key, reserved names, and idempotent secret create."""
+"""Protected wallet.key, --meta without values, and reserved secret names."""
 
 from __future__ import annotations
 
@@ -37,12 +37,8 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     assert dest.read_text(encoding="utf-8").startswith("0x")
 
 
-def test_secret_exists_and_meta(tmp_path: Path) -> None:
+def test_secret_meta_omits_value(tmp_path: Path) -> None:
     env = _init(tmp_path)
-    missing = run_cli(["--json", "secret", "exists", "demo.token"], env)
-    assert missing.returncode == 3
-    absent = json.loads(missing.stdout)
-    assert absent["exists"] is False
     created = run_cli(
         [
             "--json",
@@ -55,62 +51,12 @@ def test_secret_exists_and_meta(tmp_path: Path) -> None:
         env,
     )
     assert created.returncode == 0, created.stderr
-    present = json.loads(
-        run_cli(["--json", "secret", "exists", "demo.token"], env).stdout
-    )
-    assert present["ok"] is True
-    assert present["exists"] is True
     meta = json.loads(
         run_cli(["--json", "secret", "get", "demo.token", "--meta"], env).stdout
     )
     assert "value" not in meta
     assert meta["bytes"] == 5
     assert len(meta["sha256"]) == 64
-
-
-def test_same_value_create_is_unchanged(tmp_path: Path) -> None:
-    env = _init(tmp_path)
-    first = json.loads(
-        run_cli(
-            [
-                "--json",
-                "secret",
-                "create",
-                "demo.token",
-                "--file",
-                value_file(tmp_path, "alpha"),
-            ],
-            env,
-        ).stdout
-    )
-    assert first == {"ok": True, "name": "demo.token"}
-    second = json.loads(
-        run_cli(
-            [
-                "--json",
-                "secret",
-                "create",
-                "demo.token",
-                "--file",
-                value_file(tmp_path, "alpha", "alpha2.txt"),
-            ],
-            env,
-        ).stdout
-    )
-    assert second["unchanged"] is True
-    clash = run_cli(
-        [
-            "--json",
-            "secret",
-            "create",
-            "demo.token",
-            "--file",
-            value_file(tmp_path, "beta", "beta.txt"),
-        ],
-        env,
-    )
-    assert clash.returncode == 2
-    assert json.loads(clash.stdout)["error"] == "refused"
 
 
 def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:

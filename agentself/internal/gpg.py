@@ -62,8 +62,7 @@ def pass_argv(argv: list[str]) -> list[str]:
         return parts
     if Path(parts[0]).stem.lower() != "pass":
         return parts
-    rewritten = _windows_pass_argv(parts[1:])
-    return rewritten if rewritten else parts
+    return _windows_pass_argv(parts[1:]) or parts
 
 
 def _socket_len(path: Path) -> int:
@@ -72,13 +71,12 @@ def _socket_len(path: Path) -> int:
 
 def _strip_extended(path: Path) -> Path:
     text = str(path)
-    if text.startswith(_EXTENDED_PREFIX):
-        rest = text[len(_EXTENDED_PREFIX) :]
-        if rest.startswith("UNC\\"):
-            text = "\\\\" + rest[4:]
-        else:
-            text = rest
-    return Path(text)
+    if not text.startswith(_EXTENDED_PREFIX):
+        return Path(text)
+    rest = text.removeprefix(_EXTENDED_PREFIX)
+    if rest.startswith("UNC\\"):
+        rest = "\\\\" + rest.removeprefix("UNC\\")
+    return Path(rest)
 
 
 def _is_link(path: Path) -> bool:
@@ -95,19 +93,19 @@ def _is_link(path: Path) -> bool:
 
 def _create_link(link: Path, target: Path) -> None:
     target = _strip_extended(target)
-    if os.name == "nt":
-        try:
-            import _winapi
-
-            create_junction = getattr(_winapi, "CreateJunction", None)
-            if create_junction is not None:
-                create_junction(str(target), str(link))
-                return
-        except (OSError, ImportError):
-            pass
-        link.symlink_to(target, target_is_directory=True)
+    if os.name != "nt":
+        link.symlink_to(target)
         return
-    link.symlink_to(target)
+    try:
+        import _winapi
+
+        create_junction = getattr(_winapi, "CreateJunction", None)
+        if create_junction is not None:
+            create_junction(str(target), str(link))
+            return
+    except (OSError, ImportError):
+        pass
+    link.symlink_to(target, target_is_directory=True)
 
 
 def _short_link(gnupg: Path, parent: Path) -> Path:
@@ -176,9 +174,8 @@ def _windows_pass_argv(args: list[str]) -> list[str] | None:
             return None
     except OSError:
         return None
-    inner = "export PATH={}:$PATH; exec {} {}".format(
-        shlex.quote(_to_msys(gpg.parent)),
-        shlex.quote(_to_msys(script)),
-        " ".join(shlex.quote(arg) for arg in args),
-    )
+    gpg_dir = shlex.quote(_to_msys(gpg.parent))
+    script_msys = shlex.quote(_to_msys(script))
+    extra = " ".join(shlex.quote(arg) for arg in args)
+    inner = f"export PATH={gpg_dir}:$PATH; exec {script_msys} {extra}"
     return [str(bash), "-c", inner]

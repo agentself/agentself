@@ -5,6 +5,20 @@ import sys
 from typing import Protocol, TextIO
 
 
+def _payload(
+    operation: str,
+    identity_id: str | None,
+    name: str | None,
+    result: str,
+) -> dict[str, str | None]:
+    return {
+        "operation": operation,
+        "identity_id": identity_id,
+        "name": name,
+        "result": result,
+    }
+
+
 class Log(Protocol):
     def record(
         self,
@@ -28,14 +42,7 @@ class MemoryLog:
         name: str | None,
         result: str,
     ) -> None:
-        self.records.append(
-            {
-                "operation": operation,
-                "identity_id": identity_id,
-                "name": name,
-                "result": result,
-            }
-        )
+        self.records.append(_payload(operation, identity_id, name, result))
 
     def rendered(self) -> str:
         return json.dumps(self.records, separators=(",", ":"))
@@ -51,7 +58,7 @@ class NullLog:
         name: str | None,
         result: str,
     ) -> None:
-        return
+        pass
 
 
 class StreamLog:
@@ -66,12 +73,7 @@ class StreamLog:
         result: str,
     ) -> None:
         line = json.dumps(
-            {
-                "operation": operation,
-                "identity_id": identity_id,
-                "name": name,
-                "result": result,
-            },
+            _payload(operation, identity_id, name, result),
             separators=(",", ":"),
         )
         self._stream.write(line + "\n")

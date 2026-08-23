@@ -78,11 +78,7 @@ class FileIdentityAccess:
                     recipient=recipient,
                     store_binding=store_binding,
                 )
-                records[identity_id] = {
-                    "id": identity.id,
-                    "recipient": identity.recipient,
-                    "store_binding": identity.store_binding,
-                }
+                records[identity_id] = _record(identity)
                 self._save(records)
                 self._log.record("init", identity_id, None, "ok")
                 return identity
@@ -137,13 +133,7 @@ class FileIdentityAccess:
             identity = _identity(raw, self._allowed)
             if identity.id != pid:
                 raise RegistryError("cannot read registry.json")
-            out[pid] = {
-                "id": identity.id,
-                "recipient": identity.recipient,
-                "store_binding": identity.store_binding,
-            }
-            if identity.wallet_material_names:
-                out[pid]["wallet_material_names"] = list(identity.wallet_material_names)
+            out[pid] = _record(identity)
         return out
 
     def _save(self, records: dict[str, dict[str, object]]) -> None:
@@ -157,6 +147,17 @@ class FileIdentityAccess:
             + "\n"
         )
         atomic_write_text(self._registry, payload)
+
+
+def _record(identity: Identity) -> dict[str, object]:
+    data: dict[str, object] = {
+        "id": identity.id,
+        "recipient": identity.recipient,
+        "store_binding": identity.store_binding,
+    }
+    if identity.wallet_material_names:
+        data["wallet_material_names"] = list(identity.wallet_material_names)
+    return data
 
 
 def _identity(raw: object, allowed: frozenset[str]) -> Identity:
@@ -190,19 +191,16 @@ def _identity(raw: object, allowed: frozenset[str]) -> Identity:
         if not isinstance(legacy_name, str):
             raise RegistryError("cannot read registry.json")
         names.insert(0, legacy_name)
-    validated_names: list[str] = []
     for name in names:
         try:
             require_safe_token(name, "wallet material name")
         except ValueError:
             raise RegistryError("cannot read registry.json") from None
-        if name not in validated_names:
-            validated_names.append(name)
     return Identity(
         id=pid,
         recipient=recipient,
         store_binding=store_binding,
-        wallet_material_names=tuple(validated_names),
+        wallet_material_names=tuple(dict.fromkeys(names)),
     )
 
 

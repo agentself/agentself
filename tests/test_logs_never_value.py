@@ -5,14 +5,11 @@ from __future__ import annotations
 import json
 import uuid
 
-from tests.support import setup_identity
+from tests.support import init_identity
 
 
 def test_logs_never_contain_canary_value(app, monkeypatch):
-    key = setup_identity(app.vault, "P", store="sops")
-    app.keys["P"] = key
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch)
     canary = f"CANARY-{uuid.uuid4()}-SECRET"
     app.client.create("token", canary)
     app.client.get("token")

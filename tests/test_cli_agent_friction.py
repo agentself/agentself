@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.support import cli_env, run_cli
+from tests.support import apply_cli_env, cli_env, run_cli
 
 
 def _corrupt_wallet_key(vault: Path) -> None:
@@ -98,10 +98,7 @@ def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsy
         def read(self) -> str:
             raise AssertionError("must not read")
 
-    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
-    monkeypatch.setenv("PATH", env["PATH"])
-    monkeypatch.setenv("AGENTSELF_TOOLS", env["AGENTSELF_TOOLS"])
-    monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "0")
+    apply_cli_env(monkeypatch, env)
     monkeypatch.setattr("agentself.cli.app.sys.stdin", Tty())
     code = main(["secret", "create", "notes"])
     captured = capsys.readouterr()

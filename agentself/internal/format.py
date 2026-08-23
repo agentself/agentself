@@ -24,11 +24,11 @@ def format_version_error(filename: str, data: dict) -> str | None:
         version = read_format_version(data)
     except ValueError as exc:
         return f"cannot read {filename}: {exc}"
+    if version == CURRENT_FORMAT_VERSION:
+        return None
     if version > CURRENT_FORMAT_VERSION:
         return (
             f"cannot read {filename}: format_version {version} is newer than this CLI; "
             "upgrade agentself"
         )
-    if version != CURRENT_FORMAT_VERSION:
-        return f"cannot read {filename}: format_version {version} is unsupported"
-    return None
+    return f"cannot read {filename}: format_version {version} is unsupported"

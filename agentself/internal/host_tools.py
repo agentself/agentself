@@ -67,9 +67,9 @@ def tools_dir() -> Path:
     if os.name == "nt":
         root = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(root) if root else Path.home() / "AppData" / "Local"
-        return base / "agentself" / "bin"
-    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
-    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    else:
+        root = os.environ.get("XDG_DATA_HOME", "").strip()
+        base = Path(root) if root else Path.home() / ".local" / "share"
     return base / "agentself" / "bin"
 
 
@@ -136,15 +136,15 @@ def _install_age(dest: Path, kind: tuple[str, str]) -> None:
     staging.mkdir(mode=0o700)
     try:
         _unpack(blob, name, staging)
-        found: dict[str, Path] = {}
-        for path in staging.rglob("*"):
-            if path.is_file() and path.name in wanted:
-                found[path.name] = path
+        found = {
+            path.name: path
+            for path in staging.rglob("*")
+            if path.is_file() and path.name in wanted
+        }
         if set(found) != wanted:
             raise HostToolError("age archive missing binaries")
         for filename, src in found.items():
-            label = "age-keygen" if "keygen" in filename else "age"
-            _place(src.read_bytes(), dest / _bin_name(label, windows))
+            _place(src.read_bytes(), dest / filename)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -159,9 +159,7 @@ def _install_sops(dest: Path, kind: tuple[str, str]) -> None:
 
 
 def _bin_name(name: str, windows: bool) -> str:
-    if windows and not name.endswith(".exe"):
-        return name + ".exe"
-    return name
+    return f"{name}.exe" if windows else name
 
 
 def _unpack(blob: bytes, filename: str, dest: Path) -> None:

@@ -18,6 +18,4 @@ _STORE_TOOLS: dict[str, tuple[HostTool, ...]] = {
 
 
 def store_required_tools(binding: str) -> tuple[HostTool, ...]:
-    """Return the host tools required by a store binding."""
-
     return _STORE_TOOLS.get(binding, ())

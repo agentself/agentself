@@ -60,9 +60,6 @@ class HttpJsonRpc:
         opener = self._opener or urllib.request.urlopen
         try:
             opened = opener(req, timeout=15)
-        except (OSError, urllib.error.URLError, TimeoutError) as exc:
-            raise _TryNext() from exc
-        try:
             raw = _body_from_opened(opened)
         except _TryNext:
             raise

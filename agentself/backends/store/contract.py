@@ -45,7 +45,5 @@ class StoreAccess(ABC):
     def prepare(self, identity_id: str) -> None:
         """Optional host/store readiness. Default no-op."""
 
-        return None
-
     def required_tools(self) -> tuple[HostTool, ...]:
         return ()

@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agentself.backends.wallet.contract import WalletAccess, WalletError
+from agentself.internal.log import Log
 
 if TYPE_CHECKING:
     from agentself.backends.wallet.rpc import RpcClient
-
-from agentself.internal.log import Log
 
 
 class WalletAccessFactory:

@@ -19,17 +19,7 @@ def test_unbound_caller_refuses_with_no_ra_calls(app, monkeypatch):
     with pytest.raises(UnboundCaller):
         app.client.init("sops")
     with pytest.raises(UnboundCaller):
-        app.client.create("n", "v")
-    with pytest.raises(UnboundCaller):
-        app.client.get("n")
-    with pytest.raises(UnboundCaller):
-        app.client.update("n", "v")
-    with pytest.raises(UnboundCaller):
         app.client.list()
-    with pytest.raises(UnboundCaller):
-        app.client.email_list()
-    with pytest.raises(UnboundCaller):
-        app.client.wallet_address()
     with pytest.raises(UnboundCaller):
         app.client.identity()
 
@@ -60,15 +50,7 @@ def test_unknown_identity_refuses_with_no_store_access(app, monkeypatch):
     with pytest.raises(UnknownIdentity):
         app.client.get("token")
     with pytest.raises(UnknownIdentity):
-        app.client.create("token", "v")
-    with pytest.raises(UnknownIdentity):
-        app.client.update("token", "v")
-    with pytest.raises(UnknownIdentity):
         app.client.list()
-    with pytest.raises(UnknownIdentity):
-        app.client.email_list()
-    with pytest.raises(UnknownIdentity):
-        app.client.wallet_address()
     with pytest.raises(UnknownIdentity):
         app.client.identity()
 

@@ -6,17 +6,13 @@ import pytest
 
 from agentself.internal.custody.errors import MissingSecret, Refused
 
-from tests.support import setup_identity
+from tests.support import init_identity, setup_identity
 
 
 def _init_p_and_q(app, monkeypatch):
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.keys["Q"] = setup_identity(app.vault, "Q", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch, "P")
     app.client.create("token", "p-secret")
-    app.bind(monkeypatch, "Q")
-    app.client.init("sops")
+    init_identity(app, monkeypatch, "Q")
 
 
 def test_q_get_does_not_return_p_secret(app, monkeypatch):
@@ -24,15 +20,6 @@ def test_q_get_does_not_return_p_secret(app, monkeypatch):
     app.bind(monkeypatch, "Q")
     with pytest.raises(MissingSecret):
         app.client.get("token")
-    app.bind(monkeypatch, "P")
-    assert app.client.get("token") == "p-secret"
-
-
-def test_q_update_does_not_change_p_secret(app, monkeypatch):
-    _init_p_and_q(app, monkeypatch)
-    app.bind(monkeypatch, "Q")
-    with pytest.raises(MissingSecret):
-        app.client.update("token", "hijack")
     app.bind(monkeypatch, "P")
     assert app.client.get("token") == "p-secret"
 

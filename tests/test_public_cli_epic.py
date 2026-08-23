@@ -1,11 +1,13 @@
-"""Epic #62: install skills/tools, diagnose ready, backup/restore, secret delete."""
+"""Install skills and backup/restore of the identity directory."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from tests.support import cli_env, run_cli
+from tests.support import PROJECT_ROOT, cli_env, run_cli
+
+SKILL = PROJECT_ROOT / "agentself" / "skills" / "agentself" / "SKILL.md"
 
 
 def test_install_skills_project_and_global(tmp_path):
@@ -20,6 +22,7 @@ def test_install_skills_project_and_global(tmp_path):
     assert proc.returncode == 0, proc.stderr
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
+    assert dest.read_text(encoding="utf-8") == SKILL.read_text(encoding="utf-8")
     gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
     glob = run_cli(["install", "--skills", "-g"], env, cwd=project)
     assert glob.returncode == 0, glob.stderr
@@ -33,6 +36,25 @@ def test_install_skills_project_and_global(tmp_path):
     )
     grok = run_cli(["install", "--skills=grok"], env, cwd=project)
     assert grok.returncode == 2, grok.stdout + grok.stderr
+
+
+def test_install_blocked_path_is_one_line_error(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    (tmp_path / ".agents").write_text("blocked", encoding="utf-8")
+    proc = run_cli(["install", "--skills=agents"], env, cwd=tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr
+    assert "Traceback" not in proc.stdout
+    lines = [line for line in proc.stderr.splitlines() if line.strip()]
+    assert len(lines) == 1, proc.stderr
+    assert "error" in proc.stderr.lower()
+
+    js = run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path)
+    assert js.returncode == 1, js.stdout + js.stderr
+    data = json.loads(js.stdout)
+    assert data["ok"] is False
+    assert data["error"] == "error"
+    assert data.get("reason")
 
 
 def test_backup_restore_roundtrip(tmp_path):

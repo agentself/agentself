@@ -168,19 +168,13 @@ class SyntheticEmailAccess(MailboxAccess):
         message: str = "",
     ) -> dict[str, object]:
         type(self).issued.append(continuation)
-        if status is None:
-            return setup_needed(
-                option,
-                human_action_required=human_action_required,
-                message=message,
-                continuation=continuation,
-            )
+        extra = {} if status is None else {"status": status}
         return setup_needed(
             option,
-            status=status,
             human_action_required=human_action_required,
             message=message,
             continuation=continuation,
+            **extra,
         )
 
 

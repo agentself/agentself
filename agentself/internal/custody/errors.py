@@ -11,8 +11,6 @@ class Refused(CustodyError):
 
 
 class ProtectedName(Refused):
-    """Named secret is product-protected and cannot be deleted."""
-
     def __init__(self, name: str) -> None:
         self.name = name
         super().__init__(f"{name} is protected")

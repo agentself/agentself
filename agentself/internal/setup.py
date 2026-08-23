@@ -28,16 +28,12 @@ OPTION_TYPE_CHOICE = "choice"
 
 
 class SetupAction(TypedDict):
-    """Backend-provided human assistance action."""
-
     kind: Literal["open_url"]
     label: str
     url: str
 
 
 class SetupOption(TypedDict):
-    """Backend-neutral input requested by the shared setup renderer."""
-
     name: str
     type: Literal["string", "secret", "choice"]
     required: bool
@@ -85,8 +81,6 @@ def setup_option(
     persist_as: str = "",
     runtime_only: bool = False,
 ) -> dict[str, Any]:
-    """Backend discovery / setup option."""
-
     return {
         "name": name,
         "type": type,
@@ -115,9 +109,7 @@ def option_named(
 ) -> dict[str, Any]:
     for item in options:
         if item.get("name") == name:
-            option = dict(item)
-            option.update(updates)
-            return option
+            return {**item, **updates}
     raise KeyError(name)
 
 
@@ -187,9 +179,7 @@ def decode_state(state: str) -> dict[str, object] | None:
         data = json.loads(base64.urlsafe_b64decode(text + pad))
     except (ValueError, json.JSONDecodeError):
         return None
-    if not isinstance(data, dict):
-        return None
-    return {str(key): value for key, value in data.items()}
+    return data if isinstance(data, dict) else None
 
 
 def continue_command(state: str) -> str:

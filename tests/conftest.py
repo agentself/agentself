@@ -11,13 +11,7 @@ _LIVE_HOST = "api.agentmail.to"
 def _request_url(req) -> str:
     if isinstance(req, str):
         return req
-    full = getattr(req, "full_url", None)
-    if full:
-        return str(full)
-    get = getattr(req, "get_full_url", None)
-    if callable(get):
-        return str(get())
-    return str(req)
+    return req.full_url
 
 
 @pytest.fixture(autouse=True)

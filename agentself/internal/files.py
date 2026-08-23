@@ -58,14 +58,10 @@ def resolve_tool(name: str) -> str:
 
 
 def identity_home(root: Path, identity_id: str) -> Path:
-    """Per-identity directory under identities/."""
-
     return Path(root) / "identities" / identity_id
 
 
 def secrets_home(root: Path, identity_id: str) -> Path:
-    """Named-secret directory under identities/<id>/secrets/."""
-
     return identity_home(root, identity_id) / "secrets"
 
 
@@ -107,8 +103,7 @@ def shred_unlink(path: Path | str) -> None:
                 zeros = b"\x00" * min(size, 65536)
                 remaining = size
                 while remaining > 0:
-                    chunk = zeros if remaining >= len(zeros) else b"\x00" * remaining
-                    wrote = os.write(fd, chunk)
+                    wrote = os.write(fd, zeros[:remaining])
                     if wrote <= 0:
                         break
                     remaining -= wrote
@@ -161,8 +156,7 @@ def exclusive(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
     key = str(lock_path.resolve(strict=False))
     held = getattr(_LOCAL, "held", None)
     if held is None:
-        held = {}
-        _LOCAL.held = held
+        _LOCAL.held = held = {}
     depth = held.get(key, 0)
     if depth:
         held[key] = depth + 1
@@ -191,11 +185,9 @@ def exclusive(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
 
 def _thread_lock(key: str) -> threading.RLock:
     with _GUARD:
-        lock = _THREAD_LOCKS.get(key)
-        if lock is None:
-            lock = threading.RLock()
-            _THREAD_LOCKS[key] = lock
-        return lock
+        if key not in _THREAD_LOCKS:
+            _THREAD_LOCKS[key] = threading.RLock()
+        return _THREAD_LOCKS[key]
 
 
 def _lock_file(path: Path, timeout: float) -> int:
@@ -209,7 +201,7 @@ def _lock_file(path: Path, timeout: float) -> int:
     fd = os.open(str(path), flags, 0o600)
     try:
         if os.fstat(fd).st_size == 0:
-            os.write(fd, b"\n")
+            os.write(fd, b"\n")  # msvcrt.locking needs at least one byte
         deadline = time.monotonic() + max(0.0, timeout)
         while True:
             os.lseek(fd, 0, os.SEEK_SET)
@@ -274,6 +266,6 @@ def _fsync_dir(folder: Path) -> None:
     try:
         os.fsync(dir_fd)
     except OSError:
-        return
+        pass
     finally:
         os.close(dir_fd)

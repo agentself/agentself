@@ -64,5 +64,3 @@ class WalletAccess(ABC):
 
     def bind_material(self, value: str) -> None:
         """Receive store material. Default no-op."""
-
-        return None

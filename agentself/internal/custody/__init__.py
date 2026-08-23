@@ -1,1 +1,1 @@
-"""Internal custody. Import manager or errors from their modules."""
+"""Owner check before store, wallet, or mailbox access."""

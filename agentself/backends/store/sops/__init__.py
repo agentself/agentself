@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from agentself.backends.store.contract import (
@@ -34,21 +36,26 @@ class SopsStoreAccess(StoreAccess):
     def required_tools(self) -> tuple[HostTool, ...]:
         return store_required_tools("sops")
 
-    def create(self, identity_id: str, name: str, value: str) -> None:
+    @contextmanager
+    def _locked(self, os_fail: str) -> Iterator[None]:
         try:
             with exclusive(self._root):
-                path = self._entry(identity_id, name)
-                ensure_private_dir(path.parent)
-                _scrub_plain_tmps(path.parent)
-                if _filled(path):
-                    self._log.record("store_create", identity_id, name, "exists")
-                    raise SecretExists(name)
-                self._encrypt(identity_id, path, value)
-                self._log.record("store_create", identity_id, name, "ok")
+                yield
         except IdentityBusy as exc:
             raise StoreResourceError("store timeout") from exc
         except OSError as exc:
-            raise StoreResourceError("create failed") from exc
+            raise StoreResourceError(os_fail) from exc
+
+    def create(self, identity_id: str, name: str, value: str) -> None:
+        with self._locked("create failed"):
+            path = self._entry(identity_id, name)
+            ensure_private_dir(path.parent)
+            _scrub_plain_tmps(path.parent)
+            if _filled(path):
+                self._log.record("store_create", identity_id, name, "exists")
+                raise SecretExists(name)
+            self._encrypt(identity_id, path, value)
+            self._log.record("store_create", identity_id, name, "ok")
 
     def get(self, identity_id: str, name: str) -> str:
         path = self._entry(identity_id, name)
@@ -60,19 +67,14 @@ class SopsStoreAccess(StoreAccess):
         return value
 
     def update(self, identity_id: str, name: str, value: str) -> None:
-        try:
-            with exclusive(self._root):
-                path = self._entry(identity_id, name)
-                _scrub_plain_tmps(path.parent)
-                if not _filled(path):
-                    self._log.record("store_update", identity_id, name, "missing")
-                    raise SecretMissing(name)
-                self._encrypt(identity_id, path, value)
-                self._log.record("store_update", identity_id, name, "ok")
-        except IdentityBusy as exc:
-            raise StoreResourceError("store timeout") from exc
-        except OSError as exc:
-            raise StoreResourceError("create failed") from exc
+        with self._locked("create failed"):
+            path = self._entry(identity_id, name)
+            _scrub_plain_tmps(path.parent)
+            if not _filled(path):
+                self._log.record("store_update", identity_id, name, "missing")
+                raise SecretMissing(name)
+            self._encrypt(identity_id, path, value)
+            self._log.record("store_update", identity_id, name, "ok")
 
     def list(self, identity_id: str) -> list[str]:
         require_safe_token(identity_id, "identity id")
@@ -85,25 +87,20 @@ class SopsStoreAccess(StoreAccess):
         names = sorted(
             path.stem
             for path in secrets_dir.iterdir()
-            if path.is_file() and path.suffix == ".sops" and _filled(path)
+            if path.suffix == ".sops" and _filled(path)
         )
         self._log.record("store_list", identity_id, None, "ok")
         return names
 
     def delete(self, identity_id: str, name: str) -> None:
-        try:
-            with exclusive(self._root):
-                path = self._entry(identity_id, name)
-                _scrub_plain_tmps(path.parent)
-                if not _filled(path):
-                    self._log.record("store_delete", identity_id, name, "missing")
-                    raise SecretMissing(name)
-                shred_unlink(path)
-                self._log.record("store_delete", identity_id, name, "ok")
-        except IdentityBusy as exc:
-            raise StoreResourceError("store timeout") from exc
-        except OSError as exc:
-            raise StoreResourceError("delete failed") from exc
+        with self._locked("delete failed"):
+            path = self._entry(identity_id, name)
+            _scrub_plain_tmps(path.parent)
+            if not _filled(path):
+                self._log.record("store_delete", identity_id, name, "missing")
+                raise SecretMissing(name)
+            shred_unlink(path)
+            self._log.record("store_delete", identity_id, name, "ok")
 
     def _secrets_dir(self, identity_id: str) -> Path:
         return secrets_home(self._root, identity_id)

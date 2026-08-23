@@ -6,7 +6,8 @@ import email.policy
 import imaplib
 import smtplib
 import ssl
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Protocol
@@ -30,6 +31,8 @@ from agentself.internal.setup import option_named
 _IMAP_PORT = 993
 _SMTP_PORT = 587
 _UNSEEN_RECV_CAP = 50
+_IMAP_FAIL = (OSError, TimeoutError, imaplib.IMAP4.error)
+_SMTP_FAIL = (OSError, TimeoutError, smtplib.SMTPException)
 
 ImapOpener = Callable[[str, int, str], "ImapBox"]
 SmtpOpener = Callable[[str, int, str], "SmtpBox"]
@@ -75,7 +78,7 @@ class ImapMailboxAccess(MailboxAccess):
     ) -> None:
         values = {
             str(key): ("" if value is None else str(value)).strip()
-            for key, value in dict(settings or {}).items()
+            for key, value in (settings or {}).items()
         }
         self._root = Path(vault_root)
         self._log = log
@@ -89,6 +92,19 @@ class ImapMailboxAccess(MailboxAccess):
         self._imap_opener = imap_opener
         self._smtp_opener = smtp_opener
 
+    def _require_credential(
+        self,
+        identity_id: str,
+        credential: str | None,
+        event: str,
+        extra: str | None = None,
+    ) -> str:
+        token = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
+        if not token:
+            self._log.record(event, identity_id, extra, "error")
+            raise MailboxError("missing credentials")
+        return require_secret(token)
+
     def send(
         self,
         identity_id: str,
@@ -100,11 +116,9 @@ class ImapMailboxAccess(MailboxAccess):
     ) -> None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
-        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_send", identity_id, to, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(
+            identity_id, credential, "mailbox_send", to
+        )
         from_addr = self._inbox(address)
         host, port, mode = self._endpoint("smtp", from_addr)
         payload = _rfc822(from_addr, to, subject, body)
@@ -112,7 +126,7 @@ class ImapMailboxAccess(MailboxAccess):
         try:
             box.login(self._user(from_addr), credential)
             box.send(from_addr, to, payload)
-        except (OSError, TimeoutError, smtplib.SMTPException) as exc:
+        except _SMTP_FAIL as exc:
             raise MailboxError("rpc failed") from exc
         finally:
             _close(box.quit)
@@ -127,34 +141,16 @@ class ImapMailboxAccess(MailboxAccess):
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_recv", identity_id, None, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(identity_id, credential, "mailbox_recv")
         inbox = self._inbox(address)
+        messages: builtins.list[dict[str, str]] = []
         try:
             with exclusive(self._root):
-                box = self._imap_login(inbox, credential)
-                try:
-                    wanted = (message_id or "").strip()
-                    if wanted:
-                        messages = self._take_one(box, wanted)
-                    else:
-                        messages = []
-                        for uid in box.uids(unseen_only=True)[:_UNSEEN_RECV_CAP]:
-                            parsed = _take(box, uid, mark=False)
-                            if parsed is not None:
-                                messages.append(parsed)
-                        for parsed in messages:
-                            try:
-                                box.mark_seen(parsed["id"])
-                            except (OSError, TimeoutError, imaplib.IMAP4.error):
-                                pass
-                except (OSError, TimeoutError, imaplib.IMAP4.error) as exc:
-                    raise MailboxError("rpc failed") from exc
-                finally:
-                    _close(box.logout)
+                with self._imap_session(inbox, credential) as box:
+                    try:
+                        messages = self._receive_box(box, message_id)
+                    except _IMAP_FAIL as exc:
+                        raise MailboxError("rpc failed") from exc
         except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
         self._log.record("mailbox_recv", identity_id, None, "ok")
@@ -168,18 +164,15 @@ class ImapMailboxAccess(MailboxAccess):
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_list", identity_id, None, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(identity_id, credential, "mailbox_list")
         inbox = self._inbox(address)
-        box = self._imap_login(inbox, credential)
+        items: list[dict[str, str]] = []
         try:
-            items: list[dict[str, str]] = []
-            for uid in box.uids(unseen_only=False):
-                parsed = _take(box, uid, mark=False, headers_only=True)
-                if parsed is not None:
+            with self._imap_session(inbox, credential) as box:
+                for uid in box.uids(unseen_only=False):
+                    parsed = _take(box, uid, mark=False, headers_only=True)
+                    if parsed is None:
+                        continue
                     items.append(
                         {
                             "id": parsed["id"],
@@ -188,10 +181,8 @@ class ImapMailboxAccess(MailboxAccess):
                             "subject": parsed.get("subject", ""),
                         }
                     )
-        except (OSError, TimeoutError, imaplib.IMAP4.error) as exc:
+        except _IMAP_FAIL as exc:
             raise MailboxError("rpc failed") from exc
-        finally:
-            _close(box.logout)
         self._log.record("mailbox_list", identity_id, None, "ok")
         return items
 
@@ -281,32 +272,51 @@ class ImapMailboxAccess(MailboxAccess):
         box = self._imap(host, port, mode)
         try:
             box.login(self._user(address), token)
-        except (OSError, TimeoutError, imaplib.IMAP4.error) as exc:
+        except _IMAP_FAIL as exc:
             _close(box.logout)
             raise MailboxError("rpc failed") from exc
         return box
+
+    @contextmanager
+    def _imap_session(self, address: str, token: str) -> Iterator[ImapBox]:
+        box = self._imap_login(address, token)
+        try:
+            yield box
+        finally:
+            _close(box.logout)
 
     def _imap(self, host: str, port: int, mode: str) -> ImapBox:
         opener = self._imap_opener or _default_imap_opener
         try:
             return opener(host, port, mode)
-        except (OSError, TimeoutError, imaplib.IMAP4.error) as exc:
+        except _IMAP_FAIL as exc:
             raise MailboxError("rpc failed") from exc
 
     def _smtp(self, host: str, port: int, mode: str) -> SmtpBox:
         opener = self._smtp_opener or _default_smtp_opener
         try:
             return opener(host, port, mode)
-        except (OSError, TimeoutError, smtplib.SMTPException) as exc:
+        except _SMTP_FAIL as exc:
             raise MailboxError("rpc failed") from exc
 
-    def _take_one(self, box: ImapBox, wanted: str) -> builtins.list[dict[str, str]]:
-        if not _uid_ok(wanted):
-            return []
-        parsed = _take(box, wanted, mark=True)
-        if parsed is None:
-            return []
-        return [parsed]
+    def _receive_box(
+        self, box: ImapBox, message_id: str | None
+    ) -> builtins.list[dict[str, str]]:
+        wanted = (message_id or "").strip()
+        if wanted:
+            parsed = _take(box, wanted, mark=True)
+            return [] if parsed is None else [parsed]
+        messages: list[dict[str, str]] = []
+        for uid in box.uids(unseen_only=True)[:_UNSEEN_RECV_CAP]:
+            parsed = _take(box, uid, mark=False)
+            if parsed is not None:
+                messages.append(parsed)
+        for parsed in messages:
+            try:
+                box.mark_seen(parsed["id"])
+            except _IMAP_FAIL:
+                pass
+        return messages
 
 
 def _take(

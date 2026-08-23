@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import PROJECT_ROOT
+
 WORKFLOWS = (
-    ROOT / ".github" / "workflows" / "test.yml",
-    ROOT / ".github" / "workflows" / "publish.yml",
+    PROJECT_ROOT / ".github" / "workflows" / "test.yml",
+    PROJECT_ROOT / ".github" / "workflows" / "publish.yml",
 )
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -23,7 +23,7 @@ def test_workflow_actions_use_immutable_refs() -> None:
 
 
 def test_ci_host_tool_downloads_have_pinned_digests() -> None:
-    linux = (ROOT / ".github" / "scripts" / "linux-host-tools.sh").read_text(
+    linux = (PROJECT_ROOT / ".github" / "scripts" / "linux-host-tools.sh").read_text(
         encoding="utf-8"
     )
     test_workflow = WORKFLOWS[0].read_text(encoding="utf-8")

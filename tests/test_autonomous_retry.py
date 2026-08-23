@@ -76,7 +76,11 @@ class FailAfterAccept(MockRpc):
 def test_atomic_write_crash_keeps_previous_bytes(tmp_path, monkeypatch):
     dest = tmp_path / "hold.sops"
     dest.write_bytes(b"previous-ciphertext")
-    monkeypatch.setattr(os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("crash")))
+
+    def crash(_fd):
+        raise OSError("crash")
+
+    monkeypatch.setattr(os, "fsync", crash)
     with pytest.raises(OSError):
         atomic_write(dest, b"new-ciphertext")
     assert dest.read_bytes() == b"previous-ciphertext"
@@ -193,10 +197,11 @@ def test_create_write_failure_does_not_leave_partial_ciphertext(tmp_path, monkey
         raise AssertionError(cmd)
 
     monkeypatch.setattr("agentself.backends.store.sops.run_cmd", fake_run_cmd)
-    monkeypatch.setattr(
-        "agentself.internal.files.os.replace",
-        lambda src, dst: (_ for _ in ()).throw(OSError("crash")),
-    )
+
+    def crash(_src, _dst):
+        raise OSError("crash")
+
+    monkeypatch.setattr("agentself.internal.files.os.replace", crash)
     store = SopsStoreAccess(vault, MemoryLog())
     with pytest.raises(StoreResourceError, match="^create failed$"):
         store.create(identity_id, "token", "plain-secret")

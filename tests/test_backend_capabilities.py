@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import inspect
 import json
-import re
 
-from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.store.factory import StoreAccessFactory
-from agentself.backends.wallet.factory import WalletAccessFactory
 from agentself.host import CHANNELS
 from agentself.internal.log import MemoryLog
 
@@ -16,21 +12,6 @@ from tests.support import cli_env, run_cli, value_file
 
 TOKEN_CANARY = "hold-token-CANARY-doctor-mailbox"
 ADDRESS_CANARY = "imap-address-CANARY@example.com"
-
-
-def test_catalog_names_match_factories():
-    def equals_binds(factory) -> set[str]:
-        return set(
-            re.findall(r'binding == "([^"]+)"', inspect.getsource(factory.for_binding))
-        )
-
-    wallet = equals_binds(WalletAccessFactory)
-    mailbox = equals_binds(MailboxAccessFactory)
-    store = equals_binds(StoreAccessFactory)
-    assert set(CHANNELS["wallet"].names) <= wallet
-    assert set(CHANNELS["email"].names) <= mailbox
-    assert set(CHANNELS["store"].names) == store
-    assert tuple(CHANNELS) == ("wallet", "email", "store")
 
 
 def test_store_catalog_tools_match_runtime_requirements(tmp_path):

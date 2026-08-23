@@ -6,15 +6,12 @@ import pytest
 
 from agentself.internal.custody.errors import MissingSecret
 
-from tests.support import setup_identity
+from tests.support import init_identity
 
 
 @pytest.mark.parametrize("store", ["sops", "pass"])
 def test_update_missing_does_not_create(app, monkeypatch, store):
-    key = setup_identity(app.vault, "P", store=store)
-    app.keys["P"] = key
-    app.bind(monkeypatch, "P")
-    app.client.init(store)
+    init_identity(app, monkeypatch, store=store)
 
     with pytest.raises(MissingSecret):
         app.client.update("ghost", "should-not-land")

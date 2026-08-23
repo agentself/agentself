@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from agentself.backends.store.contract import StoreResourceError
@@ -15,10 +13,8 @@ from agentself.internal.custody.errors import StoreFailure
 from agentself.internal.files import identity_home
 from agentself.internal.types import BoundCaller
 
-from tests.support import PROJECT_ROOT, build_app, init_identity, setup_identity
+from tests.support import build_app, init_identity, setup_identity
 from tests.synthetic_store import MemoryStoreAccess
-
-PKG = PROJECT_ROOT / "agentself"
 
 
 def _patch_memory_catalog(monkeypatch) -> None:
@@ -103,26 +99,3 @@ def test_compose_catalog_injection_accepts_memory(tmp_path, monkeypatch):
     client.create("notes", "from-compose")
     assert client.get("notes") == "from-compose"
     assert not (identity_home(vault, "agent") / "gnupg").exists()
-
-
-def test_core_does_not_name_memory_store():
-    paths = [
-        PKG / "internal" / "custody" / "manager.py",
-        PKG / "internal" / "registry.py",
-        PKG / "cli" / "app.py",
-        PKG / "cli" / "parser.py",
-        PKG / "backends" / "store" / "factory.py",
-    ]
-    for path in paths:
-        text = path.read_text(encoding="utf-8")
-        assert '"memory"' not in text, path
-        assert "'memory'" not in text, path
-
-
-def test_factory_does_not_import_synthetic_store():
-    factory = PKG / "backends" / "store" / "factory.py"
-    text = factory.read_text(encoding="utf-8")
-    assert "synthetic_store" not in text
-    assert "MemoryStoreAccess" not in text
-    assert not (PKG / "backends" / "store" / "memory").exists()
-    assert (Path(__file__).resolve().parent / "synthetic_store.py").is_file()

@@ -10,7 +10,7 @@ UTF8_BOM_BYTES = b"\xef\xbb\xbf"
 def strip_one_trailing_newline(text: str) -> str:
     if text.endswith("\r\n"):
         return text[:-2]
-    if text.endswith("\n") or text.endswith("\r"):
+    if text.endswith(("\n", "\r")):
         return text[:-1]
     return text
 
@@ -18,9 +18,7 @@ def strip_one_trailing_newline(text: str) -> str:
 def decode_utf8_text(data: bytes, *, strip_newline: bool = True) -> str:
     """Decode UTF-8 bytes. A leading BOM is removed; CRLF inside the value is kept."""
 
-    if data.startswith(UTF8_BOM_BYTES):
-        data = data[len(UTF8_BOM_BYTES) :]
-    text = data.decode("utf-8")
+    text = data.removeprefix(UTF8_BOM_BYTES).decode("utf-8")
     if strip_newline:
         return strip_one_trailing_newline(text)
     return text

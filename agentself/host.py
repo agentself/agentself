@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from agentself.email_catalog import AGENTMAIL_OPTIONS, IMAP_OPTIONS
@@ -83,12 +84,8 @@ class Channel:
         return tuple(item.name for item in self.binds)
 
     def flag_help(self) -> str:
-        parts = [
-            f"{item.name} (default)" if item.name == self.default else item.name
-            for item in self.binds
-        ]
-        label = self.name.capitalize()
-        return f"{label} backend: {', '.join(parts)}"
+        parts = [_bind_label(item.name, self.default) for item in self.binds]
+        return f"{self.name.capitalize()} backend: {', '.join(parts)}"
 
 
 CHANNELS: dict[str, Channel] = {
@@ -191,13 +188,10 @@ def bind_of(channel: str, name: str) -> Bind | None:
     spec = CHANNELS.get(channel)
     if spec is None:
         return None
-    for item in spec.binds:
-        if item.name == name:
-            return item
-    return None
+    return next((item for item in spec.binds if item.name == name), None)
 
 
-def close_match(value: str, names: tuple[str, ...] | list[str]) -> str | None:
+def close_match(value: str, names: Iterable[str]) -> str | None:
     if not value:
         return None
     matches = difflib.get_close_matches(value, list(names), n=1, cutoff=0.6)
@@ -207,17 +201,17 @@ def close_match(value: str, names: tuple[str, ...] | list[str]) -> str | None:
 def unknown_bind_message(channel: str, value: str = "") -> str:
     spec = CHANNELS.get(channel)
     if spec is None:
-        hint = close_match(channel, list(CHANNELS))
+        hint = close_match(channel, CHANNELS)
         if hint:
             return f"unknown channel (did you mean {hint}?)"
         return "unknown channel"
-    if value:
-        msg = f"unknown {channel} backend: {value}"
-        hint = close_match(value, spec.names)
-        if hint:
-            msg += f" (did you mean {hint}?)"
-        return msg
-    return f"unknown {channel} backend"
+    if not value:
+        return f"unknown {channel} backend"
+    hint = close_match(value, spec.names)
+    msg = f"unknown {channel} backend: {value}"
+    if hint:
+        msg += f" (did you mean {hint}?)"
+    return msg
 
 
 def unknown_bind(channel: str, value: str) -> str | None:
@@ -297,18 +291,14 @@ def _format_caps(item: Bind) -> str:
     return "  ".join(parts)
 
 
+def _bind_label(name: str, default: str) -> str:
+    return f"{name} (default)" if name == default else name
+
+
 def _format_channel(spec: Channel) -> str:
-    header = spec.name
-    meta: list[str] = []
-    if spec.env:
-        meta.append(spec.env)
-    meta.append(spec.flag)
-    header += f"  ({', '.join(meta)})"
-    lines = [header]
-    labels = [
-        item.name + (" (default)" if item.name == spec.default else "")
-        for item in spec.binds
-    ]
+    meta = [spec.env, spec.flag] if spec.env else [spec.flag]
+    lines = [f"{spec.name}  ({', '.join(meta)})"]
+    labels = [_bind_label(item.name, spec.default) for item in spec.binds]
     width = max(len(label) for label in labels)
     for item, label in zip(spec.binds, labels):
         lines.append(f"  {label.ljust(width)}  {item.summary}")

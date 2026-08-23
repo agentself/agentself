@@ -4,6 +4,8 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from agentself.bind import bind_from_env, public_recipient
@@ -46,9 +48,7 @@ class IdentityStateError(Exception):
 
 def default_identity_dir() -> Path:
     override = os.environ.get(ENV_IDENTITY_DIR, "").strip()
-    if override:
-        return Path(override)
-    return Path.home() / DEFAULT_DIR_NAME
+    return Path(override) if override else Path.home() / DEFAULT_DIR_NAME
 
 
 def config_path(vault: Path) -> Path:
@@ -60,13 +60,9 @@ def load_config(vault: Path) -> dict[str, str]:
 
 
 def save_config(vault: Path, data: dict[str, str]) -> None:
-    root = Path(vault)
-    try:
-        with exclusive(root):
-            _read_config(root)
-            _write_config(root, data)
-    except IdentityBusy as exc:
-        raise IdentityStateError("identity directory busy") from exc
+    with _locked_vault(vault) as root:
+        _read_config(root)
+        _write_config(root, data)
 
 
 def require_supported_formats(vault: Path) -> None:
@@ -89,15 +85,11 @@ def require_supported_formats(vault: Path) -> None:
 
 
 def merge_config(vault: Path, updates: dict[str, str]) -> dict[str, str]:
-    root = Path(vault)
-    try:
-        with exclusive(root):
-            cfg = _read_config(root)
-            cfg.update({key: value for key, value in updates.items() if value})
-            _write_config(root, cfg)
-            return cfg
-    except IdentityBusy as exc:
-        raise IdentityStateError("identity directory busy") from exc
+    with _locked_vault(vault) as root:
+        cfg = _read_config(root)
+        cfg.update((key, value) for key, value in updates.items() if value)
+        _write_config(root, cfg)
+        return cfg
 
 
 def resolve_setting(
@@ -109,15 +101,14 @@ def resolve_setting(
 ) -> str:
     """Flag, then env, then config.json. Empty string is unset."""
 
-    if explicit is not None and explicit.strip():
-        return explicit.strip()
+    if explicit is not None:
+        value = explicit.strip()
+        if value:
+            return value
     env = os.environ.get(env_name, "").strip()
     if env:
         return env
-    stored = load_config(vault).get(key, "").strip()
-    if stored:
-        return stored
-    return default
+    return load_config(vault).get(key, "").strip() or default
 
 
 def mail_domain(vault: Path, explicit: str | None = None) -> str:
@@ -130,14 +121,15 @@ def resolve_age_key_file(vault: Path, stored: str) -> str:
     if not stored:
         return ""
     path = Path(stored)
-    root = Path(vault)
-    if not path.is_absolute():
-        path = root / path
-        try:
-            path.resolve().relative_to(root.resolve())
-        except ValueError:
-            return ""
     if path.name.startswith("-"):
+        return ""
+    root = Path(vault)
+    if path.is_absolute():
+        return str(path)
+    path = root / path
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
         return ""
     return str(path)
 
@@ -166,12 +158,8 @@ def ensure_age_key(vault: Path, identity_id: str) -> Path:
     """Host keygen. Not a Manager call. Private key stays in the file."""
 
     require_safe_token(identity_id, "identity id")
-    root = Path(vault)
-    try:
-        with exclusive(root):
-            return _ensure_age_keygen(root, identity_id)
-    except IdentityBusy as exc:
-        raise IdentityStateError("identity directory busy") from exc
+    with _locked_vault(vault) as root:
+        return _ensure_age_keygen(root, identity_id)
 
 
 def redact_secrets(text: str) -> str:
@@ -182,16 +170,13 @@ def redact_secrets(text: str) -> str:
 def format_status(view: dict[str, object], vault: Path) -> str:
     raw_email = view.get("email")
     raw_wallet = view.get("wallet")
-    email: dict[str, object] = raw_email if isinstance(raw_email, dict) else {}
-    wallet: dict[str, object] = raw_wallet if isinstance(raw_wallet, dict) else {}
+    email = raw_email if isinstance(raw_email, dict) else {}
+    wallet = raw_wallet if isinstance(raw_wallet, dict) else {}
     addr = str(wallet.get("address") or "")
     recipient = str(view.get("recipient") or "")
-    if email.get("owned_address") and email.get("address"):
-        email_line = str(email["address"])
-        nxt = ""
-    else:
-        email_line = "not configured"
-        nxt = "next: agentself email connect\n"
+    owned = email.get("owned_address") and email.get("address")
+    email_line = str(email["address"]) if owned else "not configured"
+    nxt = "" if owned else "next: agentself email connect\n"
     wallet_backend = str(view.get("wallet_backend") or "")
     email_backend = str(view.get("email_backend") or "")
     return redact_secrets(
@@ -205,9 +190,18 @@ def format_status(view: dict[str, object], vault: Path) -> str:
     )
 
 
-def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
+@contextmanager
+def _locked_vault(vault: Path) -> Iterator[Path]:
     root = Path(vault)
-    pdir = ensure_private_dir(identity_home(root, identity_id))
+    try:
+        with exclusive(root):
+            yield root
+    except IdentityBusy as exc:
+        raise IdentityStateError("identity directory busy") from exc
+
+
+def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
+    pdir = ensure_private_dir(identity_home(vault, identity_id))
     key = pdir / "agent.agekey"
     if key.is_symlink():
         raise IdentityStateError("age key file is not usable")
@@ -250,22 +244,19 @@ def _read_config(vault: Path) -> dict[str, str]:
     err = format_version_error("config.json", data)
     if err:
         raise IdentityStateError(err)
-    out: dict[str, str] = {}
-    for key, value in data.items():
-        if key == "format_version":
-            continue
-        if isinstance(key, str) and isinstance(value, str):
-            out[key] = value
-    return out
+    return {
+        key: value
+        for key, value in data.items()
+        if key != "format_version" and isinstance(value, str)
+    }
 
 
 def _write_config(vault: Path, data: dict[str, str]) -> None:
     ensure_private_dir(vault)
-    payload: dict[str, object] = {"format_version": CURRENT_FORMAT_VERSION}
-    for key, value in data.items():
-        if key == "format_version":
-            continue
-        if isinstance(key, str) and isinstance(value, str):
-            payload[key] = value
-    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    atomic_write_text(config_path(vault), text)
+    payload: dict[str, object] = {
+        "format_version": CURRENT_FORMAT_VERSION,
+        **{key: value for key, value in data.items() if key != "format_version"},
+    }
+    atomic_write_text(
+        config_path(vault), json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    )

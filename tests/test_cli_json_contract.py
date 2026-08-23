@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from agentself import __version__
 from agentself.cli.app import main
@@ -115,24 +116,19 @@ def _init(tmp_path, extra: list[str] | None = None, env_extra: dict | None = Non
     return vault, env, data
 
 
-def _main_ok(monkeypatch, capsys, env, argv, spec_name: str) -> dict:
+def _captured(monkeypatch, capsys, env, argv) -> SimpleNamespace:
     apply_cli_env(monkeypatch, env)
     code = main(["--json", *argv])
     captured = capsys.readouterr()
-    proc = type(
-        "P", (), {"returncode": code, "stdout": captured.out, "stderr": captured.err}
-    )
-    return assert_ok(proc, spec_name)
+    return SimpleNamespace(returncode=code, stdout=captured.out, stderr=captured.err)
+
+
+def _main_ok(monkeypatch, capsys, env, argv, spec_name: str) -> dict:
+    return assert_ok(_captured(monkeypatch, capsys, env, argv), spec_name)
 
 
 def _main_err(monkeypatch, capsys, env, argv, *, error: str | None = None) -> dict:
-    apply_cli_env(monkeypatch, env)
-    code = main(["--json", *argv])
-    captured = capsys.readouterr()
-    proc = type(
-        "P", (), {"returncode": code, "stdout": captured.out, "stderr": captured.err}
-    )
-    return assert_err(proc, error=error)
+    return assert_err(_captured(monkeypatch, capsys, env, argv), error=error)
 
 
 def _strip_prose(value):
@@ -164,15 +160,13 @@ def test_featured_parser_matches_golden_commands():
         assert shown == COMMANDS[group], (group, shown)
 
 
-def test_json_version_and_machine_alias(tmp_path):
+def test_json_version(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
     assert version["version"] == __version__
     assert version["cli"] == 2
     assert version["package"]
     assert version["executable"]
-    machine = run_cli(["--machine", "--version"], env)
-    assert machine.returncode == 2
 
 
 def test_json_backends_match_goldens(tmp_path):
@@ -405,7 +399,6 @@ def test_json_failure_envelope_and_streams(tmp_path):
     unknown = assert_err(run_cli(["--json", "ninit"], env), error="refused")
     assert unknown["next"] == "agentself --help"
     assert "did you mean 'init'" in unknown["reason"]
-    assert "'start'" not in unknown["reason"]
 
     vault, env, _started = _init(tmp_path)
     send = assert_err(

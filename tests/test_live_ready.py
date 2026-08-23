@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from tests.support import cli_env, plant_host_binaries, run_cli, value_file
-
-
-def _path_with_age_without_sops(tmp_path: Path) -> str:
-    return str(plant_host_binaries(tmp_path / "host-bin", "age-keygen", "age"))
 
 
 def test_set_missing_sops_json_error(tmp_path):
@@ -19,7 +14,7 @@ def test_set_missing_sops_json_error(tmp_path):
     assert start.returncode == 0, start.stderr
 
     env = dict(env)
-    env["PATH"] = _path_with_age_without_sops(tmp_path)
+    env["PATH"] = str(plant_host_binaries(tmp_path / "host-bin", "age-keygen", "age"))
     proc = run_cli(
         [
             "secret",

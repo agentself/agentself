@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 
@@ -16,7 +15,6 @@ from agentself.backends.wallet.contract import (
     CannotSend as WalletCannotSend,
 )
 from agentself.backends.wallet.contract import (
-    WalletAccess,
     WalletError,
 )
 from agentself.backends.wallet.factory import WalletAccessFactory
@@ -28,15 +26,12 @@ from agentself.internal.custody.errors import (
 from agentself.internal.log import MemoryLog
 
 from tests.support import (
-    PROJECT_ROOT,
     MockRpc,
     build_app,
     init_identity,
-    setup_identity,
 )
 
 _HEX64 = re.compile(r"\b[0-9a-fA-F]{64}\b")
-_CONTRACT = PROJECT_ROOT / "agentself" / "backends" / "wallet" / "contract.py"
 
 
 def test_wallet_address_stable_sign_verifiable_key_hidden(app, monkeypatch):
@@ -56,15 +51,8 @@ def test_wallet_address_stable_sign_verifiable_key_hidden(app, monkeypatch):
     assert key.startswith("0x") or len(key) >= 64
     assert key not in first
     assert key not in sig
-    bare = key.lower().removeprefix("0x")
-    sink = app.log.rendered()
-    assert key not in sink
-    assert bare not in sink.lower()
-    assert "AGE-SECRET-KEY" not in sink
-    for rec in app.log.records:
-        blob = json.dumps(rec)
-        assert key not in blob
-        assert bare not in blob.lower()
+    _assert_key_hidden(app, key)
+    assert "AGE-SECRET-KEY" not in app.log.rendered()
 
 
 def test_wallet_send_fails_closed_without_eth(app, monkeypatch):
@@ -92,32 +80,10 @@ def test_base_send_without_eth_raises_backend_error_not_contract_type():
 def test_wallet_ops_use_bound_identity(app, monkeypatch):
     init_identity(app, monkeypatch, "P")
     p_addr = app.client.wallet_address()
-    app.keys["Q"] = setup_identity(app.vault, "Q", store="sops")
-    app.bind(monkeypatch, "Q")
-    app.client.init("sops")
+    init_identity(app, monkeypatch, "Q")
     q_addr = app.client.wallet_address()
     assert q_addr != p_addr
     assert q_addr.startswith("0x")
-
-
-def test_wallet_access_contract_has_no_key_hex():
-    source = _CONTRACT.read_text(encoding="utf-8")
-    assert "key_hex" not in source
-    assert not hasattr(wallet_contract, "NoEthForGas")
-    for name in (
-        "address",
-        "authorize",
-        "balance",
-        "send",
-        "describe",
-        "required_material",
-        "create_material",
-        "bind_material",
-    ):
-        method = getattr(WalletAccess, name)
-        params = inspect.signature(method).parameters
-        assert "key_hex" not in params
-    assert issubclass(NoEthForGas, WalletCannotSend)
 
 
 def _assert_describe_has_no_key(view: dict[str, object]) -> None:

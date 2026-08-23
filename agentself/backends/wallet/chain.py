@@ -82,9 +82,7 @@ class ChainWalletAccess(WalletAccess):
 
     def authorize(self, identity_id: str, message: str) -> str:
         require_safe_token(identity_id, "identity id")
-        signed = _account_from_key(self._require_key()).sign_message(
-            encode_defunct(text=message)
-        )
+        signed = self._account().sign_message(encode_defunct(text=message))
         sig = hex_0x(signed.signature.hex())
         self._log.record("wallet_authorize", identity_id, None, "ok")
         return sig
@@ -92,9 +90,9 @@ class ChainWalletAccess(WalletAccess):
     def balance(self, identity_id: str) -> dict[str, str]:
         require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
-        data = "0x" + BALANCE_OF_SELECTOR.hex() + _pad_address(addr)
         result = self._rpc_request(
-            "eth_call", [{"to": self.usdc, "data": data}, "latest"]
+            "eth_call",
+            [{"to": self.usdc, "data": _balance_of_data(addr)}, "latest"],
         )
         raw = _hex_int(result)
         amount = _format_usdc(raw)
@@ -122,11 +120,11 @@ class ChainWalletAccess(WalletAccess):
             self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise CannotSend("unsupported asset", reason="unsupported_asset")
         if self._root is None:
-            self._send_once(identity_id, to, amount, wanted)
+            self._send_once(identity_id, to, amount)
             return wanted
         try:
             with exclusive(self._root):
-                self._send_once(identity_id, to, amount, wanted)
+                self._send_once(identity_id, to, amount)
         except IdentityBusy as exc:
             raise WalletError("rpc failed") from exc
         return wanted
@@ -158,7 +156,7 @@ class ChainWalletAccess(WalletAccess):
         self._log.record("wallet_verify", identity_id, None, "ok" if valid else "error")
         return {"valid": valid, "address": expected, "scheme": "eip191"}
 
-    def _send_once(self, identity_id: str, to: str, amount: str, asset: str) -> None:
+    def _send_once(self, identity_id: str, to: str, amount: str) -> None:
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         if wei == 0:
@@ -172,13 +170,7 @@ class ChainWalletAccess(WalletAccess):
         held = _hex_int(
             self._rpc_request(
                 "eth_call",
-                [
-                    {
-                        "to": self.usdc,
-                        "data": "0x" + BALANCE_OF_SELECTOR.hex() + _pad_address(addr),
-                    },
-                    "latest",
-                ],
+                [{"to": self.usdc, "data": _balance_of_data(addr)}, "latest"],
             )
         )
         if held < units:
@@ -221,7 +213,7 @@ class ChainWalletAccess(WalletAccess):
             "chainId": self.chain_id,
         }
         try:
-            signed = _account_from_key(self._require_key()).sign_transaction(tx)
+            signed = self._account().sign_transaction(tx)
         except WalletError:
             raise
         except Exception:
@@ -314,8 +306,10 @@ class ChainWalletAccess(WalletAccess):
             raise WalletError("rpc failed") from exc
 
     def _derived_address(self) -> str:
-        addr = _account_from_key(self._require_key()).address
-        return to_checksum_address(addr)
+        return to_checksum_address(self._account().address)
+
+    def _account(self):
+        return _account_from_key(self._require_key())
 
     def _require_key(self) -> str:
         if not self._key_hex:
@@ -359,6 +353,10 @@ def _normalize_signature(value: str) -> str:
 def _pad_address(address: str) -> str:
     hex_part = address.lower().removeprefix("0x")
     return hex_part.rjust(64, "0")
+
+
+def _balance_of_data(address: str) -> str:
+    return "0x" + BALANCE_OF_SELECTOR.hex() + _pad_address(address)
 
 
 def _hex_int(value: object) -> int:

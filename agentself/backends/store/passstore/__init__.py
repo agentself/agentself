@@ -132,15 +132,15 @@ class PassStoreAccess(StoreAccess):
         try:
             with exclusive(self._root):
                 self._ensure_store(identity_id)
-                if not self._entry(identity_id, name).exists():
+                path = self._entry(identity_id, name)
+                if not path.exists():
                     self._log.record("store_delete", identity_id, name, "missing")
                     raise SecretMissing(name)
                 env = self._env(identity_id)
                 proc = run_cmd(
                     pass_argv(["pass", "rm", "--force", "--", name]), env=env
                 )
-                if proc.returncode != 0 or self._entry(identity_id, name).exists():
-                    path = self._entry(identity_id, name)
+                if proc.returncode != 0 or path.exists():
                     try:
                         path.unlink()
                     except OSError as exc:
@@ -257,10 +257,10 @@ def _host_failure_message(prefix: str, proc: subprocess.CompletedProcess[bytes])
             continue
         if stripped.startswith("%"):
             continue
-        for head in ("gpg-agent:", "gpg:"):
-            if stripped.startswith(head):
-                stripped = stripped[len(head) :].strip()
-                break
+        if stripped.startswith("gpg-agent:"):
+            stripped = stripped[len("gpg-agent:") :].strip()
+        elif stripped.startswith("gpg:"):
+            stripped = stripped[len("gpg:") :].strip()
         else:
             stripped = _strip_gpg_agent_prefix(stripped)
         detail = stripped

@@ -39,8 +39,6 @@ class _Parser(argparse.ArgumentParser):
             return
         listing = getattr(action, "_choices_actions", None)
         shown = [item.dest for item in listing] if listing else list(action.choices)
-        if not shown:
-            shown = list(action.choices)
         msg = f"invalid choice: {value!r} (choose from {', '.join(map(repr, shown))})"
         hint = close_match(str(value), shown)
         if hint:
@@ -58,12 +56,6 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _json_parent() -> argparse.ArgumentParser:
-    parent = argparse.ArgumentParser(add_help=False)
-    _add_json_flag(parent)
-    return parent
-
-
 def _cmd(
     sub,
     name: str,
@@ -74,15 +66,14 @@ def _cmd(
     epilog: str | None = None,
     **kwargs,
 ) -> argparse.ArgumentParser:
-    desc = description
-    if desc is None and help is not argparse.SUPPRESS:
-        desc = help
+    if description is None and help is not argparse.SUPPRESS:
+        description = help
     return sub.add_parser(
         name,
         parents=[json_parent],
         formatter_class=_HELP,
         help=help,
-        description=desc,
+        description=description,
         epilog=epilog,
         **kwargs,
     )
@@ -97,21 +88,17 @@ def _add_create_flags(parser: argparse.ArgumentParser) -> None:
         help="Name this identity (default agent)",
     )
     for spec in CHANNELS.values():
-        if spec.env is None:
-            parser.add_argument(
-                spec.flag,
-                dest=spec.name,
-                choices=spec.names,
-                default=spec.default,
-                help=spec.flag_help(),
-            )
-        else:
-            parser.add_argument(
-                spec.flag,
-                dest=spec.name,
-                default="",
-                help=spec.flag_help(),
-            )
+        extra = (
+            {"choices": spec.names, "default": spec.default}
+            if spec.env is None
+            else {"default": ""}
+        )
+        parser.add_argument(
+            spec.flag,
+            dest=spec.name,
+            help=spec.flag_help(),
+            **extra,
+        )
 
 
 def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
@@ -131,17 +118,9 @@ def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_email_id_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "message_id",
-        nargs="?",
-        metavar="ID",
-        help="Fetch this id again even if already received",
-    )
-
-
 def _parser() -> argparse.ArgumentParser:
-    json_parent = _json_parent()
+    json_parent = argparse.ArgumentParser(add_help=False)
+    _add_json_flag(json_parent)
     parser = _Parser(
         prog="agentself",
         usage="%(prog)s [--json] [--version] [COMMAND ...]",
@@ -507,7 +486,12 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself --json email receive"
         ),
     )
-    _add_email_id_arg(email_receive)
+    email_receive.add_argument(
+        "message_id",
+        nargs="?",
+        metavar="ID",
+        help="Fetch this id again even if already received",
+    )
     _cmd(
         email_sub,
         "list",

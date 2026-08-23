@@ -143,34 +143,22 @@ class CustodyManager:
         )
 
     def init(self, caller: BoundCaller, store_binding: str = "sops") -> Identity:
-        try:
-            identity_id = require_safe_token(caller.identity_id, "identity id")
-        except ValueError:
-            self._log.record("init", caller.identity_id, None, "refused")
-            raise Refused("refused") from None
-        try:
-            found = self._identities.find(identity_id)
-        except RegistryError as exc:
-            self._fail_store("init", identity_id, "registry.json", exc)
+        identity_id = self._safe_tokens(caller, "init", None)
+        found = self._find_identity(identity_id, "init")
         if found is not None:
             if found.recipient != caller.recipient:
-                self._log.record("init", identity_id, None, "refused")
-                raise Refused("refused")
+                self._refuse("init", identity_id, None)
             identity = found
+        elif store_binding not in self._allowed_store_bindings:
+            self._refuse("init", identity_id, None)
         else:
-            if store_binding not in self._allowed_store_bindings:
-                self._log.record("init", identity_id, None, "refused")
-                raise Refused("refused")
             try:
                 identity = self._identities.init(
                     identity_id, caller.recipient, store_binding
                 )
             except RegistryError as exc:
                 self._fail_store("init", identity_id, "registry.json", exc)
-        try:
-            store = self._stores.for_binding(identity.store_binding)
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store("init", identity_id, None, exc)
+        store = self._store_for(identity, "init", None)
         try:
             store.prepare(identity.id)
         except (StoreError, FileNotFoundError) as exc:
@@ -194,21 +182,17 @@ class CustodyManager:
     ) -> bool:
         identity = self._require_identity(caller, "create", name)
         if is_reserved_secret_name(name):
-            self._log.record("create", identity.id, name, "refused")
-            raise Refused("refused")
+            self._refuse("create", identity.id, name)
         store = self._store_for(identity, "create", name)
         try:
             store.create(identity.id, name, value)
         except SecretExists:
-            try:
-                existing = store.get(identity.id, name)
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store("create", identity.id, name, exc)
-            if existing == value:
-                self._log.record("create", identity.id, name, "ok")
-                return True
-            self._log.record("create", identity.id, name, "exists")
-            raise Refused("refused") from None
+            existing = self._store_read(store, identity, name, "create")
+            if existing != value:
+                self._log.record("create", identity.id, name, "exists")
+                raise Refused("refused") from None
+            self._log.record("create", identity.id, name, "ok")
+            return True
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("create", identity.id, name, exc)
         self._log.record("create", identity.id, name, "ok")
@@ -221,14 +205,12 @@ class CustodyManager:
     ) -> str:
         identity = self._require_identity(caller, "get", name)
         if is_reserved_secret_name(name):
-            self._log.record("get", identity.id, name, "missing")
-            raise MissingSecret("missing")
+            self._missing("get", identity.id, name)
         store = self._store_for(identity, "get", name)
         try:
             value = store.get(identity.id, name)
         except SecretMissing:
-            self._log.record("get", identity.id, name, "missing")
-            raise MissingSecret("missing") from None
+            self._missing("get", identity.id, name)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("get", identity.id, name, exc)
         self._log.record("get", identity.id, name, "ok")
@@ -242,14 +224,12 @@ class CustodyManager:
     ) -> None:
         identity = self._require_identity(caller, "update", name)
         if is_reserved_secret_name(name):
-            self._log.record("update", identity.id, name, "missing")
-            raise MissingSecret("missing")
+            self._missing("update", identity.id, name)
         store = self._store_for(identity, "update", name)
         try:
             store.update(identity.id, name, value)
         except SecretMissing:
-            self._log.record("update", identity.id, name, "missing")
-            raise MissingSecret("missing") from None
+            self._missing("update", identity.id, name)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("update", identity.id, name, exc)
         self._log.record("update", identity.id, name, "ok")
@@ -282,8 +262,7 @@ class CustodyManager:
     ) -> None:
         identity = self._require_identity(caller, "delete", name)
         if is_reserved_secret_name(name):
-            self._log.record("delete", identity.id, name, "missing")
-            raise MissingSecret("missing")
+            self._missing("delete", identity.id, name)
         if name in self._protected_secret_names(identity, "delete"):
             self._log.record("delete", identity.id, name, "refused")
             raise ProtectedName(name)
@@ -291,8 +270,7 @@ class CustodyManager:
         try:
             store.delete(identity.id, name)
         except SecretMissing:
-            self._log.record("delete", identity.id, name, "missing")
-            raise MissingSecret("missing") from None
+            self._missing("delete", identity.id, name)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("delete", identity.id, name, exc)
         self._log.record("delete", identity.id, name, "ok")
@@ -319,7 +297,9 @@ class CustodyManager:
         }
         blob: object | None = None
         token = (state or "").strip()
-        if token:
+        if not token:
+            incoming.pop("value", None)
+        else:
             loaded = self._load_email_continuation(identity, token)
             if loaded is None:
                 self._log.record("email_connect", identity.id, None, "error")
@@ -328,8 +308,6 @@ class CustodyManager:
             raw_value = incoming.pop("value", "").strip()
             if asked and raw_value and asked not in incoming:
                 incoming[asked] = raw_value
-        else:
-            incoming.pop("value", None)
         address, credential, sources = self._resolve_email_inputs(identity, incoming)
         mailbox = self._mailbox_for(identity, "email_connect")
         try:
@@ -390,20 +368,12 @@ class CustodyManager:
         subject: str,
         body: str,
     ) -> None:
-        identity = self._require_identity(caller, "email_send", None)
-        address, token, _sources = self._resolve_email_inputs(
-            identity, {}, "email_send"
-        )
-        mailbox = self._mailbox_for(identity, "email_send")
+        identity, mailbox, address, token = self._email_bound(caller, "email_send")
         try:
             desc = mailbox.describe(identity.id, credential=token, address=address)
-        except MailboxError as exc:
-            self._log.record("email_send", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
-        if not desc.get("owned_address"):
-            self._log.record("email_send", identity.id, None, "error")
-            raise EmailSendNotReady()
-        try:
+            if not desc.get("owned_address"):
+                self._log.record("email_send", identity.id, None, "error")
+                raise EmailSendNotReady()
             mailbox.send(
                 identity.id,
                 to,
@@ -413,8 +383,7 @@ class CustodyManager:
                 address=address,
             )
         except MailboxError as exc:
-            self._log.record("email_send", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            self._fail_mailbox("email_send", identity.id, exc)
         self._log.record("email_send", identity.id, None, "ok")
 
     def email_receive(
@@ -422,11 +391,7 @@ class CustodyManager:
         caller: BoundCaller,
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
-        identity = self._require_identity(caller, "email_receive", None)
-        address, token, _sources = self._resolve_email_inputs(
-            identity, {}, "email_receive"
-        )
-        mailbox = self._mailbox_for(identity, "email_receive")
+        identity, mailbox, address, token = self._email_bound(caller, "email_receive")
         try:
             messages = mailbox.receive(
                 identity.id,
@@ -435,33 +400,25 @@ class CustodyManager:
                 message_id=message_id,
             )
         except MailboxError as exc:
-            self._log.record("email_receive", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            self._fail_mailbox("email_receive", identity.id, exc)
         self._log.record("email_receive", identity.id, None, "ok")
         return _items(messages, _MAIL_ITEM_KEYS)
 
     def email_list(self, caller: BoundCaller) -> builtins.list[dict[str, str]]:
-        identity = self._require_identity(caller, "email_list", None)
-        address, token, _sources = self._resolve_email_inputs(
-            identity, {}, "email_list"
-        )
-        mailbox = self._mailbox_for(identity, "email_list")
+        identity, mailbox, address, token = self._email_bound(caller, "email_list")
         try:
             items = mailbox.list(identity.id, credential=token, address=address)
         except MailboxError as exc:
-            self._log.record("email_list", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            self._fail_mailbox("email_list", identity.id, exc)
         self._log.record("email_list", identity.id, None, "ok")
         return _items(items, _MAIL_ITEM_KEYS)
 
     def wallet_address(self, caller: BoundCaller) -> str:
-        identity = self._require_identity(caller, "wallet_address", None)
-        wallet = self._ready_wallet(identity, "wallet_address")
+        identity, wallet = self._wallet_bound(caller, "wallet_address")
         try:
             addr = wallet.address(identity.id)
         except WalletError as exc:
-            self._log.record("wallet_address", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("wallet_address", identity.id, exc)
         self._log.record("wallet_address", identity.id, None, "ok")
         return addr
 
@@ -470,16 +427,14 @@ class CustodyManager:
         caller: BoundCaller,
         message: str,
     ) -> str:
-        identity = self._require_identity(caller, "wallet_authorize", None)
-        wallet = self._ready_wallet(identity, "wallet_authorize")
+        identity, wallet = self._wallet_bound(caller, "wallet_authorize")
         try:
             signature = wallet.authorize(identity.id, message)
         except WalletCannotAuthorize:
             self._log.record("wallet_authorize", identity.id, None, "cannot_authorize")
             raise CannotAuthorize() from None
         except WalletError as exc:
-            self._log.record("wallet_authorize", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("wallet_authorize", identity.id, exc)
         self._log.record("wallet_authorize", identity.id, None, "ok")
         return signature
 
@@ -489,31 +444,26 @@ class CustodyManager:
         message: str,
         authorization: str,
     ) -> dict[str, object]:
-        identity = self._require_identity(caller, "wallet_verify", None)
-        wallet = self._ready_wallet(identity, "wallet_verify")
+        identity, wallet = self._wallet_bound(caller, "wallet_verify")
         try:
             result = wallet.verify(identity.id, message, authorization)
         except WalletError as exc:
-            self._log.record("wallet_verify", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("wallet_verify", identity.id, exc)
         self._log.record("wallet_verify", identity.id, None, "ok")
         picked = _pick(result, ("valid", "address", "scheme"))
         if "valid" in picked:
             picked["valid"] = bool(picked["valid"])
-        if "address" in picked:
-            picked["address"] = str(picked["address"])
-        if "scheme" in picked:
-            picked["scheme"] = str(picked["scheme"])
+        for key in ("address", "scheme"):
+            if key in picked:
+                picked[key] = str(picked[key])
         return picked
 
     def wallet_balance(self, caller: BoundCaller) -> dict[str, str]:
-        identity = self._require_identity(caller, "wallet_balance", None)
-        wallet = self._ready_wallet(identity, "wallet_balance")
+        identity, wallet = self._wallet_bound(caller, "wallet_balance")
         try:
             result = wallet.balance(identity.id)
         except WalletError as exc:
-            self._log.record("wallet_balance", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("wallet_balance", identity.id, exc)
         self._log.record("wallet_balance", identity.id, None, "ok")
         return _balance_view(result)
 
@@ -524,8 +474,7 @@ class CustodyManager:
         amount: str,
         asset: str = "",
     ) -> str:
-        identity = self._require_identity(caller, "wallet_send", None)
-        wallet = self._ready_wallet(identity, "wallet_send")
+        identity, wallet = self._wallet_bound(caller, "wallet_send")
         try:
             used = (wallet.send(identity.id, to, amount, asset) or "").strip()
         except WalletCannotSend as exc:
@@ -536,8 +485,7 @@ class CustodyManager:
             self._log.record("wallet_send", identity.id, None, "cannot_send")
             raise CannotSend(_send_message(reason), reason=reason) from None
         except WalletError as exc:
-            self._log.record("wallet_send", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("wallet_send", identity.id, exc)
         if not used:
             self._log.record("wallet_send", identity.id, None, "cannot_send")
             raise CannotSend(reason="cannot_send")
@@ -548,18 +496,16 @@ class CustodyManager:
         identity = self._require_identity(caller, "wallet_material", None)
         wallet = self._wallet_for(identity, "wallet_material")
         need = wallet.required_material()
-        if need is None:
-            self._log.record("wallet_material", identity.id, None, "ok")
-            return {"ready": True, "missing": None}
-        identity = self._remember_wallet_material(
-            identity, need.name, "wallet_material"
-        )
-        held = self._optional_secret_value(identity, need.name, "wallet_material")
-        if held:
-            self._log.record("wallet_material", identity.id, None, "ok")
-            return {"ready": True, "missing": None}
-        self._log.record("wallet_material", identity.id, None, "missing")
-        return {"ready": False, "missing": need.name}
+        if need is not None:
+            identity = self._remember_wallet_material(
+                identity, need.name, "wallet_material"
+            )
+            held = self._optional_secret_value(identity, need.name, "wallet_material")
+            if not held:
+                self._log.record("wallet_material", identity.id, None, "missing")
+                return {"ready": False, "missing": need.name}
+        self._log.record("wallet_material", identity.id, None, "ok")
+        return {"ready": True, "missing": None}
 
     def identity(self, caller: BoundCaller) -> dict[str, object]:
         identity = self._require_identity(caller, "identity", None)
@@ -568,14 +514,12 @@ class CustodyManager:
         try:
             email = mailbox.describe(identity.id, credential=token, address=address)
         except MailboxError as exc:
-            self._log.record("identity", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            self._fail_mailbox("identity", identity.id, exc)
         wallet = self._ready_wallet(identity, "identity")
         try:
             wallet_view = wallet.describe(identity.id)
         except WalletError as exc:
-            self._log.record("identity", identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet("identity", identity.id, exc)
         self._log.record("identity", identity.id, None, "ok")
         return {
             "id": identity.id,
@@ -648,25 +592,22 @@ class CustodyManager:
         }
         for name, value in answers.items():
             text = (value or "").strip()
-            if not text:
-                continue
             option = descriptors.get(name)
-            if option is None:
-                continue
-            if option.get("runtime_only") is True:
-                continue
-            if option.get("persist") is not True:
+            if (
+                not text
+                or option is None
+                or option.get("runtime_only") is True
+                or option.get("persist") is not True
+            ):
                 continue
             persist_as = str(option.get("persist_as") or "").strip()
             key = persist_as or f"email.{self._email_backend}.{name}"
             if is_reserved_secret_name(key) or key in PROTECTED_SECRET_NAMES:
-                self._log.record("email_connect", identity.id, key, "refused")
-                raise Refused("refused")
+                self._refuse("email_connect", identity.id, key)
             try:
                 require_safe_token(key, "name")
             except ValueError:
-                self._log.record("email_connect", identity.id, key, "refused")
-                raise Refused("refused") from None
+                self._refuse("email_connect", identity.id, key)
             self._store_put(identity, key, text, "email_connect")
 
     def _persist_email_success(
@@ -685,17 +626,16 @@ class CustodyManager:
         store = self._store_for(identity, operation, name)
         try:
             store.create(identity.id, name, value)
+            return
         except SecretExists:
-            try:
-                existing = store.get(identity.id, name)
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store(operation, identity.id, name, exc)
-            if existing == value:
-                return
-            try:
-                store.update(identity.id, name, value)
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store(operation, identity.id, name, exc)
+            pass
+        except (StoreError, FileNotFoundError) as exc:
+            self._fail_store(operation, identity.id, name, exc)
+        existing = self._store_read(store, identity, name, operation)
+        if existing == value:
+            return
+        try:
+            store.update(identity.id, name, value)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, identity.id, name, exc)
 
@@ -763,30 +703,48 @@ class CustodyManager:
     def _delete_email_continuation(self, identity: Identity) -> None:
         self._store_delete(identity, EMAIL_CONTINUATION_NAME, "email_connect")
 
+    def _safe_tokens(
+        self,
+        caller: BoundCaller,
+        operation: str,
+        name: str | None,
+    ) -> str:
+        try:
+            identity_id = require_safe_token(caller.identity_id, "identity id")
+            if name is not None:
+                require_safe_token(name, "name")
+            return identity_id
+        except ValueError:
+            self._refuse(operation, caller.identity_id, name)
+
+    def _find_identity(self, identity_id: str, operation: str) -> Identity | None:
+        try:
+            return self._identities.find(identity_id)
+        except RegistryError as exc:
+            self._fail_store(operation, identity_id, "registry.json", exc)
+
     def _require_identity(
         self,
         caller: BoundCaller,
         operation: str,
         name: str | None,
     ) -> Identity:
-        try:
-            identity_id = require_safe_token(caller.identity_id, "identity id")
-            if name is not None:
-                require_safe_token(name, "name")
-        except ValueError:
-            self._log.record(operation, caller.identity_id, name, "refused")
-            raise Refused("refused") from None
-        try:
-            found = self._identities.find(identity_id)
-        except RegistryError as exc:
-            self._fail_store(operation, identity_id, "registry.json", exc)
+        identity_id = self._safe_tokens(caller, operation, name)
+        found = self._find_identity(identity_id, operation)
         if found is None:
             self._log.record(operation, identity_id, name, "unknown")
             raise UnknownIdentity("unknown identity")
         if found.recipient != caller.recipient:
-            self._log.record(operation, identity_id, name, "refused")
-            raise Refused("refused")
+            self._refuse(operation, identity_id, name)
         return found
+
+    def _store_read(
+        self, store: StoreAccess, identity: Identity, name: str, operation: str
+    ) -> str:
+        try:
+            return store.get(identity.id, name)
+        except (StoreError, FileNotFoundError) as exc:
+            self._fail_store(operation, identity.id, name, exc)
 
     def _store_for(
         self, identity: Identity, operation: str, name: str | None
@@ -803,8 +761,7 @@ class CustodyManager:
         try:
             return self._mailboxes.for_binding(self._email_backend)
         except MailboxError as exc:
-            self._log.record(operation, identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            self._fail_mailbox(operation, identity.id, exc)
 
     def _wallet_for(self, identity: Identity, operation: str) -> WalletAccess:
         if self._wallets is None:
@@ -813,8 +770,21 @@ class CustodyManager:
         try:
             return self._wallets.for_binding(self._wallet_backend)
         except WalletError as exc:
-            self._log.record(operation, identity.id, None, "error")
-            raise _channel_from_wallet(exc) from None
+            self._fail_wallet(operation, identity.id, exc)
+
+    def _email_bound(
+        self, caller: BoundCaller, operation: str
+    ) -> tuple[Identity, MailboxAccess, str | None, str | None]:
+        identity = self._require_identity(caller, operation, None)
+        address, token, _sources = self._resolve_email_inputs(identity, {}, operation)
+        mailbox = self._mailbox_for(identity, operation)
+        return identity, mailbox, address, token
+
+    def _wallet_bound(
+        self, caller: BoundCaller, operation: str
+    ) -> tuple[Identity, WalletAccess]:
+        identity = self._require_identity(caller, operation, None)
+        return identity, self._ready_wallet(identity, operation)
 
     def _ready_wallet(self, identity: Identity, operation: str) -> WalletAccess:
         wallet = self._wallet_for(identity, operation)
@@ -827,16 +797,12 @@ class CustodyManager:
             try:
                 created = wallet.create_material()
             except WalletError as exc:
-                self._log.record(operation, identity.id, None, "error")
-                raise _channel_from_wallet(exc) from None
+                self._fail_wallet(operation, identity.id, exc)
             store = self._store_for(identity, operation, need.name)
             try:
                 store.create(identity.id, need.name, created)
             except SecretExists:
-                try:
-                    created = store.get(identity.id, need.name)
-                except (StoreError, FileNotFoundError) as exc:
-                    self._fail_store(operation, identity.id, need.name, exc)
+                created = self._store_read(store, identity, need.name, operation)
             except (StoreError, FileNotFoundError) as exc:
                 self._fail_store(operation, identity.id, need.name, exc)
             value = created
@@ -851,8 +817,7 @@ class CustodyManager:
             try:
                 require_safe_token(name, "wallet material name")
             except ValueError:
-                self._log.record(operation, identity.id, name, "refused")
-                raise Refused("refused") from None
+                self._refuse(operation, identity.id, name)
             names.add(name)
         return frozenset(names)
 
@@ -862,11 +827,8 @@ class CustodyManager:
         try:
             require_safe_token(name, "wallet material name")
         except ValueError:
-            self._log.record(operation, identity.id, name, "refused")
-            raise Refused("refused") from None
-        if name in PROTECTED_SECRET_NAMES:
-            return identity
-        if name in identity.wallet_material_names:
+            self._refuse(operation, identity.id, name)
+        if name in PROTECTED_SECRET_NAMES or name in identity.wallet_material_names:
             return identity
         try:
             return self._identities.add_wallet_material_name(identity.id, name)
@@ -889,6 +851,31 @@ class CustodyManager:
             return None
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, identity.id, name, exc)
+
+    def _refuse(
+        self,
+        operation: str,
+        identity_id: str | None,
+        name: str | None,
+    ) -> NoReturn:
+        self._log.record(operation, identity_id, name, "refused")
+        raise Refused("refused") from None
+
+    def _missing(self, operation: str, identity_id: str, name: str | None) -> NoReturn:
+        self._log.record(operation, identity_id, name, "missing")
+        raise MissingSecret("missing") from None
+
+    def _fail_mailbox(
+        self, operation: str, identity_id: str, exc: BaseException
+    ) -> NoReturn:
+        self._log.record(operation, identity_id, None, "error")
+        raise _channel_from_mailbox(exc) from None
+
+    def _fail_wallet(
+        self, operation: str, identity_id: str, exc: BaseException
+    ) -> NoReturn:
+        self._log.record(operation, identity_id, None, "error")
+        raise _channel_from_wallet(exc) from None
 
     def _fail_store(
         self,
@@ -991,10 +978,14 @@ def _host_tool_from(exc: BaseException) -> str | None:
     return None
 
 
-def _pick(data: object, keys: tuple[str, ...]) -> dict:
+def _pick(data: object, keys: tuple[str, ...]) -> dict[str, object]:
     if not isinstance(data, dict):
         return {}
     return {key: data[key] for key in keys if key in data}
+
+
+def _str_pick(data: object, keys: tuple[str, ...]) -> dict[str, str]:
+    return {key: str(value) for key, value in _pick(data, keys).items()}
 
 
 def _setup_option_of(desc: dict[str, object]) -> dict[str, object] | None:
@@ -1018,13 +1009,10 @@ def _wallet_view(desc: object) -> dict[str, object]:
 
 
 def _balance_view(result: object) -> dict[str, str]:
-    picked = _pick(result, _BALANCE_KEYS)
-    return {key: str(value) for key, value in picked.items()}
+    return _str_pick(result, _BALANCE_KEYS)
 
 
 def _items(items: object, keys: tuple[str, ...]) -> list[dict[str, str]]:
     if not isinstance(items, list):
         return []
-    return [
-        {key: str(value) for key, value in _pick(item, keys).items()} for item in items
-    ]
+    return [_str_pick(item, keys) for item in items]

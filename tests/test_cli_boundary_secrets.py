@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -34,6 +35,7 @@ from agentself.internal.registry import FileIdentityAccess, RegistryError
 from agentself.local import IdentityStateError, ensure_age_key, resolve_age_key_file
 
 from tests.support import (
+    apply_cli_env,
     build_app,
     cli_env,
     init_identity,
@@ -129,10 +131,6 @@ class _LeakWalletFactory:
         return _LeakWallet()
 
 
-def _blob(*parts: str) -> str:
-    return "".join(parts)
-
-
 def test_flag_tokens_after_doubledash_are_stored_as_values(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
@@ -140,7 +138,6 @@ def test_flag_tokens_after_doubledash_are_stored_as_values(tmp_path):
     assert start.returncode == 0, start.stderr
     for name, value in (
         ("jsonflag", "--json"),
-        ("machineflag", "--machine"),
         ("versionflag", "--version"),
     ):
         created = run_cli(
@@ -167,7 +164,7 @@ def test_argparse_json_does_not_echo_age_secret(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["--json", AGE_CANARY], env)
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    blob = _blob(proc.stdout, proc.stderr)
+    blob = proc.stdout + proc.stderr
     assert AGE_CANARY not in blob
     assert "Traceback" not in blob
     data = json.loads(proc.stdout or proc.stderr)
@@ -196,7 +193,7 @@ def test_secret_create_value_stays_off_stderr_logs_and_list(tmp_path):
         env,
     )
     assert created.returncode == 0, created.stderr
-    blob = _blob(created.stdout, created.stderr)
+    blob = created.stdout + created.stderr
     assert PLAIN_CANARY not in blob
     payload = json.loads(created.stdout)
     assert payload == {"ok": True, "name": "notes"}
@@ -232,19 +229,19 @@ def test_malformed_registry_recipient_fails_closed(tmp_path):
     registry.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
     shown = run_cli(["show"], env)
-    blob = _blob(shown.stdout, shown.stderr)
+    blob = shown.stdout + shown.stderr
     assert shown.returncode != 0
     assert AGE_CANARY not in blob
     assert "Traceback" not in blob
 
     ident = run_cli(["--json", "show"], env)
-    blob = _blob(ident.stdout, ident.stderr)
+    blob = ident.stdout + ident.stderr
     assert ident.returncode != 0
     assert AGE_CANARY not in blob
     assert "Traceback" not in blob
 
     doctor = run_cli(["--json", "diagnose"], env)
-    blob = _blob(doctor.stdout, doctor.stderr)
+    blob = doctor.stdout + doctor.stderr
     assert doctor.returncode != 0
     assert AGE_CANARY not in blob
     assert "Traceback" not in blob
@@ -262,7 +259,7 @@ def test_incomplete_registry_record_fails_closed_no_traceback(tmp_path):
         encoding="utf-8",
     )
     proc = run_cli(["--json", "show"], env)
-    blob = _blob(proc.stdout, proc.stderr)
+    blob = proc.stdout + proc.stderr
     assert proc.returncode != 0
     assert "Traceback" not in blob
     assert AGE_CANARY not in blob
@@ -346,14 +343,7 @@ def test_cli_wallet_send_does_not_echo_backend_key(tmp_path, monkeypatch, capsys
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
-    monkeypatch.setenv("PATH", env["PATH"])
-    for key in (
-        "AGENTSELF_MAIL_DOMAIN",
-        "AGENTSELF_IDENTITY_ID",
-        "AGE_KEY_FILE",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    apply_cli_env(monkeypatch, env)
     monkeypatch.setattr(
         "agentself.compose.WalletAccessFactory.for_binding",
         lambda self, binding: _LeakWallet(),
@@ -563,7 +553,7 @@ def test_wallet_send_log_hash_is_capped():
     assert _ok_hash(huge) == "ok"
     digest = "0x" + "cd" * 32
     assert _ok_hash(digest) == f"ok {digest}"
-    signed = type("S", (), {"hash": bytes.fromhex("ee" * 32)})()
+    signed = SimpleNamespace(hash=bytes.fromhex("ee" * 32))
     assert _send_result(huge, signed) == "ok 0x" + "ee" * 32
 
 

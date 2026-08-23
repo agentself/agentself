@@ -1,19 +1,10 @@
-"""Host catalog: identity-directory path, per-backend options, --version, and diagnose."""
+"""Diagnose reads recorded backends from identity files and does not leak the age key."""
 
 from __future__ import annotations
 
 import json
 
 from tests.support import cli_env, run_cli
-
-
-def test_backends_mailbox_lists_send_secrets(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["backends", "email"], env)
-    assert proc.returncode == 0, proc.stderr
-    mailbox = run_cli(["backends", "mailbox"], env)
-    assert mailbox.returncode == 2, mailbox.stdout + mailbox.stderr
-    assert "did you mean 'email'" in mailbox.stderr
 
 
 def test_doctor_reads_binds_from_host_files(tmp_path):

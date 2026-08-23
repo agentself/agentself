@@ -59,6 +59,19 @@ class AgentMailMailboxAccess(MailboxAccess):
         self._poster = poster
         self._getter = getter
 
+    def _require_credential(
+        self,
+        identity_id: str,
+        credential: str | None,
+        event: str,
+        extra: str | None = None,
+    ) -> str:
+        token = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
+        if not token:
+            self._log.record(event, identity_id, extra, "error")
+            raise MailboxError("missing credentials")
+        return require_secret(token)
+
     def send(
         self,
         identity_id: str,
@@ -70,17 +83,14 @@ class AgentMailMailboxAccess(MailboxAccess):
     ) -> None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
-        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_send", identity_id, to, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(
+            identity_id, credential, "mailbox_send", to
+        )
         inbox = self._inbox(identity_id, credential, address)
-        url = _send_url(inbox["inbox_id"])
         payload = json.dumps({"to": to, "subject": subject, "text": body}).encode(
             "utf-8"
         )
-        self._post(url, credential, payload, "send failed")
+        self._request(_send_url(inbox["inbox_id"]), credential, payload)
         self._log.record("mailbox_send", identity_id, to, "ok")
 
     def receive(
@@ -92,11 +102,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_recv", identity_id, None, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(identity_id, credential, "mailbox_recv")
         try:
             with exclusive(self._root):
                 return self._recv_locked(identity_id, credential, address, message_id)
@@ -121,13 +127,11 @@ class AgentMailMailboxAccess(MailboxAccess):
             mid = str(item.get("message_id") or "")
             if not mid:
                 continue
-            if wanted:
-                if mid != wanted:
-                    continue
-            else:
-                mark = seen / _safe_filename(mid)
-                if mark.is_file():
-                    continue
+            if wanted and mid != wanted:
+                continue
+            mark = seen / _safe_filename(mid)
+            if not wanted and mark.is_file():
+                continue
             parsed = _meta(item)
             fetched = self._get_message(_message_url(inbox_id, mid), credential)
             if fetched is None:
@@ -135,7 +139,6 @@ class AgentMailMailboxAccess(MailboxAccess):
                 parsed["reason"] = "mailbox_error"
             else:
                 parsed["body"] = _body_of(fetched)
-                mark = seen / _safe_filename(mid)
                 atomic_write_text(mark, mid)
             messages.append(parsed)
             if wanted:
@@ -151,11 +154,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
-        if not credential:
-            self._log.record("mailbox_list", identity_id, None, "error")
-            raise MailboxError("missing credentials")
-        credential = require_secret(credential)
+        credential = self._require_credential(identity_id, credential, "mailbox_list")
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         listed = self._list_messages(inbox_id, credential, "list failed")
@@ -253,8 +252,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         return mailbox_view(email, owned_address=True)
 
     def _listed_inboxes(self, token: str) -> builtins.list[object]:
-        raw = self._get(_INBOXES_URL, token, "no inbox")
-        data = _object(raw, "no inbox")
+        data = _object(self._request(_INBOXES_URL, token), "no inbox")
         inboxes = data.get("inboxes")
         if not isinstance(inboxes, list):
             raise MailboxError("no inbox")
@@ -262,12 +260,11 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def _create_inbox(self, identity_id: str, token: str) -> dict[str, object]:
         payload = json.dumps({"client_id": "agentself-" + identity_id}).encode("utf-8")
-        body = self._post(_INBOXES_URL, token, payload, "no inbox")
-        created = _object(body, "no inbox")
+        created = _object(self._request(_INBOXES_URL, token, payload), "no inbox")
         email = str(created.get("email") or "").strip()
-        if created.get("inbox_id") and email:
-            return created
-        raise MailboxError("no inbox")
+        if not created.get("inbox_id") or not email:
+            raise MailboxError("no inbox")
+        return created
 
     def _inbox(
         self, identity_id: str, token: str, address: str | None
@@ -283,17 +280,18 @@ class AgentMailMailboxAccess(MailboxAccess):
                 if email.lower() == target and item.get("inbox_id"):
                     return item
             raise MailboxError("no inbox")
-        if len(inboxes) == 1 and isinstance(inboxes[0], dict):
-            item = inboxes[0]
-            if item.get("inbox_id"):
-                return item
+        if (
+            len(inboxes) == 1
+            and isinstance(inboxes[0], dict)
+            and inboxes[0].get("inbox_id")
+        ):
+            return inboxes[0]
         raise MailboxError("no inbox")
 
     def _list_messages(
         self, inbox_id: str, token: str, fail: str
     ) -> builtins.list[dict[str, object]]:
-        raw = self._get(_messages_url(inbox_id), token, fail)
-        data = _object(raw, fail)
+        data = _object(self._request(_messages_url(inbox_id), token), fail)
         messages = data.get("messages")
         if messages is None:
             return []
@@ -301,50 +299,27 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError(fail)
         return [item for item in messages if isinstance(item, dict)]
 
-    def _get(self, url: str, token: str, fail: str) -> bytes:
+    def _request(self, url: str, token: str, payload: bytes | None = None) -> bytes:
         token = require_secret(token)
         headers = {"Authorization": "Bearer " + token}
-        getter = self._getter or _default_getter
         try:
-            status, body = getter(url, headers)
+            if payload is None:
+                status, body = (self._getter or _default_getter)(url, headers)
+            else:
+                headers["Content-Type"] = "application/json"
+                status, body = (self._poster or _default_poster)(url, headers, payload)
         except (OSError, urllib.error.URLError, TimeoutError) as exc:
             raise MailboxError("rpc failed") from exc
-        if status < 200 or status >= 300:
+        if not 200 <= status < 300:
             raise MailboxError(_http_error(status))
         return body
 
     def _get_message(self, url: str, token: str) -> dict[str, object] | None:
         try:
-            token = require_secret(token)
+            data = _json(self._request(url, token))
         except MailboxError:
             return None
-        headers = {"Authorization": "Bearer " + token}
-        getter = self._getter or _default_getter
-        try:
-            status, body = getter(url, headers)
-        except (OSError, urllib.error.URLError, TimeoutError):
-            return None
-        if status < 200 or status >= 300:
-            return None
-        data = _json(body)
-        if not isinstance(data, dict):
-            return None
-        return data
-
-    def _post(self, url: str, token: str, payload: bytes, fail: str) -> bytes:
-        token = require_secret(token)
-        headers = {
-            "Authorization": "Bearer " + token,
-            "Content-Type": "application/json",
-        }
-        poster = self._poster or _default_poster
-        try:
-            status, resp = poster(url, headers, payload)
-        except (OSError, urllib.error.URLError, TimeoutError) as exc:
-            raise MailboxError("rpc failed") from exc
-        if status < 200 or status >= 300:
-            raise MailboxError(_http_error(status))
-        return resp
+        return data if isinstance(data, dict) else None
 
     def _write_inbox_id(self, identity_id: str, inbox_id: object) -> None:
         folder = ensure_private_dir(self._agentmail_dir(identity_id))
@@ -414,10 +389,7 @@ def _object(body: bytes, fail: str) -> dict[str, object]:
 
 def _as_text(value: object) -> str:
     if isinstance(value, list):
-        parts = [str(item) for item in value]
-        if len(parts) == 1:
-            return parts[0]
-        return ", ".join(parts)
+        return ", ".join(str(item) for item in value)
     if value is None:
         return ""
     return str(value)
@@ -434,8 +406,9 @@ def _meta(item: dict[str, object]) -> dict[str, str]:
 
 def _body_of(payload: dict[str, object]) -> str:
     for key in ("text", "extracted_text", "preview"):
-        if key in payload and payload[key] is not None:
-            return str(payload[key])
+        value = payload.get(key)
+        if value is not None:
+            return str(value)
     return ""
 
 

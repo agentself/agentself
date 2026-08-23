@@ -20,6 +20,7 @@ from agentself.internal.log import MemoryLog
 from tests.support import (
     FakeRpcOpener,
     MockRpc,
+    apply_cli_env,
     cli_env,
     run_cli,
 )
@@ -66,14 +67,7 @@ def test_cli_all_urls_fail_json_error_rpc(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
-    monkeypatch.setenv("PATH", env["PATH"])
-    for key in (
-        "AGENTSELF_MAIL_DOMAIN",
-        "AGENTSELF_IDENTITY_ID",
-        "AGE_KEY_FILE",
-    ):
-        monkeypatch.delenv(key, raising=False)
+    apply_cli_env(monkeypatch, env)
     opener = FakeRpcOpener()
     opener.fail_all(403)
 
@@ -152,15 +146,8 @@ def test_cli_override_rpc_json_error_rpc_no_fallback(tmp_path, monkeypatch, caps
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
-    monkeypatch.setenv("PATH", env["PATH"])
+    apply_cli_env(monkeypatch, env)
     monkeypatch.setenv("AGENTSELF_ETH_RPC_URL", OVERRIDE)
-    for key in (
-        "AGENTSELF_MAIL_DOMAIN",
-        "AGENTSELF_IDENTITY_ID",
-        "AGE_KEY_FILE",
-    ):
-        monkeypatch.delenv(key, raising=False)
     opener = FakeRpcOpener()
     opener.fail(OVERRIDE, 403)
     opener.ok(PUBLICNODE)

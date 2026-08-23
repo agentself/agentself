@@ -176,15 +176,13 @@ def test_bindable_home_uses_short_temp_link(tmp_path):
     probe = tmp_path / "probe-link"
     try:
         probe.symlink_to(gnupg, target_is_directory=True)
-    except OSError as symlink_exc:
+    except OSError:
         try:
             import _winapi
 
             _winapi.CreateJunction(str(gnupg), str(probe))
-        except OSError as exc:
+        except (OSError, ImportError) as exc:
             pytest.skip(f"symlinks not available: {exc}")
-        except Exception:
-            pytest.skip(f"symlinks not available: {symlink_exc}")
     try:
         probe.unlink()
     except OSError:

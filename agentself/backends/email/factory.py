@@ -20,7 +20,7 @@ class MailboxAccessFactory:
         self._log = log
         self._settings = {
             str(key): "" if value is None else str(value)
-            for key, value in dict(settings or {}).items()
+            for key, value in (settings or {}).items()
         }
         self._domain = (domain or self._settings.get("mail_domain") or "").strip()
 

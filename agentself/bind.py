@@ -20,9 +20,7 @@ def bind_from_env() -> BoundCaller:
 
 
 def public_recipient(key_file: str) -> str:
-    if not os.path.isfile(key_file):
-        raise UnboundCaller("not initialized")
-    if os.path.basename(key_file).startswith("-"):
+    if not os.path.isfile(key_file) or os.path.basename(key_file).startswith("-"):
         raise UnboundCaller("not initialized")
     try:
         proc = subprocess.run(

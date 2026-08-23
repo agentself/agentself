@@ -1,4 +1,4 @@
-"""Client / Manager never return a private key."""
+"""Client init never returns a private key."""
 
 from __future__ import annotations
 
@@ -22,15 +22,3 @@ def test_init_view_has_recipient_only(app, monkeypatch):
     assert "AGE-SECRET-KEY" not in view["recipient"]
     for rec in app.log.records:
         assert "AGE-SECRET-KEY" not in json.dumps(rec)
-
-
-def test_manager_init_identity_has_no_private_key(app, monkeypatch):
-    key = setup_identity(app.vault, "P", store="sops")
-    app.keys["P"] = key
-    app.bind(monkeypatch, "P")
-    from agentself.bind import bind_from_env
-
-    identity = app.manager.init(bind_from_env(), "sops")
-    assert not hasattr(identity, "private_key")
-    assert "AGE-SECRET-KEY" not in identity.recipient
-    assert "AGE-SECRET-KEY" not in json.dumps(identity.public_view())

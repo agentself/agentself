@@ -12,9 +12,7 @@ class MailboxError(Exception):
 
 def secret_or_env(value: str | None, env_name: str) -> str:
     token = (value or "").strip()
-    if token:
-        return token
-    return os.environ.get(env_name, "").strip()
+    return token or os.environ.get(env_name, "").strip()
 
 
 def require_addr(to: str) -> None:

@@ -6,7 +6,7 @@ import pytest
 
 from agentself.internal.files import identity_home, secrets_home
 
-from tests.support import setup_identity
+from tests.support import init_identity, setup_identity
 
 
 @pytest.mark.parametrize("store", ["sops", "pass"])
@@ -33,10 +33,7 @@ def test_exercise_own_secrets(app, monkeypatch, store):
 
 
 def test_exercise_own_secrets_sops_writes_ciphertext_not_plaintext(app, monkeypatch):
-    key = setup_identity(app.vault, "P", store="sops")
-    app.keys["P"] = key
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch)
     secret = "plaintext-must-not-hit-disk-sops"
     app.client.create("api", secret)
     hold = secrets_home(app.vault, "P")
@@ -48,10 +45,7 @@ def test_exercise_own_secrets_sops_writes_ciphertext_not_plaintext(app, monkeypa
 
 
 def test_exercise_own_secrets_pass_is_real_pass_not_sops_tree(app, monkeypatch):
-    key = setup_identity(app.vault, "P", store="pass")
-    app.keys["P"] = key
-    app.bind(monkeypatch, "P")
-    app.client.init("pass")
+    init_identity(app, monkeypatch, store="pass")
     secret = "plaintext-must-not-hit-disk-pass"
     app.client.create("api", secret)
     store_dir = identity_home(app.vault, "P") / "password-store"

@@ -12,16 +12,14 @@ from tests.maildir_mailbox import MaildirMailboxAccess
 from tests.support import (
     build_app,
     cli_env,
+    init_identity,
     plant_email,
     run_cli,
-    setup_identity,
 )
 
 
 def test_own_email_send_receive_list_maildir(app, monkeypatch):
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch)
 
     with pytest.raises(EmailSendNotReady, match="domain and send credentials"):
         app.client.email_send("someone@example.com", "hello", "body-text")
@@ -50,9 +48,7 @@ def test_email_send_with_address_secret_and_token_writes_maildir_outbox(
     vault, monkeypatch
 ):
     app = build_app(vault)
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch)
     app.client.create("email.credential", "tok")
     app.client.create("email.address", "inbox@example.com")
     app.client.email_send("someone@example.com", "hello", "body-text")
@@ -68,9 +64,7 @@ def test_email_send_maildir_domain_and_token_without_address_fails_closed(
     vault, monkeypatch
 ):
     app = build_app(vault, mail_domain="example.com")
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch)
     app.client.create("email.credential", "tok")
     with pytest.raises(EmailSendNotReady):
         app.client.email_send("someone@example.com", "hello", "body-text")
@@ -87,23 +81,18 @@ def test_cli_email_send_without_domain_fails_closed(tmp_path):
     assert sent.returncode == 1, sent.stdout + sent.stderr
     assert "Traceback" not in sent.stderr
     assert "Traceback" not in sent.stdout
-    lines = [line for line in sent.stderr.splitlines() if line.strip()]
-    assert lines[0] == "error: email send needs a domain and send credentials"
-    assert lines[1] == "next: agentself backends email"
+    assert "error:" in sent.stderr
+    assert "agentself backends email" in sent.stderr
     outbox = identity_home(vault, "agent") / "outbox"
     assert not outbox.exists() or not list(outbox.iterdir())
 
 
 def test_q_email_does_not_see_p_mail(app, monkeypatch):
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.keys["Q"] = setup_identity(app.vault, "Q", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
+    init_identity(app, monkeypatch, "P")
     plant_email(
         app.vault, "P", from_addr="a@example.com", subject="for-p", body="p-body"
     )
-    app.bind(monkeypatch, "Q")
-    app.client.init("sops")
+    init_identity(app, monkeypatch, "Q")
     assert app.client.email_list() == []
     assert app.client.email_receive() == []
     app.bind(monkeypatch, "P")

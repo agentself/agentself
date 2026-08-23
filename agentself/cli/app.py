@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(raw)
     finally:
         _Parser._as_json = False
-    args.as_json = bool(getattr(args, "as_json", False) or as_json)
+    args.as_json = bool(args.as_json or as_json)
     vault = default_identity_dir()
 
     if args.command == "install":
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         return _fail(
             args,
             1,
-            f"error: {exc}\nnext: {_INSTALL_TOOLS_NEXT}\n",
+            f"error: {exc}\n",
             "error",
             str(exc),
             nxt=_INSTALL_TOOLS_NEXT,
@@ -158,14 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     except UnknownBind as exc:
         return _bind_error(args, exc)
     except IdentityStateError as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_DIAGNOSE_NEXT,
-        )
+        return _identity_fail(args, exc)
     except Exception:
         return _fail(args, 1, "error\n", "error")
 
@@ -183,32 +176,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "wallet":
             return _wallet(client, args)
     except IdentityStateError as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_DIAGNOSE_NEXT,
-        )
+        return _identity_fail(args, exc)
     except UnboundCaller:
-        if args.command in (None, "show"):
-            return _fail(
-                args,
-                2,
-                "not initialized\n",
-                "refused",
-                "not initialized",
-                nxt="agentself init",
-            )
-        return _fail(
-            args,
-            2,
-            "refused: not initialized\n",
-            "refused",
-            "not initialized",
-            nxt="agentself init",
-        )
+        return _not_initialized(args, bare=args.command in (None, "show"))
     except ValueError:
         return _fail(args, 2, "refused\n", "refused")
     except UnknownIdentity:
@@ -235,11 +205,11 @@ def main(argv: list[str] | None = None) -> int:
             "backend cannot authorize",
         )
     except CannotSend as exc:
-        reason = getattr(exc, "reason", None) or "cannot_send"
+        reason = exc.reason or "cannot_send"
         human = _SEND_HUMAN.get(reason, "backend cannot send")
         return _fail(args, 2, f"refused: {human}\n", "refused", reason)
     except NoGas as exc:
-        reason = getattr(exc, "reason", None) or "no_gas"
+        reason = exc.reason or "no_gas"
         return _fail(args, 2, "refused: need gas\n", "refused", reason)
     except MissingSecret:
         return _fail(args, 3, "missing\n", "missing", nxt="agentself secret list")
@@ -282,18 +252,19 @@ def _bundled_skill() -> Path:
 
 
 def _install(args) -> int:
-    skills = getattr(args, "skills", None)
-    tools = bool(getattr(args, "tools", False))
+    skills = args.skills
+    tools = args.tools
     if skills is None and not tools:
         return _fail(
             args,
             2,
-            "need --skills or --tools\nnext: agentself install --skills\n",
+            "need --skills or --tools\n",
             "refused",
             "need --skills or --tools",
             nxt="agentself install --skills",
         )
     payload: dict[str, object] = {"ok": True}
+    paths: list[str] = []
     if tools:
         tool_err = _install_tools(args)
         if tool_err is not None:
@@ -310,10 +281,8 @@ def _install(args) -> int:
         return _emit_ok(args, payload)
     if tools:
         sys.stdout.write(f"installed {payload['path']}\n")
-    installed = payload.get("paths")
-    if isinstance(installed, list):
-        for path in installed:
-            sys.stdout.write(f"installed {path}\n")
+    for path in paths:
+        sys.stdout.write(f"installed {path}\n")
     return 0
 
 
@@ -330,33 +299,27 @@ def _install_tools(args) -> int | None:
         return _fail(
             args,
             1,
-            f"error: {exc}\nnext: {_INSTALL_TOOLS_NEXT}\n",
+            f"error: {exc}\n",
             "error",
             str(exc),
             nxt=_INSTALL_TOOLS_NEXT,
         )
-    missing = []
-    if shutil.which("age-keygen") is None:
-        missing.append("age")
-    if shutil.which("sops") is None:
-        missing.append("sops")
+    missing = [
+        label
+        for cmd, label in (("age-keygen", "age"), ("sops", "sops"))
+        if shutil.which(cmd) is None
+    ]
     if not missing:
         return None
-    if not fetch_enabled():
-        reason = "host tool fetch is disabled"
-        return _fail(
-            args,
-            1,
-            f"error: {reason}\nnext: {_INSTALL_TOOLS_NEXT}\n",
-            "error",
-            reason,
-            nxt=_INSTALL_TOOLS_NEXT,
-        )
-    reason = f"{missing[0]} not on PATH"
+    reason = (
+        "host tool fetch is disabled"
+        if not fetch_enabled()
+        else f"{missing[0]} not on PATH"
+    )
     return _fail(
         args,
         1,
-        f"error: {reason}\nnext: {_INSTALL_TOOLS_NEXT}\n",
+        f"error: {reason}\n",
         "error",
         reason,
         nxt=_INSTALL_TOOLS_NEXT,
@@ -369,7 +332,7 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
         return [], _fail(
             args,
             2,
-            "unknown skills target\nnext: agentself install --help\n",
+            "unknown skills target\n",
             "refused",
             "unknown skills target",
             nxt="agentself install --help",
@@ -379,13 +342,13 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
         return [], _fail(
             args,
             1,
-            "error: skill not packaged\nnext: agentself --help\n",
+            "error: skill not packaged\n",
             "error",
             "skill not packaged",
             nxt="agentself --help",
         )
     rel = _SKILL_TARGETS[target]
-    dest_root = Path.home() if getattr(args, "global_install", False) else Path.cwd()
+    dest_root = Path.home() if args.global_install else Path.cwd()
     dest_dir = dest_root / rel
     try:
         body = src.read_text(encoding="utf-8")
@@ -399,14 +362,15 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
 
 
 def _backends(args) -> int:
-    channel = (getattr(args, "channel", None) or "").strip() or None
+    channel = (args.channel or "").strip() or None
     if channel and channel not in CHANNELS:
+        err = unknown_bind(channel, "") or "unknown channel"
         return _fail(
             args,
             2,
-            f"{unknown_bind(channel, '')}\nnext: agentself backends --help\n",
+            f"{err}\n",
             "refused",
-            unknown_bind(channel, "") or "unknown channel",
+            err,
             nxt="agentself backends --help",
         )
     if _as_json(args):
@@ -419,11 +383,11 @@ def _runtime_paths() -> dict[str, str]:
     package = str(Path(__file__).resolve().parent.parent)
     argv0 = str(sys.argv[0] or "")
     executable = argv0
-    try:
-        if argv0:
+    if argv0:
+        try:
             executable = str(Path(argv0).resolve())
-    except OSError:
-        executable = argv0 or sys.executable
+        except OSError:
+            pass
     return {"package": package, "executable": executable}
 
 
@@ -443,7 +407,7 @@ def _print_version(as_json: bool) -> int:
 
 
 def _registry_store_binding(vault: Path, identity_id: str) -> str | None:
-    path = Path(vault) / "registry.json"
+    path = vault / "registry.json"
     if not path.is_file():
         return None
     try:
@@ -469,18 +433,23 @@ def _registry_store_binding(vault: Path, identity_id: str) -> str | None:
     return None
 
 
+def _store_from_registry(vault: Path, cfg: dict[str, str]) -> str | None:
+    if not config_path(vault).is_file():
+        return None
+    identity_id = (cfg.get("identity_id") or "").strip()
+    recorded = _registry_store_binding(vault, identity_id)
+    if recorded in CHANNELS["store"].names:
+        return recorded
+    return None
+
+
 def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
     store_name = CHANNELS["store"].default
     if is_init:
         store_name = getattr(args, "store", None) or store_name
     else:
         try:
-            cfg = load_config(vault)
-            if config_path(vault).is_file():
-                identity_id = (cfg.get("identity_id") or "").strip()
-                recorded = _registry_store_binding(vault, identity_id)
-                if recorded in CHANNELS["store"].names:
-                    store_name = recorded
+            store_name = _store_from_registry(vault, load_config(vault)) or store_name
         except IdentityStateError:
             pass
     if shutil.which("age-keygen") is None:
@@ -509,12 +478,9 @@ def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
 
 
 def _diagnose_tools(store_name: str) -> dict[str, bool]:
-    tools = {"age-keygen": True}
     bind = bind_of("store", store_name)
-    if bind is not None:
-        for name in bind.tools:
-            tools[name] = True
-    return tools
+    names = ("age-keygen",) + (bind.tools if bind is not None else ())
+    return {name: True for name in names}
 
 
 def _tools_next(missing: list[str], store_name: str | None = None) -> str:
@@ -538,12 +504,7 @@ def _fail_missing_tool(args, exc: HostToolMissing, vault: Path | None = None) ->
     store_name = getattr(args, "store", None) or None
     if not store_name and vault is not None:
         try:
-            cfg = load_config(vault)
-            if config_path(vault).is_file():
-                identity_id = (cfg.get("identity_id") or "").strip()
-                recorded = _registry_store_binding(vault, identity_id)
-                if recorded in CHANNELS["store"].names:
-                    store_name = recorded
+            store_name = _store_from_registry(vault, load_config(vault))
         except IdentityStateError:
             pass
     if not store_name:
@@ -562,30 +523,17 @@ def _diagnose(vault: Path, args) -> int:
     try:
         cfg = load_config(vault)
         initialized = config_path(vault).is_file()
-        store_name = CHANNELS["store"].default
-        if initialized:
-            identity_id = (cfg.get("identity_id") or "").strip()
-            recorded = _registry_store_binding(vault, identity_id)
-            if recorded in CHANNELS["store"].names:
-                store_name = recorded
+        store_name = _store_from_registry(vault, cfg) or CHANNELS["store"].default
     except IdentityStateError as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_DIAGNOSE_NEXT,
-        )
+        return _identity_fail(args, exc)
     python = sys.version.split()[0]
     wallet_backend = email_backend = store_backend = None
     ready = {"wallet": False, "email": False, "store": False}
+    problems: list[tuple[str, str]] = []
     if initialized:
         wallet_backend = (cfg.get("wallet_backend") or "").strip() or None
         email_backend = (cfg.get("email_backend") or "").strip() or None
         store_backend = store_name
-    problems: list[tuple[str, str]] = []
-    if initialized:
         problems, ready = _diagnose_identity(vault, cfg, store_name)
     paths = _runtime_paths()
     tools = _diagnose_tools(store_name)
@@ -609,7 +557,6 @@ def _diagnose(vault: Path, args) -> int:
         payload["next"] = problems[0][1]
     if _as_json(args):
         if problems:
-            payload["ok"] = False
             sys.stdout.write(redact_secrets(json.dumps(payload)) + "\n")
             return 1
         return _emit_ok(args, payload)
@@ -693,8 +640,7 @@ def _diagnose_identity(
 
 
 def _require_bind(args, channel: str, value: str) -> int | None:
-    err = unknown_bind(channel, value)
-    if err is None:
+    if unknown_bind(channel, value) is None:
         return None
     return _bind_error(args, UnknownBind(channel, value))
 
@@ -707,6 +653,29 @@ def _bind_error(args, exc: UnknownBind) -> int:
         "refused",
         str(exc),
         nxt=f"agentself backends {exc.channel}",
+    )
+
+
+def _identity_fail(args, exc: IdentityStateError) -> int:
+    return _fail(
+        args,
+        1,
+        f"error: {exc}\n",
+        "error",
+        str(exc),
+        nxt=_DIAGNOSE_NEXT,
+    )
+
+
+def _not_initialized(args, *, bare: bool = False) -> int:
+    human = "not initialized\n" if bare else "refused: not initialized\n"
+    return _fail(
+        args,
+        2,
+        human,
+        "refused",
+        "not initialized",
+        nxt="agentself init",
     )
 
 
@@ -740,7 +709,7 @@ def _init(vault: Path, args) -> int:
     try:
         require_supported_formats(vault)
         cfg = load_config(vault)
-        store = getattr(args, "store", None) or CHANNELS["store"].default
+        store = args.store or CHANNELS["store"].default
         refused = _require_bind(args, "store", store)
         if refused is not None:
             return refused
@@ -763,7 +732,7 @@ def _init(vault: Path, args) -> int:
         wallet_backend = backends["wallet"]
         identity_id = _init_identity_id(vault, args)
         initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
-        if initialized and not bool(getattr(args, "force", False)):
+        if initialized and not args.force:
             blocked = _init_mutation_refused(
                 vault, args, cfg, identity_id, wallet_backend, email_backend, store
             )
@@ -811,23 +780,9 @@ def _init(vault: Path, args) -> int:
         sys.stdout.write(redact_secrets(text))
         return 0
     except UnboundCaller:
-        return _fail(
-            args,
-            2,
-            "refused: not initialized\n",
-            "refused",
-            "not initialized",
-            nxt="agentself init",
-        )
+        return _not_initialized(args)
     except IdentityStateError as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_DIAGNOSE_NEXT,
-        )
+        return _identity_fail(args, exc)
     except UnknownBind as exc:
         return _bind_error(args, exc)
     except ValueError:
@@ -863,7 +818,7 @@ def _age_key_rel(vault: Path, identity_id: str, cfg: dict[str, str]) -> str:
 def _init_identity_id(vault: Path, args) -> str:
     from agentself.host import ENV_IDENTITY_ID
 
-    flagged = (getattr(args, "identity_id", None) or "").strip()
+    flagged = (args.identity_id or "").strip()
     if flagged:
         return require_safe_token(flagged, "identity id")
     existing = load_config(vault).get("identity_id", "").strip()
@@ -891,13 +846,11 @@ def _init_mutation_refused(
     current_wallet = (cfg.get("wallet_backend") or "").strip()
     current_email = (cfg.get("email_backend") or "").strip()
     recorded = _registry_store_binding(vault, current_id) if current_id else None
-    changing = any(
-        [
-            bool(current_id and current_id != identity_id),
-            bool(current_wallet and current_wallet != wallet_backend),
-            bool(current_email and current_email != email_backend),
-            bool(recorded and recorded != store),
-        ]
+    changing = (
+        (current_id and current_id != identity_id)
+        or (current_wallet and current_wallet != wallet_backend)
+        or (current_email and current_email != email_backend)
+        or (recorded and recorded != store)
     )
     if not changing:
         return None
@@ -927,20 +880,13 @@ def _email_connect(vault: Path, args) -> int:
             return err
         result = _client(vault).email_connect(
             answers=answers or None,
-            state=(getattr(args, "setup_state", "") or "").strip() or None,
+            state=(args.setup_state or "").strip() or None,
         )
         return _email_connect_result(vault, args, result)
     except UnknownBind as exc:
         return _bind_error(args, exc)
     except UnboundCaller:
-        return _fail(
-            args,
-            2,
-            "refused: not initialized\n",
-            "refused",
-            "not initialized",
-            nxt="agentself init",
-        )
+        return _not_initialized(args)
     except ChannelFailure as exc:
         return _email_connect_channel_fail(args, exc)
     except HostToolMissing as exc:
@@ -954,28 +900,28 @@ def _email_connect(vault: Path, args) -> int:
 
 
 def _connect_answers(args) -> tuple[dict[str, str], int | None]:
-    do_continue = bool(getattr(args, "do_continue", False))
-    state = (getattr(args, "setup_state", "") or "").strip()
-    path = (getattr(args, "result_file", "") or "").strip()
-    if path and not do_continue:
-        return {}, _fail(
-            args,
-            2,
-            "refused: --result-file needs --continue\n",
-            "refused",
-            "--result-file needs --continue",
-            nxt="agentself email connect --help",
-        )
-    if state and not do_continue:
-        return {}, _fail(
-            args,
-            2,
-            "refused: --state needs --continue\n",
-            "refused",
-            "--state needs --continue",
-            nxt="agentself email connect --help",
-        )
+    do_continue = args.do_continue
+    state = (args.setup_state or "").strip()
+    path = (args.result_file or "").strip()
     if not do_continue:
+        if path:
+            return {}, _fail(
+                args,
+                2,
+                "refused: --result-file needs --continue\n",
+                "refused",
+                "--result-file needs --continue",
+                nxt="agentself email connect --help",
+            )
+        if state:
+            return {}, _fail(
+                args,
+                2,
+                "refused: --state needs --continue\n",
+                "refused",
+                "--state needs --continue",
+                nxt="agentself email connect --help",
+            )
         return {}, None
     if not state:
         return {}, _fail(
@@ -1030,39 +976,17 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
             nxt="agentself backends email",
             extra=_setup_public(result),
         )
-    if (
+    if not (
         status in (SETUP_INPUT_REQUIRED, SETUP_ACTION_REQUIRED, SETUP_PENDING)
         and not _as_json(args)
         and sys.stdin.isatty()
         and sys.stdout.isatty()
     ):
-        prompted = _prompt_setup_option(result)
-        if prompted is None:
-            return _email_setup_pending(args, result, status)
-        if prompted:
-            option = result.get("option")
-            if isinstance(option, dict) and (
-                str(option.get("type") or "").strip().lower() == "secret"
-                or bool(option.get("sensitive"))
-            ):
-                sys.stdout.write("Checking the credential...\n")
-                setattr(args, "_interactive_email_credential_stored", True)
-            try:
-                nxt = _client(vault).email_connect(
-                    answers=prompted,
-                    state=str(result.get("state") or "") or None,
-                )
-            except ChannelFailure as exc:
-                return _email_connect_channel_fail(args, exc)
-            except StoreFailure as exc:
-                return _store_fail(args, exc)
-            except HostToolMissing as exc:
-                return _fail_missing_tool(args, exc, vault)
-            except Refused:
-                return _fail(args, 2, "refused\n", "refused")
-            except Exception:
-                return _fail(args, 1, "error\n", "error")
-            return _email_connect_result(vault, args, nxt)
+        return _email_setup_pending(args, result, status)
+    prompted = _prompt_setup_option(result)
+    if prompted is None:
+        return _email_setup_pending(args, result, status)
+    if not prompted:
         return _fail(
             args,
             3,
@@ -1071,7 +995,18 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
             "nothing entered",
             nxt="agentself email connect",
         )
-    return _email_setup_pending(args, result, status)
+    option = result.get("option")
+    if isinstance(option, dict) and (
+        str(option.get("type") or "").strip().lower() == "secret"
+        or bool(option.get("sensitive"))
+    ):
+        sys.stdout.write("Checking the credential...\n")
+        setattr(args, "_interactive_email_credential_stored", True)
+    nxt = _client(vault).email_connect(
+        answers=prompted,
+        state=str(result.get("state") or "") or None,
+    )
+    return _email_connect_result(vault, args, nxt)
 
 
 def _print_setup_action(action: dict[str, object]) -> None:
@@ -1137,17 +1072,18 @@ def _prompt_setup_option(result: dict[str, object]) -> dict[str, str] | None:
 
 
 def _setup_public(result: dict[str, object]) -> dict[str, object]:
-    payload: dict[str, object] = {}
-    for key in (
-        "status",
-        "state",
-        "option",
-        "human_action_required",
-        "continue",
-        "message",
-    ):
-        if key in result:
-            payload[key] = result[key]
+    payload: dict[str, object] = {
+        key: result[key]
+        for key in (
+            "status",
+            "state",
+            "option",
+            "human_action_required",
+            "continue",
+            "message",
+        )
+        if key in result
+    }
     if "continue" not in payload and result.get("state"):
         payload["continue"] = continue_command(str(result["state"]))
     if "human_action_required" not in payload:
@@ -1163,11 +1099,10 @@ def _email_setup_pending(args, result: dict[str, object], status: str) -> int:
         continue_command(token) if token else "agentself email connect --help"
     )
     extra = _setup_public(result)
-    reason = "input required"
-    if status == SETUP_ACTION_REQUIRED:
-        reason = "human action required"
-    elif status == SETUP_PENDING:
-        reason = "pending"
+    reason = {
+        SETUP_ACTION_REQUIRED: "human action required",
+        SETUP_PENDING: "pending",
+    }.get(status, "input required")
     human = f"{reason}\n"
     option = extra.get("option")
     if isinstance(option, dict) and option.get("name"):
@@ -1287,7 +1222,7 @@ def _secret(client, args) -> int:
 def _secret_get(client, args) -> int:
     name = args.name
     protected_names = frozenset(client.protected_secret_names())
-    if name in protected_names and not bool(getattr(args, "unsafe", False)):
+    if name in protected_names and not args.unsafe:
         return _fail(
             args,
             2,
@@ -1298,8 +1233,8 @@ def _secret_get(client, args) -> int:
         )
     value = client.get(name)
     meta = value_meta(value)
-    path = (getattr(args, "to_file", None) or "").strip()
-    if getattr(args, "meta", False):
+    path = (args.to_file or "").strip()
+    if args.meta:
         payload = {"name": name, **meta, "protected": name in protected_names}
         if _as_json(args):
             return _emit_ok(args, payload)
@@ -1338,19 +1273,16 @@ def _email(client, args) -> int:
         if _as_json(args):
             return _emit_ok(args, {"to": args.to, "subject": args.subject})
         return 0
-    if args.email_command == "receive":
-        messages = client.email_receive(message_id=getattr(args, "message_id", None))
+    if args.email_command in ("receive", "list"):
+        messages = (
+            client.email_receive(message_id=args.message_id)
+            if args.email_command == "receive"
+            else client.email_list()
+        )
         if _as_json(args):
             return _emit_ok(args, {"messages": messages})
         for msg in messages:
             sys.stdout.write(json.dumps(msg) + "\n")
-        return 0
-    if args.email_command == "list":
-        items = client.email_list()
-        if _as_json(args):
-            return _emit_ok(args, {"messages": items})
-        for item in items:
-            sys.stdout.write(json.dumps(item) + "\n")
         return 0
     return 1
 
@@ -1395,9 +1327,9 @@ def _wallet(client, args) -> int:
         sys.stdout.write(token + "\n")
         return 0
     if args.wallet_command == "verify":
-        path = (getattr(args, "from_file", None) or "").strip()
-        authorization = (getattr(args, "authorization", None) or "").strip()
-        leftover = (getattr(args, "message", None) or "").strip()
+        path = (args.from_file or "").strip()
+        authorization = (args.authorization or "").strip()
+        leftover = (args.message or "").strip()
         if path and leftover and not authorization:
             authorization = leftover
             args.message = ""
@@ -1452,9 +1384,7 @@ def _wallet(client, args) -> int:
         sys.stdout.write("valid\n" if valid else "invalid\n")
         return 0 if valid else 2
     if args.wallet_command == "send":
-        asset = client.wallet_send(
-            args.to, args.amount, getattr(args, "asset", "") or ""
-        )
+        asset = client.wallet_send(args.to, args.amount, args.asset or "")
         if _as_json(args):
             return _emit_ok(
                 args, {"to": args.to, "amount": args.amount, "asset": asset}
@@ -1467,7 +1397,7 @@ def _backup_restore(vault: Path, args) -> int:
     src = vault if args.command == "backup" else Path(args.path)
     dest = Path(args.path) if args.command == "backup" else vault
     try:
-        _copy_identity_dir(src, dest, force=bool(getattr(args, "force", False)))
+        _copy_identity_dir(src, dest, force=args.force)
     except IdentityStateError as exc:
         return _fail(
             args,
@@ -1488,8 +1418,6 @@ def _backup_restore(vault: Path, args) -> int:
 
 
 def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
-    src = Path(src)
-    dest = Path(dest)
     if not src.is_dir():
         raise IdentityStateError("identity directory is missing")
     try:
@@ -1499,11 +1427,8 @@ def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
         raise IdentityStateError("cannot read path") from exc
     if dest_r == src_r:
         raise IdentityStateError("destination is the identity directory")
-    try:
-        dest_r.relative_to(src_r)
+    if dest_r.is_relative_to(src_r):
         raise IdentityStateError("destination is inside the identity directory")
-    except ValueError:
-        pass
     if dest.exists():
         if dest.is_file():
             raise IdentityStateError("destination exists")
@@ -1539,7 +1464,7 @@ def _email_connect_ok(args, address: str | None) -> int:
     if _as_json(args):
         return _emit_ok(args, {"address": addr, "status": SETUP_CONNECTED})
     if addr:
-        if bool(getattr(args, "_interactive_email_credential_stored", False)):
+        if getattr(args, "_interactive_email_credential_stored", False):
             sys.stdout.write(
                 f"Connected: {addr}\nThe credential is encrypted in this identity.\n"
             )
@@ -1580,9 +1505,11 @@ def _store_fail(args, exc: StoreFailure) -> int:
 
 
 def _secret_value_error(args, err: str) -> int:
-    nxt = "agentself secret create --help"
-    if getattr(args, "secret_command", None) == "update":
-        nxt = "agentself secret update --help"
+    nxt = (
+        "agentself secret update --help"
+        if getattr(args, "secret_command", None) == "update"
+        else "agentself secret create --help"
+    )
     if err == "need a value":
         return _fail(args, 3, f"missing: {err}\n", "missing", err, nxt=nxt)
     return _fail(args, 1, f"error: {err}\n", "error", err, nxt=nxt)
@@ -1658,8 +1585,8 @@ def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
 
 
 def _secret_from_args(args) -> tuple[str | None, str | None]:
-    argv_value = getattr(args, "value", None)
-    path = (getattr(args, "from_file", None) or "").strip()
+    argv_value = args.value
+    path = (args.from_file or "").strip()
     if argv_value is not None and path:
         return None, "value and --file"
     if path:
@@ -1678,8 +1605,8 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
 
 
 def _message_from_args(args) -> tuple[str | None, str | None]:
-    argv_value = getattr(args, "message", None)
-    path = (getattr(args, "from_file", None) or "").strip()
+    argv_value = args.message
+    path = (args.from_file or "").strip()
     if argv_value is not None and str(argv_value) != "" and path:
         return None, "message and --file"
     if path:
