@@ -8,13 +8,12 @@
 name: test
 
 on:
+  merge_group:
   push:
-    # tags-ignore alone skips branch pushes, including main.
     branches:
-      - "**"
-    tags-ignore:
-      - "v[0-9]*"
+      - main
   pull_request:
+  workflow_dispatch:
   workflow_call:
 
 permissions:

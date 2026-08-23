@@ -61,12 +61,16 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     assert "needs: ci" in publish or "needs: [ci" in publish
 
 
-def test_test_workflow_push_runs_on_all_branches() -> None:
-    """tags-ignore without branches does not run on branch pushes, including main."""
+def test_test_workflow_does_not_double_run_same_repo_prs() -> None:
+    """push on every branch plus pull_request runs the matrix twice."""
 
     trigger = WORKFLOWS[0].read_text(encoding="utf-8").split("\njobs:", 1)[0]
     assert re.search(
-        r"push:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+branches:\s*\n[ \t]+-\s+[\'\"]\*\*[\'\"]",
+        r"push:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+branches:\s*\n[ \t]+-\s+main\b",
         trigger,
     ), trigger
-    assert "tags-ignore:" in trigger
+    assert re.search(r"branches:\s*\n[ \t]+-\s+[\'\"]\*\*[\'\"]", trigger) is None
+    assert "pull_request:" in trigger
+    assert "workflow_call:" in trigger
+    assert "workflow_dispatch:" in trigger
+    assert "merge_group:" in trigger

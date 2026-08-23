@@ -12,6 +12,8 @@
 - Tag publish runs the test workflow for that commit and publishes the
   already-tested `dist/`. It does not rebuild an untested wheel. Trusted
   Publishing (OIDC) is unchanged.
+- Test CI runs on `main` pushes and on pull requests, not twice for a
+  same-repo PR.
 - TestPyPI publish no longer uses `skip-existing`, so a tag rebuild cannot keep an old TestPyPI artifact while uploading a new wheel to PyPI.
 - After a confirmed `wallet send`, a later send of the same destination and
   amount is a new payment. Crash and timeout retries before confirmation still
