@@ -31,6 +31,11 @@ from agentself.internal.setup import option_named
 _IMAP_PORT = 993
 _SMTP_PORT = 587
 _UNSEEN_RECV_CAP = 50
+_UID_COUNT_CAP = 100
+_UID_RESPONSE_BYTES = 16_384
+_HEADER_BYTES = 65_536
+_MESSAGE_BYTES = 1_048_576
+_OPERATION_BYTES = 4_194_304
 _IMAP_FAIL = (OSError, TimeoutError, imaplib.IMAP4.error)
 _SMTP_FAIL = (OSError, TimeoutError, smtplib.SMTPException)
 
@@ -170,9 +175,12 @@ class ImapMailboxAccess(MailboxAccess):
         items: list[dict[str, str]] = []
         try:
             with self._imap_session(inbox, credential) as box:
-                unseen = set(box.uids(unseen_only=True))
-                for uid in box.uids(unseen_only=False):
-                    parsed = _take(box, uid, mark=False, headers_only=True)
+                budget = [_OPERATION_BYTES]
+                unseen = set(_bounded_uids(box, unseen_only=True))
+                for uid in _bounded_uids(box, unseen_only=False):
+                    parsed = _take(
+                        box, uid, mark=False, headers_only=True, budget=budget
+                    )
                     if parsed is None:
                         continue
                     items.append(
@@ -307,13 +315,22 @@ class ImapMailboxAccess(MailboxAccess):
     ) -> builtins.list[dict[str, str]]:
         wanted = (message_id or "").strip()
         if wanted:
-            parsed = _take(box, wanted, mark=True, headers_only=not include_body)
+            parsed = _take(
+                box,
+                wanted,
+                mark=True,
+                headers_only=not include_body,
+                budget=[_OPERATION_BYTES],
+            )
             if parsed is not None:
                 parsed["status"] = "seen"
             return [] if parsed is None else [parsed]
         messages: list[dict[str, str]] = []
-        for uid in box.uids(unseen_only=True)[:_UNSEEN_RECV_CAP]:
-            parsed = _take(box, uid, mark=False, headers_only=not include_body)
+        budget = [_OPERATION_BYTES]
+        for uid in _bounded_uids(box, unseen_only=True)[:_UNSEEN_RECV_CAP]:
+            parsed = _take(
+                box, uid, mark=False, headers_only=not include_body, budget=budget
+            )
             if parsed is not None:
                 messages.append(parsed)
         for parsed in messages:
@@ -331,12 +348,20 @@ def _take(
     *,
     mark: bool,
     headers_only: bool = False,
+    budget: list[int] | None = None,
 ) -> dict[str, str] | None:
     if not _uid_ok(uid):
         return None
     raw = box.fetch(uid, headers_only=headers_only)
     if not raw:
         return None
+    limit = _HEADER_BYTES if headers_only else _MESSAGE_BYTES
+    if len(raw) > limit:
+        raise OSError("response too large")
+    if budget is not None:
+        budget[0] -= len(raw)
+        if budget[0] < 0:
+            raise OSError("response too large")
     parsed = _parse(raw)
     parsed["id"] = uid
     if mark:
@@ -440,6 +465,13 @@ def _uid_ok(uid: str) -> bool:
     return bool(uid) and uid.isdigit()
 
 
+def _bounded_uids(box: ImapBox, *, unseen_only: bool) -> list[str]:
+    uids = box.uids(unseen_only=unseen_only)
+    if len(uids) > _UID_COUNT_CAP:
+        raise OSError("response too large")
+    return uids
+
+
 def _close(fn: Callable[[], object]) -> None:
     try:
         fn()
@@ -447,10 +479,12 @@ def _close(fn: Callable[[], object]) -> None:
         return
 
 
-def _payload(data: object) -> bytes:
+def _payload(data: object, limit: int | None = None) -> bytes:
     if not data:
         return b""
     if isinstance(data, (bytes, bytearray)):
+        if limit is not None and len(data) > limit:
+            raise OSError("response too large")
         return bytes(data)
     if not isinstance(data, (list, tuple)):
         return b""
@@ -458,14 +492,26 @@ def _payload(data: object) -> bytes:
     for item in data:
         if isinstance(item, tuple) and len(item) >= 2:
             part = item[1]
+            if (
+                isinstance(part, (bytes, bytearray))
+                and limit is not None
+                and len(part) > limit
+            ):
+                raise OSError("response too large")
             if isinstance(part, (bytes, bytearray)) and len(part) >= len(best):
                 best = bytes(part)
         elif isinstance(item, (bytes, bytearray)):
             if item.strip() in (b")", b""):
                 continue
+            if limit is not None and len(item) > limit:
+                raise OSError("response too large")
             if len(item) >= len(best):
                 best = bytes(item)
     return best
+
+
+def _payload_limited(data: object, limit: int) -> bytes:
+    return _payload(data, limit)
 
 
 def _imap_ok(typ: str) -> None:
@@ -499,17 +545,30 @@ class _StdImap:
         if isinstance(raw, str):
             text = raw
         else:
+            if len(raw) > _UID_RESPONSE_BYTES:
+                raise OSError("response too large")
             text = bytes(raw).decode("ascii", errors="replace")
-        return [part for part in text.split() if _uid_ok(part)]
+        if len(text.encode("ascii", errors="replace")) > _UID_RESPONSE_BYTES:
+            raise OSError("response too large")
+        found: list[str] = []
+        for part in text.split():
+            if not _uid_ok(part):
+                continue
+            found.append(part)
+            if len(found) > _UID_COUNT_CAP:
+                raise OSError("response too large")
+        return found
 
     def fetch(self, uid: str, *, headers_only: bool = False) -> bytes:
-        spec = "(BODY.PEEK[HEADER])" if headers_only else "(RFC822)"
+        limit = _HEADER_BYTES if headers_only else _MESSAGE_BYTES
+        section = "HEADER" if headers_only else ""
+        spec = f"(BODY.PEEK[{section}]<0.{limit + 1}>)"
         try:
             typ, data = self._c.uid("FETCH", uid, spec)
             _imap_ok(typ)
         except imaplib.IMAP4.error as exc:
             raise OSError("rpc failed") from exc
-        return _payload(data)
+        return _payload_limited(data, limit)
 
     def mark_seen(self, uid: str) -> None:
         try:

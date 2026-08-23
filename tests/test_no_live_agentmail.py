@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from agentself.backends.email.agentmail import AgentMailMailboxAccess
-from agentself.backends.email.http import request
+from agentself.backends.email.http import _MAX_RESPONSE_BYTES, request
 from agentself.internal.log import MemoryLog
 
 from tests.support import cli_env, run_cli, value_file
@@ -49,3 +49,25 @@ def test_request_forbids_injected_hosts(monkeypatch):
             {},
             forbid_hosts=("api.agentmail.to",),
         )
+
+
+def test_request_rejects_oversized_response_before_parsing(monkeypatch):
+    class Response:
+        status = 200
+        requested = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self, size: int) -> bytes:
+            self.requested = size
+            return b"x" * size
+
+    response = Response()
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: response)
+    with pytest.raises(OSError, match="response too large"):
+        request("https://example.invalid/mail", {})
+    assert response.requested == _MAX_RESPONSE_BYTES + 1
