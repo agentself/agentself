@@ -99,21 +99,21 @@ class ImapMailboxAccess(MailboxAccess):
         to: str,
         subject: str,
         body: str,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> None:
         require_safe_token(principal_id, "principal id")
         require_addr(to)
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_send", principal_id, to, "error")
             raise MailboxError("send failed")
-        send_token = require_secret(send_token)
+        credential = require_secret(credential)
         from_addr = self._inbox(address)
         host, port, mode = self._endpoint("smtp", from_addr)
         payload = _rfc822(from_addr, to, subject, body)
         box = self._smtp(host, port, mode)
         try:
-            box.login(self._user(from_addr), send_token)
+            box.login(self._user(from_addr), credential)
             box.send(from_addr, to, payload)
         except (OSError, TimeoutError, smtplib.SMTPException) as exc:
             raise MailboxError("rpc failed") from exc
@@ -125,19 +125,19 @@ class ImapMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(principal_id, "principal id")
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_recv", principal_id, None, "error")
             raise MailboxError("recv failed")
-        send_token = require_secret(send_token)
+        credential = require_secret(credential)
         inbox = self._inbox(address)
         try:
             with exclusive(self._root):
-                box = self._imap_login(inbox, send_token)
+                box = self._imap_login(inbox, credential)
                 try:
                     wanted = (message_id or "").strip()
                     if wanted:
@@ -166,16 +166,16 @@ class ImapMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(principal_id, "principal id")
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_list", principal_id, None, "error")
             raise MailboxError("list failed")
-        send_token = require_secret(send_token)
+        credential = require_secret(credential)
         inbox = self._inbox(address)
-        box = self._imap_login(inbox, send_token)
+        box = self._imap_login(inbox, credential)
         try:
             items: list[dict[str, str]] = []
             for uid in box.uids(unseen_only=False):
@@ -200,7 +200,7 @@ class ImapMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
@@ -213,14 +213,14 @@ class ImapMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
-        token = send_token or extra.get("credential") or ""
+        token = credential or extra.get("credential") or ""
         if not wanted:
             self._log.record("mailbox_connect", principal_id, None, "error")
             return setup_needed(address_option(required=True, help=HELP_IMAP_ADDRESS))

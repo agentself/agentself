@@ -107,7 +107,7 @@ def test_no_token_zero_http(vault):
     with pytest.raises(MailboxError, match="list failed") as list_err:
         mb.list(PRINCIPAL)
     with pytest.raises(MailboxError, match="send failed"):
-        mb.send(PRINCIPAL, "a@example.com", "s", "b", send_token="")
+        mb.send(PRINCIPAL, "a@example.com", "s", "b", credential="")
     assert http.posts == []
     assert http.gets == []
     _no_local_outbox(vault)
@@ -131,7 +131,7 @@ def test_send_unique_inbox_uses_that_inbox_id(vault):
         "someone@example.com",
         "hello",
         "body-text",
-        send_token=CANARY,
+        credential=CANARY,
     )
     assert len(http.posts) == 1
     url, headers, payload = http.posts[0]
@@ -169,7 +169,7 @@ def test_send_picks_address_hold_among_many_inboxes(vault):
         "someone@example.com",
         "hello",
         "body-text",
-        send_token=CANARY,
+        credential=CANARY,
         address=OURS,
     )
     assert len(http.posts) == 1
@@ -203,7 +203,7 @@ def test_send_2xx_auth_in_mock_only_no_outbox(vault):
         "a@example.com",
         "s",
         "b",
-        send_token=CANARY,
+        credential=CANARY,
         address=OURS,
     )
     url, headers, _payload = http.posts[0]
@@ -247,7 +247,7 @@ def test_recv_then_recv_empty_seen_modes(vault):
         {"text": "full body"},
     )
     mb = _box(vault, log, http, domain="agentmail.to")
-    first = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    first = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert len(first) == 1
     assert first[0]["id"] == message_id
     assert first[0]["from"] == "a@example.com"
@@ -267,7 +267,7 @@ def test_recv_then_recv_empty_seen_modes(vault):
         url for url, _headers in http.gets if url.endswith(f"/messages/{quoted_id}")
     ]
     assert len(body_gets) == 1
-    second = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    second = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert second == []
     body_gets_after = [
         url for url, _headers in http.gets if url.endswith(f"/messages/{quoted_id}")
@@ -302,7 +302,7 @@ def test_list_maps_meta_and_caches_inbox_id(vault):
         },
     )
     mb = _box(vault, log, http)
-    items = mb.list(PRINCIPAL, send_token=CANARY, address=OURS)
+    items = mb.list(PRINCIPAL, credential=CANARY, address=OURS)
     assert items == [
         {
             "id": "m1",
@@ -337,13 +337,13 @@ def test_timeout_urlerror_fail_closed(vault, boom):
             "a@example.com",
             "s",
             "b",
-            send_token=CANARY,
+            credential=CANARY,
             address=OURS,
         )
     with pytest.raises(MailboxError, match="rpc failed") as recv_err:
-        mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+        mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     with pytest.raises(MailboxError, match="rpc failed") as list_err:
-        mb.list(PRINCIPAL, send_token=CANARY, address=OURS)
+        mb.list(PRINCIPAL, credential=CANARY, address=OURS)
     assert http.posts == []
     _no_local_outbox(vault)
     for exc in (send_err.value, recv_err.value, list_err.value):
@@ -362,9 +362,9 @@ def test_messages_timeout_fail_closed(vault):
     http.get_raises(f"{API}/v0/inboxes/{inbox_id}/messages", TimeoutError())
     mb = _box(vault, log, http)
     with pytest.raises(MailboxError, match="rpc failed") as list_err:
-        mb.list(PRINCIPAL, send_token=CANARY, address=OURS)
+        mb.list(PRINCIPAL, credential=CANARY, address=OURS)
     with pytest.raises(MailboxError, match="rpc failed") as recv_err:
-        mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+        mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     _no_local_outbox(vault)
     _secret_absent(log, list_err.value)
     _secret_absent(log, recv_err.value)
@@ -386,7 +386,7 @@ def test_send_poster_timeout_fail_closed(vault):
             "a@example.com",
             "s",
             "b",
-            send_token=CANARY,
+            credential=CANARY,
             address=OURS,
         )
     _secret_absent(log, err.value)
@@ -421,7 +421,7 @@ def test_describe_discovers_unique_inbox(vault):
         {"inboxes": [{"inbox_id": "inb_who", "email": OURS}]},
     )
     mb = _box(vault, log, http, domain="agentmail.to")
-    desc = mb.describe(PRINCIPAL, send_token=CANARY)
+    desc = mb.describe(PRINCIPAL, credential=CANARY)
     assert desc["owned_address"] is True
     assert desc["address"] == OURS
     assert desc["needs_domain"] is False
@@ -443,7 +443,7 @@ def test_describe_many_inboxes_without_address_is_no_inbox(vault):
     )
     mb = _box(vault, log, http, domain="agentmail.to")
     with pytest.raises(MailboxError, match="no inbox") as err:
-        mb.describe(PRINCIPAL, send_token=CANARY)
+        mb.describe(PRINCIPAL, credential=CANARY)
     _secret_absent(log, err.value)
     assert TAKEN not in str(err.value)
 
@@ -463,7 +463,7 @@ def test_address_mismatch_is_no_inbox(vault):
             "a@example.com",
             "s",
             "b",
-            send_token=CANARY,
+            credential=CANARY,
             address=OURS,
         )
     assert http.posts == []
@@ -515,7 +515,7 @@ def test_recv_mixed_inbox_keeps_good_and_reasons_bad(vault):
         {"text": "full good"},
     )
     mb = _box(vault, log, http)
-    messages = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    messages = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert len(messages) == 2
     by_id = {item["id"]: item for item in messages}
     bad = by_id[bad_id]
@@ -527,7 +527,7 @@ def test_recv_mixed_inbox_keeps_good_and_reasons_bad(vault):
     seen = identity_home(vault, PRINCIPAL) / "agentmail" / "seen"
     marked = {path.name for path in seen.iterdir()} if seen.is_dir() else set()
     assert good_id in marked
-    second = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    second = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert [item["id"] for item in second] == [bad_id]
     assert second[0]["reason"] in {"mailbox_error", "http"}
     assert good_id not in {item["id"] for item in second}
@@ -566,10 +566,10 @@ def test_recv_message_id_returns_seen(vault):
         {"text": "full body"},
     )
     mb = _box(vault, log, http)
-    first = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    first = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert first[0]["id"] == message_id
-    assert mb.recv(PRINCIPAL, send_token=CANARY, address=OURS) == []
-    again = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS, message_id=message_id)
+    assert mb.recv(PRINCIPAL, credential=CANARY, address=OURS) == []
+    again = mb.recv(PRINCIPAL, credential=CANARY, address=OURS, message_id=message_id)
     assert len(again) == 1
     assert again[0]["id"] == message_id
     assert again[0]["body"] == "full body"
@@ -602,7 +602,7 @@ def test_recv_unknown_message_id_is_empty(vault):
         },
     )
     mb = _box(vault, log, http)
-    missing = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS, message_id="no-such")
+    missing = mb.recv(PRINCIPAL, credential=CANARY, address=OURS, message_id="no-such")
     assert missing == []
     _secret_absent(log)
 
@@ -637,7 +637,7 @@ def test_connect_selected_address_verifies_live_ownership(vault):
         {"inboxes": [{"inbox_id": "inb_selected", "email": OURS}]},
     )
     mb = _box(vault, log, http)
-    desc = mb.connect(PRINCIPAL, send_token=CANARY, address=OURS)
+    desc = mb.connect(PRINCIPAL, credential=CANARY, address=OURS)
     assert desc["owned_address"] is True
     assert desc["address"] == OURS
     assert len(http.gets) == 1
@@ -655,7 +655,7 @@ def test_connect_selected_unknown_address_fails_without_local_state(vault):
     )
     mb = _box(vault, log, http)
     with pytest.raises(MailboxError, match="no inbox"):
-        mb.connect(PRINCIPAL, send_token=CANARY, address=OURS)
+        mb.connect(PRINCIPAL, credential=CANARY, address=OURS)
     assert http.posts == []
     assert not (identity_home(vault, PRINCIPAL) / "agentmail").exists()
     _secret_absent(log)
@@ -670,7 +670,7 @@ def test_connect_discovers_unique_inbox_no_post(vault):
         {"inboxes": [{"inbox_id": "inb_who", "email": OURS}]},
     )
     mb = _box(vault, log, http)
-    desc = mb.connect(PRINCIPAL, send_token=CANARY)
+    desc = mb.connect(PRINCIPAL, credential=CANARY)
     assert desc["owned_address"] is True
     assert desc["address"] == OURS
     assert desc["needs_domain"] is False
@@ -692,7 +692,7 @@ def test_connect_empty_creates_inbox_from_api_address(vault):
         {"inbox_id": "inb_new", "email": ISSUED},
     )
     mb = _box(vault, log, http)
-    desc = mb.connect(PRINCIPAL, send_token=CANARY)
+    desc = mb.connect(PRINCIPAL, credential=CANARY)
     assert desc["owned_address"] is True
     assert desc["address"] == ISSUED
     assert desc["address"] != f"{PRINCIPAL}@agentmail.to"
@@ -724,7 +724,7 @@ def test_connect_many_inboxes_need_address_no_post(vault):
         },
     )
     mb = _box(vault, log, http)
-    desc = mb.connect(PRINCIPAL, send_token=CANARY)
+    desc = mb.connect(PRINCIPAL, credential=CANARY)
     assert desc["status"] == "input_required"
     assert desc["option"]["name"] == "address"
     assert http.posts == []
@@ -739,7 +739,7 @@ def test_connect_unauthorized_is_invalid_credentials(vault, status):
     http.on_get(INBOXES, status, {"error": "nope"})
     mb = _box(vault, log, http)
     with pytest.raises(MailboxError, match="invalid credentials") as err:
-        mb.connect(PRINCIPAL, send_token=CANARY)
+        mb.connect(PRINCIPAL, credential=CANARY)
     assert CANARY not in str(err.value)
     _secret_absent(log, err.value)
     _no_local_outbox(vault)
@@ -752,7 +752,7 @@ def test_connect_create_rpc_failed(vault):
     http.post_result(500, {"error": "nope"})
     mb = _box(vault, log, http)
     with pytest.raises(MailboxError, match="rpc failed") as err:
-        mb.connect(PRINCIPAL, send_token=CANARY)
+        mb.connect(PRINCIPAL, credential=CANARY)
     _secret_absent(log, err.value)
     _no_local_outbox(vault)
     _no_local_outbox(vault)
@@ -789,7 +789,7 @@ def test_recv_all_message_gets_400_returns_degraded(vault):
         {"error": "bad id"},
     )
     mb = _box(vault, log, http)
-    messages = mb.recv(PRINCIPAL, send_token=CANARY, address=OURS)
+    messages = mb.recv(PRINCIPAL, credential=CANARY, address=OURS)
     assert len(messages) == 1
     assert messages[0]["id"] == bad_id
     assert messages[0]["reason"] in {"mailbox_error", "http"}

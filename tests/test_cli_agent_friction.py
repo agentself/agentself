@@ -153,7 +153,7 @@ def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsy
         def read(self) -> str:
             raise AssertionError("must not read")
 
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.setenv("PATH", env["PATH"])
     monkeypatch.setenv("AGENTSELF_TOOLS", env["AGENTSELF_TOOLS"])
     monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "0")

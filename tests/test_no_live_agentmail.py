@@ -32,7 +32,7 @@ def test_uninjected_agentmail_connect_does_not_dial_live(vault):
     with pytest.raises(
         AssertionError, match="live AgentMail HTTP is forbidden in tests"
     ):
-        mb.connect("P", send_token="am_test_token_do_not_leak")
+        mb.connect("P", credential="am_test_token_do_not_leak")
 
 
 def test_cli_connect_with_token_does_not_dial_live(tmp_path):
@@ -43,7 +43,7 @@ def test_cli_connect_with_token_does_not_dial_live(tmp_path):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, "am_test_token"),
         ],

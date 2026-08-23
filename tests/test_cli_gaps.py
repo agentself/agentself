@@ -73,7 +73,7 @@ def test_start_env_binding_persists_then_compose_without_env(tmp_path, monkeypat
     ):
         later.pop(key, None)
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     gateway = compose(vault, bind=lambda: bind_local(vault))
     view = gateway.identity()
     assert view["email_backend"] == "imap"
@@ -257,30 +257,30 @@ class _FailMailbox:
         self._fail = fail
         self._need_token = need_token
 
-    def send(self, principal_id, to, subject, body, send_token=None, address=None):
-        if self._need_token and not send_token:
+    def send(self, principal_id, to, subject, body, credential=None, address=None):
+        if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def recv(self, principal_id, *, send_token=None, address=None, message_id=None):
-        if self._need_token and not send_token:
+    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
+        if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def list(self, principal_id, *, send_token=None, address=None):
-        if self._need_token and not send_token:
+    def list(self, principal_id, *, credential=None, address=None):
+        if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def describe(self, principal_id, *, send_token=None, address=None):
+    def describe(self, principal_id, *, credential=None, address=None):
         return {
             "address": None,
             "owned_address": False,
             "needs_domain": True,
         }
 
-    def connect(self, principal_id, *, send_token=None, address=None, answers=None):
-        if self._need_token and not send_token:
+    def connect(self, principal_id, *, credential=None, address=None, answers=None):
+        if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
@@ -313,7 +313,7 @@ def test_email_recv_list_rpc_sets_reason(vault, monkeypatch):
     app.keys["P"] = setup_principal(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
     app.gateway.enroll("sops")
-    app.gateway.seal("email.send.token", "hold-value")
+    app.gateway.seal("email.credential", "hold-value")
     app.manager._mailboxes = _FailFactory(_FailMailbox("rpc failed"))
     with pytest.raises(ChannelFailure) as recvd:
         app.gateway.email_recv()
@@ -330,7 +330,7 @@ def test_email_recv_other_mailbox_error_reason(vault, monkeypatch):
     app.keys["P"] = setup_principal(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
     app.gateway.enroll("sops")
-    app.gateway.seal("email.send.token", "hold-value")
+    app.gateway.seal("email.credential", "hold-value")
     app.manager._mailboxes = _FailFactory(_FailMailbox("no inbox"))
     with pytest.raises(ChannelFailure) as recvd:
         app.gateway.email_recv()
@@ -366,7 +366,7 @@ def test_cli_json_email_recv_list_injected_rpc(tmp_path, monkeypatch, capsys):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, "hold-value"),
         ],
@@ -375,7 +375,7 @@ def test_cli_json_email_recv_list_injected_rpc(tmp_path, monkeypatch, capsys):
     assert sealed.returncode == 0, sealed.stderr
     assert "hold-value" not in sealed.stdout
     assert "hold-value" not in sealed.stderr
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.setenv("PATH", env["PATH"])
     for key in (
         "AGENTSELF_EMAIL_BACKEND",
@@ -556,7 +556,7 @@ def test_cli_json_email_recv_mixed_is_ok(tmp_path, monkeypatch, capsys):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, "hold-value"),
         ],
@@ -651,7 +651,7 @@ def test_cli_json_email_recv_one_id_is_ok(tmp_path, monkeypatch, capsys):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, "hold-value"),
         ],

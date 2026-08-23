@@ -122,39 +122,39 @@ class InstrumentedMailboxAccess:
         self.inner = inner
         self.calls: list[tuple] = []
 
-    def send(self, principal_id, to, subject, body, send_token=None, address=None):
+    def send(self, principal_id, to, subject, body, credential=None, address=None):
         self.calls.append(("send", principal_id))
         return self.inner.send(
             principal_id,
             to,
             subject,
             body,
-            send_token=send_token,
+            credential=credential,
             address=address,
         )
 
-    def recv(self, principal_id, *, send_token=None, address=None, message_id=None):
+    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
         self.calls.append(("recv", principal_id))
         return self.inner.recv(
             principal_id,
-            send_token=send_token,
+            credential=credential,
             address=address,
             message_id=message_id,
         )
 
-    def list(self, principal_id, *, send_token=None, address=None):
+    def list(self, principal_id, *, credential=None, address=None):
         self.calls.append(("list", principal_id))
-        return self.inner.list(principal_id, send_token=send_token, address=address)
+        return self.inner.list(principal_id, credential=credential, address=address)
 
-    def describe(self, principal_id, *, send_token=None, address=None):
+    def describe(self, principal_id, *, credential=None, address=None):
         self.calls.append(("describe", principal_id))
-        return self.inner.describe(principal_id, send_token=send_token, address=address)
+        return self.inner.describe(principal_id, credential=credential, address=address)
 
-    def connect(self, principal_id, *, send_token=None, address=None, answers=None):
+    def connect(self, principal_id, *, credential=None, address=None, answers=None):
         self.calls.append(("connect", principal_id))
         return self.inner.connect(
             principal_id,
-            send_token=send_token,
+            credential=credential,
             address=address,
             answers=answers,
         )
@@ -360,7 +360,7 @@ class App:
     def bind(self, monkeypatch, principal_id: str) -> None:
         monkeypatch.setenv("AGENTSELF_IDENTITY_ID", principal_id)
         monkeypatch.setenv("AGE_KEY_FILE", str(self.keys[principal_id]))
-        monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(self.vault))
+        monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(self.vault))
 
 
 def setup_principal(vault: Path, principal_id: str, store: str = "sops") -> Path:
@@ -467,7 +467,7 @@ def plant_email(
 
 def cli_env(vault: Path) -> dict[str, str]:
     env = os.environ.copy()
-    env["AGENTSELF_VAULT_ROOT"] = str(vault)
+    env["AGENTSELF_IDENTITY_DIR"] = str(vault)
     pythonpath = env.get("PYTHONPATH", "")
     src = str(PROJECT_ROOT)
     env["PYTHONPATH"] = src + os.pathsep + pythonpath if pythonpath else src
@@ -517,7 +517,7 @@ def enroll_principal(
 
 
 def apply_cli_env(monkeypatch, env: dict[str, str]) -> None:
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", env["AGENTSELF_VAULT_ROOT"])
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
     monkeypatch.setenv("PATH", env["PATH"])
     if "AGENTSELF_TOOLS" in env:
         monkeypatch.setenv("AGENTSELF_TOOLS", env["AGENTSELF_TOOLS"])

@@ -10,7 +10,7 @@ from agentself.internal.setup import (
 
 
 class MailboxError(Exception):
-    """Mailbox Resource failure. Must never include a secret or send-token value."""
+    """Mailbox Resource failure. Must never include a secret or credential value."""
 
 
 def require_addr(to: str) -> None:
@@ -85,7 +85,7 @@ class MailboxAccess(ABC):
         to: str,
         subject: str,
         body: str,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> None: ...
 
@@ -94,7 +94,7 @@ class MailboxAccess(ABC):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> list[dict[str, str]]:
@@ -105,7 +105,7 @@ class MailboxAccess(ABC):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> list[dict[str, str]]:
         """Metadata, not a mailbox product."""
@@ -115,7 +115,7 @@ class MailboxAccess(ABC):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]: ...
 
@@ -123,7 +123,7 @@ class MailboxAccess(ABC):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
@@ -135,7 +135,7 @@ class MailboxAccess(ABC):
         """
 
         del answers
-        return self.describe(principal_id, send_token=send_token, address=address)
+        return self.describe(principal_id, credential=credential, address=address)
 
 
 def connect_status(payload: object) -> str:

@@ -1,4 +1,4 @@
-"""CLI schema 3: --json results (including failures) go to stdout."""
+"""CLI schema 1: --json results (including failures) go to stdout."""
 
 from __future__ import annotations
 

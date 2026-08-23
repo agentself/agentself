@@ -483,6 +483,6 @@ def test_imap_recv_marks_after_fetch_and_survives_mark_failure(vault):
     imap.mark_seen = boom_mark  # type: ignore[method-assign]
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    got = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    got = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert [m["subject"] for m in got] == ["a", "b"]
     assert CANARY not in log.rendered()

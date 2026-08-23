@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 
-from agentself.host import CHANNELS, ENV_VAULT_ROOT, close_match
+from agentself.host import CHANNELS, ENV_IDENTITY_DIR, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
@@ -170,7 +170,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself wallet address\n"
             "  agentself install --skills\n"
             "\n"
-            f"Identity directory is {ENV_VAULT_ROOT} (default ~/.agentself)."
+            f"Identity directory is {ENV_IDENTITY_DIR} (default ~/.agentself)."
         ),
     )
     _add_json_flag(parser)
@@ -237,7 +237,7 @@ def _parser() -> argparse.ArgumentParser:
             "every backend; each backend lists live/local and supported verbs. "
             "Pick with init flags or AGENTSELF_*_BACKEND. "
             "Flag, then env, then identity-directory config, then default. No failover. "
-            "One identity per directory; isolate with AGENTSELF_VAULT_ROOT, "
+            "One identity per directory; isolate with AGENTSELF_IDENTITY_DIR, "
             "not named remotes."
         ),
         epilog=(
@@ -380,7 +380,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Delete a named secret. wallet.key is protected",
         description=(
             "Delete a named secret. No prompt. wallet.key cannot be deleted. "
-            "Mail credentials (email.send.token, email.address) can be deleted."
+            "Mail credentials (email.credential, email.address) can be deleted."
         ),
         epilog="Examples:\n  agentself secret delete NAME\n  agentself --json secret delete NAME",
     )

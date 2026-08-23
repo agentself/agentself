@@ -14,7 +14,7 @@
   "diagnose_extra": [
     "version",
     "python",
-    "vault",
+    "identity_dir",
     "initialized",
     "ready",
     "tools",

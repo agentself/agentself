@@ -43,38 +43,38 @@ class ScriptedMailbox(MailboxAccess):
         self._connect = connect_fn
         self.calls: list[tuple[str, str | None, str | None]] = []
 
-    def send(self, principal_id, to, subject, body, send_token=None, address=None):
+    def send(self, principal_id, to, subject, body, credential=None, address=None):
         del principal_id, to, subject, body
-        self._require_runtime(send_token, address)
-        self.calls.append(("send", send_token, address))
+        self._require_runtime(credential, address)
+        self.calls.append(("send", credential, address))
 
-    def recv(self, principal_id, *, send_token=None, address=None, message_id=None):
+    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
         del principal_id, message_id
-        self._require_runtime(send_token, address)
-        self.calls.append(("recv", send_token, address))
+        self._require_runtime(credential, address)
+        self.calls.append(("recv", credential, address))
         return [{"id": "message-1", "subject": "hello"}]
 
-    def list(self, principal_id, *, send_token=None, address=None):
+    def list(self, principal_id, *, credential=None, address=None):
         del principal_id
-        self._require_runtime(send_token, address)
-        self.calls.append(("list", send_token, address))
+        self._require_runtime(credential, address)
+        self.calls.append(("list", credential, address))
         return [{"id": "message-1", "subject": "hello"}]
 
-    def describe(self, principal_id, *, send_token=None, address=None):
+    def describe(self, principal_id, *, credential=None, address=None):
         del principal_id
-        self.calls.append(("describe", send_token, address))
-        if send_token and address:
+        self.calls.append(("describe", credential, address))
+        if credential and address:
             return mailbox_view(address, owned_address=True)
         return mailbox_view()
 
-    def connect(self, principal_id, *, send_token=None, address=None, answers=None):
+    def connect(self, principal_id, *, credential=None, address=None, answers=None):
         del principal_id
         extra = dict(answers or {})
-        return self._connect(send_token, address, extra)
+        return self._connect(credential, address, extra)
 
     @staticmethod
-    def _require_runtime(send_token, address) -> None:
-        if not send_token or not address:
+    def _require_runtime(credential, address) -> None:
+        if not credential or not address:
             raise MailboxError("not ready")
 
 
@@ -692,7 +692,7 @@ def test_env_connects_without_copying_into_vault(
     code, ordinary = _connect(monkeypatch, capsys, env)
     assert code == 0, ordinary
     assert ordinary["status"] == "connected"
-    missing = run_cli(["--json", "secret", "exists", "email.send.token"], env)
+    missing = run_cli(["--json", "secret", "exists", "email.credential"], env)
     assert missing.returncode == 3
     assert json.loads(missing.stdout)["exists"] is False
 
@@ -758,4 +758,4 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
 
     names = json.loads(run_cli(["--json", "secret", "list"], env).stdout)["names"]
     assert "email.address" not in names
-    assert "email.send.token" not in names
+    assert "email.credential" not in names

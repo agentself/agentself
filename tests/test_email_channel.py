@@ -53,7 +53,7 @@ def test_email_send_with_address_hold_and_token_writes_maildir_outbox(
     app.keys["P"] = setup_principal(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
     app.gateway.enroll("sops")
-    app.gateway.seal("email.send.token", "tok")
+    app.gateway.seal("email.credential", "tok")
     app.gateway.seal("email.address", "inbox@example.com")
     app.gateway.email_send("someone@example.com", "hello", "body-text")
     outbox = identity_home(app.vault, "P") / "outbox"
@@ -71,7 +71,7 @@ def test_email_send_maildir_domain_and_token_without_address_fails_closed(
     app.keys["P"] = setup_principal(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
     app.gateway.enroll("sops")
-    app.gateway.seal("email.send.token", "tok")
+    app.gateway.seal("email.credential", "tok")
     with pytest.raises(EmailSendNotReady):
         app.gateway.email_send("someone@example.com", "hello", "body-text")
     outbox = identity_home(app.vault, "P") / "outbox"

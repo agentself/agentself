@@ -176,7 +176,7 @@ def test_json_version_and_machine_alias(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
     assert version["version"] == __version__
-    assert version["cli"] == 3
+    assert version["cli"] == 1
     assert version["package"]
     assert version["executable"]
     machine = run_cli(["--machine", "--version"], env)
@@ -209,7 +209,7 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
     shown = assert_ok(run_cli(["--json", "show"], env), "show")
     assert shown["id"] == started["id"]
     assert shown["address"] == started["address"]
-    assert shown["vault"] == str(vault)
+    assert shown["identity_dir"] == str(vault)
     assert shown["recipient"] == started["recipient"]
 
     bare = assert_ok(run_cli(["--json"], env), "show")
@@ -217,7 +217,7 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
 
     diagnose = assert_ok(run_cli(["--json", "diagnose"], env), "diagnose")
     assert diagnose["initialized"] is True
-    assert diagnose["vault"] == str(vault)
+    assert diagnose["identity_dir"] == str(vault)
     assert diagnose["store_backend"] == "sops"
     assert diagnose["tools"]["age-keygen"] is True
     assert diagnose["tools"]["sops"] is True

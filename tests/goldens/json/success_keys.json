@@ -22,7 +22,7 @@
       "usdc",
       "wallet_backend",
       "email_backend",
-      "vault",
+      "identity_dir",
       "email",
       "ready"
     ]
@@ -34,7 +34,7 @@
       "ready",
       "version",
       "python",
-      "vault",
+      "identity_dir",
       "tools",
       "wallet_backend",
       "email_backend",
@@ -56,7 +56,7 @@
     "exact": ["ok", "path"]
   },
   "backends": {
-    "exact": ["ok", "prefix", "vault", "order", "failover", "channels"]
+    "exact": ["ok", "prefix", "identity_dir", "order", "failover", "channels"]
   },
   "backends_channel": {
     "exact": ["ok", "channel"]

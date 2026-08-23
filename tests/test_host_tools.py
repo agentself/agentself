@@ -50,7 +50,7 @@ def _digest_map(
 def test_tools_dir_default_is_not_vault(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.delenv("AGENTSELF_TOOLS", raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "share"))
@@ -189,7 +189,7 @@ def test_doctor_fetch_error_is_json_object(tmp_path, monkeypatch, capsys):
     empty.mkdir()
     tools = tmp_path / "tools"
     tools.mkdir()
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.setenv("AGENTSELF_TOOLS", str(tools))
     monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "1")
     monkeypatch.setenv("PATH", str(empty))
@@ -229,7 +229,7 @@ def test_show_backends_and_version_do_not_fetch(tmp_path, monkeypatch):
     empty.mkdir()
     tools = tmp_path / "tools"
     tools.mkdir()
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(tmp_path / "vault"))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(tmp_path / "vault"))
     monkeypatch.setenv("AGENTSELF_TOOLS", str(tools))
     monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "1")
     monkeypatch.setenv("PATH", str(empty))

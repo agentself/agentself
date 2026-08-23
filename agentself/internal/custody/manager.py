@@ -44,7 +44,7 @@ from agentself.internal.log import Log
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
     PROTECTED_HOLD_NAMES,
-    SEND_TOKEN_NAME,
+    EMAIL_CREDENTIAL_NAME,
     WALLET_KEY_NAME,
     require_safe_token,
 )
@@ -315,7 +315,7 @@ class CustodyManager:
         try:
             desc = mailbox.connect(
                 principal.id,
-                send_token=credential,
+                credential=credential,
                 address=address,
                 answers=incoming,
             )
@@ -369,7 +369,7 @@ class CustodyManager:
         )
         mailbox = self._mailbox_for(principal, "email_send")
         try:
-            desc = mailbox.describe(principal.id, send_token=token, address=address)
+            desc = mailbox.describe(principal.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("email_send", principal.id, None, "error")
             raise _channel_from_mailbox(exc, has_token=bool(token)) from None
@@ -382,7 +382,7 @@ class CustodyManager:
                 to,
                 subject,
                 body,
-                send_token=token,
+                credential=token,
                 address=address,
             )
         except MailboxError as exc:
@@ -404,7 +404,7 @@ class CustodyManager:
         try:
             messages = mailbox.recv(
                 principal.id,
-                send_token=token,
+                credential=token,
                 address=address,
                 message_id=message_id,
             )
@@ -423,7 +423,7 @@ class CustodyManager:
         )
         mailbox = self._mailbox_for(principal, "email_list")
         try:
-            items = mailbox.list(principal.id, send_token=token, address=address)
+            items = mailbox.list(principal.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("email_list", principal.id, None, "error")
             raise _channel_from_mailbox(exc, has_token=bool(token)) from None
@@ -530,7 +530,7 @@ class CustodyManager:
         mailbox = self._mailbox_for(principal, "identity")
         address, token, _sources = self._resolve_email_inputs(principal, {}, "identity")
         try:
-            email = mailbox.describe(principal.id, send_token=token, address=address)
+            email = mailbox.describe(principal.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("identity", principal.id, None, "error")
             raise _channel_from_mailbox(exc, has_token=bool(token)) from None
@@ -571,7 +571,7 @@ class CustodyManager:
             principal,
             OPTION_CREDENTIAL,
             ENV_EMAIL_CREDENTIAL,
-            SEND_TOKEN_NAME,
+            EMAIL_CREDENTIAL_NAME,
             answers,
             options,
             operation,
@@ -618,7 +618,9 @@ class CustodyManager:
     ) -> None:
         credential = (answers.get(OPTION_CREDENTIAL) or "").strip()
         if credential:
-            self._store_put(principal, SEND_TOKEN_NAME, credential, "email_connect")
+            self._store_put(
+                principal, EMAIL_CREDENTIAL_NAME, credential, "email_connect"
+            )
         address = (answers.get(OPTION_ADDRESS) or "").strip()
         if address:
             self._store_put(principal, EMAIL_ADDRESS_NAME, address, "email_connect")

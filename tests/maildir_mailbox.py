@@ -34,7 +34,7 @@ class MaildirMailboxAccess(MailboxAccess):
         to: str,
         subject: str,
         body: str,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> None:
         require_safe_token(principal_id, "principal id")
@@ -49,7 +49,7 @@ class MaildirMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> list[dict[str, str]]:
@@ -72,7 +72,7 @@ class MaildirMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> list[dict[str, str]]:
         require_safe_token(principal_id, "principal id")
@@ -96,7 +96,7 @@ class MaildirMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")

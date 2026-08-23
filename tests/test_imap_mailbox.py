@@ -175,11 +175,11 @@ def test_no_address_zero_connections(vault):
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
     with pytest.raises(MailboxError, match="no inbox"):
-        mb.send(PRINCIPAL, TO, "s", "b", send_token=CANARY)
+        mb.send(PRINCIPAL, TO, "s", "b", credential=CANARY)
     with pytest.raises(MailboxError, match="no inbox"):
-        mb.recv(PRINCIPAL, send_token=CANARY)
+        mb.recv(PRINCIPAL, credential=CANARY)
     with pytest.raises(MailboxError, match="no inbox"):
-        mb.list(PRINCIPAL, send_token=CANARY)
+        mb.list(PRINCIPAL, credential=CANARY)
     assert smtp.opened == []
     assert imap.opened == []
     _secret_absent(log)
@@ -194,7 +194,7 @@ def test_describe_uses_address_hold_never_principal_at_domain(vault):
         "owned_address": False,
         "needs_domain": False,
     }
-    owned = mb.describe(PRINCIPAL, address=ADDRESS, send_token=CANARY)
+    owned = mb.describe(PRINCIPAL, address=ADDRESS, credential=CANARY)
     assert owned == {
         "address": ADDRESS,
         "owned_address": True,
@@ -209,7 +209,7 @@ def test_send_derives_smtp_host_from_address_domain(vault):
     imap = FakeImap()
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    mb.send(PRINCIPAL, TO, "hello", "body-text", send_token=CANARY, address=ADDRESS)
+    mb.send(PRINCIPAL, TO, "hello", "body-text", credential=CANARY, address=ADDRESS)
     assert smtp.opened == [("smtp.fastmail.com", 587, "starttls")]
     assert imap.opened == []
     assert smtp.logins == [(ADDRESS, CANARY)]
@@ -233,7 +233,7 @@ def test_mail_host_is_shared_and_split_hosts_override(vault):
     imap = FakeImap()
     smtp = FakeSmtp()
     shared = _box(vault, log, imap, smtp, mail_host="mail.example.com")
-    shared.send(PRINCIPAL, TO, "hello", "body-text", send_token=CANARY, address=ADDRESS)
+    shared.send(PRINCIPAL, TO, "hello", "body-text", credential=CANARY, address=ADDRESS)
     assert smtp.opened == [("mail.example.com", 587, "starttls")]
     imap.messages = [
         {
@@ -251,9 +251,9 @@ def test_mail_host_is_shared_and_split_hosts_override(vault):
         imap_host="outlook.office365.com",
         smtp_host="smtp.office365.com",
     )
-    split.list(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    split.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert imap.opened == [("outlook.office365.com", 993, "ssl")]
-    split.send(PRINCIPAL, TO, "hello", "body-text", send_token=CANARY, address=ADDRESS)
+    split.send(PRINCIPAL, TO, "hello", "body-text", credential=CANARY, address=ADDRESS)
     assert smtp.opened[-1] == ("smtp.office365.com", 587, "starttls")
 
 
@@ -272,8 +272,8 @@ def test_ports_imply_tls_mode_and_mail_user_overrides_login(vault):
         smtp_port="465",
         mail_user="bot",
     )
-    mb.list(PRINCIPAL, send_token=CANARY, address=ADDRESS)
-    mb.send(PRINCIPAL, TO, "hello", "body", send_token=CANARY, address=ADDRESS)
+    mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
+    mb.send(PRINCIPAL, TO, "hello", "body", credential=CANARY, address=ADDRESS)
     assert imap.opened == [("mail.example.com", 143, "starttls")]
     assert smtp.opened == [("mail.example.com", 465, "ssl")]
     assert imap.logins == [("bot", CANARY)]
@@ -299,25 +299,25 @@ def test_recv_unseen_then_empty_list_still_shows(vault):
     )
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    listed = mb.list(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    listed = mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert [item["id"] for item in listed] == ["10", "11"]
     assert all("body" not in item for item in listed)
     assert listed[1]["subject"] == "inbox-subject"
-    recvd = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    recvd = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert len(recvd) == 1
     assert recvd[0]["id"] == "11"
     assert recvd[0]["subject"] == "inbox-subject"
     assert recvd[0]["body"].strip() == "inbox-body"
     assert recvd[0]["from"] == "a@example.com"
     assert imap.messages[1]["seen"] is True
-    assert mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS) == []
-    still = mb.list(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    assert mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS) == []
+    still = mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert [item["id"] for item in still] == ["10", "11"]
-    again = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS, message_id="10")
+    again = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS, message_id="10")
     assert len(again) == 1
     assert again[0]["id"] == "10"
     assert "seen-body" in again[0]["body"]
-    missing = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS, message_id="nope")
+    missing = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS, message_id="nope")
     assert missing == []
     _secret_absent(log)
     assert imap.logout_count >= 1
@@ -337,7 +337,7 @@ def test_recv_unseen_is_capped_and_remainder_stays_unseen(vault):
     )
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    first = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    first = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert len(first) == _UNSEEN_RECV_CAP
     assert [item["id"] for item in first] == [
         str(i) for i in range(1, _UNSEEN_RECV_CAP + 1)
@@ -348,7 +348,7 @@ def test_recv_unseen_is_capped_and_remainder_stays_unseen(vault):
         assert item["seen"] is True
     for item in imap.messages[_UNSEEN_RECV_CAP:]:
         assert item["seen"] is not True
-    second = mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+    second = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert len(second) == 80 - _UNSEEN_RECV_CAP
     assert [item["id"] for item in second] == [
         str(i) for i in range(_UNSEEN_RECV_CAP + 1, 81)
@@ -376,13 +376,13 @@ def test_require_host_and_port_are_local_not_rpc(vault):
     smtp = FakeSmtp()
     bad_host = _box(vault, log, imap, smtp, imap_host="bad host")
     with pytest.raises(MailboxError) as err:
-        bad_host.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+        bad_host.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert str(err.value) == "invalid host"
     assert "rpc" not in str(err.value)
     assert imap.opened == []
     bad_port = _box(vault, log, imap, smtp, imap_port="65536")
     with pytest.raises(MailboxError) as err:
-        bad_port.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+        bad_port.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert str(err.value) == "invalid port"
     assert imap.opened == []
     host_fail = _channel_from_mailbox(MailboxError("invalid host"))
@@ -401,10 +401,10 @@ def test_transport_error_is_rpc_failed_without_secret(vault):
     smtp.fail_open = OSError("connection refused")
     mb = _box(vault, log, imap, smtp)
     with pytest.raises(MailboxError, match="rpc failed") as send_err:
-        mb.send(PRINCIPAL, TO, "s", "b", send_token=CANARY, address=ADDRESS)
+        mb.send(PRINCIPAL, TO, "s", "b", credential=CANARY, address=ADDRESS)
     imap.fail_login = OSError("auth failed")
     with pytest.raises(MailboxError, match="rpc failed") as recv_err:
-        mb.recv(PRINCIPAL, send_token=CANARY, address=ADDRESS)
+        mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
     _secret_absent(log, send_err.value)
     _secret_absent(log, recv_err.value)
     assert (
@@ -420,11 +420,11 @@ def test_invalid_address_and_port_fail_closed(vault):
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
     with pytest.raises(MailboxError, match="no inbox"):
-        mb.send(PRINCIPAL, TO, "s", "b", send_token=CANARY, address="not-an-address")
+        mb.send(PRINCIPAL, TO, "s", "b", credential=CANARY, address="not-an-address")
     assert smtp.opened == []
     bad_port = _box(vault, log, imap, smtp, smtp_port="not-a-port")
     with pytest.raises(MailboxError, match="invalid port"):
-        bad_port.send(PRINCIPAL, TO, "s", "b", send_token=CANARY, address=ADDRESS)
+        bad_port.send(PRINCIPAL, TO, "s", "b", credential=CANARY, address=ADDRESS)
     assert smtp.opened == []
 
 

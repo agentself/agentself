@@ -11,16 +11,17 @@ from agentself.local import default_vault
 
 def _vault(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.setattr("agentself.compose.default_vault", lambda: vault)
     monkeypatch.setattr("agentself.local.default_vault", lambda: vault)
     return vault
 
 
-def test_default_vault_uses_home_when_unset(tmp_path, monkeypatch):
+def test_default_vault_uses_home_when_identity_env_unset(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.delenv("AGENTSELF_VAULT_ROOT", raising=False)
+    monkeypatch.delenv("AGENTSELF_IDENTITY_DIR", raising=False)
+    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(tmp_path / "legacy-vault"))
     monkeypatch.setattr("agentself.local.Path.home", staticmethod(lambda: home))
     assert default_vault() == home / ".agentself"
 
@@ -48,7 +49,7 @@ def test_compose_no_args_uses_default_vault(tmp_path, monkeypatch):
 def test_compose_vault_only_stays(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     gateway = compose(vault)
     assert isinstance(gateway, Gateway)
     assert vault.is_dir()

@@ -11,7 +11,7 @@ from agentself.host import (
     ENV_AGE_KEY_FILE,
     ENV_IDENTITY_ID,
     ENV_MAIL_DOMAIN,
-    ENV_VAULT_ROOT,
+    ENV_IDENTITY_DIR,
 )
 from agentself.internal.custody.errors import HostToolMissing, UnboundCaller
 from agentself.internal.files import (
@@ -46,7 +46,7 @@ class VaultStateError(Exception):
 
 
 def default_vault() -> Path:
-    override = os.environ.get(ENV_VAULT_ROOT, "").strip()
+    override = os.environ.get(ENV_IDENTITY_DIR, "").strip()
     if override:
         return Path(override)
     return Path.home() / DEFAULT_VAULT_NAME
@@ -198,7 +198,7 @@ def format_status(view: dict[str, object], vault: Path) -> str:
     wallet_backend = str(view.get("wallet_backend") or "")
     email_backend = str(view.get("email_backend") or "")
     return redact_secrets(
-        f"vault: {vault}\n"
+        f"identity_dir: {vault}\n"
         f"wallet: {addr}\n"
         f"wallet_backend: {wallet_backend}\n"
         f"recipient: {recipient}\n"

@@ -67,7 +67,7 @@ def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
     sealed = run_cli(
-        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        ["secret", "create", "email.credential", "--file", value_file(tmp_path, TOKEN)],
         env,
     )
     assert sealed.returncode == 0, sealed.stderr
@@ -109,7 +109,7 @@ def test_agentmail_connect_creates_when_empty(tmp_path, monkeypatch, capsys):
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
     sealed = run_cli(
-        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        ["secret", "create", "email.credential", "--file", value_file(tmp_path, TOKEN)],
         env,
     )
     assert sealed.returncode == 0, sealed.stderr
@@ -146,7 +146,7 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
     sealed = run_cli(
-        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        ["secret", "create", "email.credential", "--file", value_file(tmp_path, TOKEN)],
         env,
     )
     assert sealed.returncode == 0, sealed.stderr
@@ -189,7 +189,7 @@ def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
     sealed = run_cli(
-        ["secret", "create", "email.send.token", "--file", value_file(tmp_path, TOKEN)],
+        ["secret", "create", "email.credential", "--file", value_file(tmp_path, TOKEN)],
         env,
     )
     assert sealed.returncode == 0, sealed.stderr
@@ -240,7 +240,7 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert data["reason"] == "invalid credentials"
     assert data["next"] == "agentself --json email connect"
     assert TOKEN not in captured.out + captured.err
-    exists = run_cli(["--json", "secret", "exists", "email.send.token"], env)
+    exists = run_cli(["--json", "secret", "exists", "email.credential"], env)
     assert exists.returncode == 3
 
 
@@ -270,7 +270,7 @@ def test_agentmail_connect_unknown_env_address_persists_nothing(
     assert data["reason"] == "mailbox_error"
     assert TOKEN not in captured.out + captured.err
     assert http.posts == []
-    for name in ("email.address", "email.send.token"):
+    for name in ("email.address", "email.credential"):
         exists = run_cli(["--json", "secret", "exists", name], env)
         assert exists.returncode == 3
         assert json.loads(exists.stdout)["exists"] is False

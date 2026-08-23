@@ -19,7 +19,7 @@ from agentself.internal.setup import (
 )
 
 ENV_PREFIX = "AGENTSELF_"
-ENV_VAULT_ROOT = "AGENTSELF_VAULT_ROOT"
+ENV_IDENTITY_DIR = "AGENTSELF_IDENTITY_DIR"
 ENV_MAIL_DOMAIN = "AGENTSELF_MAIL_DOMAIN"
 ENV_MAIL_HOST = "AGENTSELF_MAIL_HOST"
 ENV_IMAP_HOST = "AGENTSELF_IMAP_HOST"
@@ -294,8 +294,8 @@ def backends_payload(channel: str | None = None) -> dict[str, object]:
     return {
         "ok": True,
         "prefix": ENV_PREFIX,
-        "vault": ENV_VAULT_ROOT,
-        "order": "flag, then env, then vault config, then default",
+        "identity_dir": ENV_IDENTITY_DIR,
+        "order": "flag, then env, then identity-directory config, then default",
         "failover": False,
         "channels": [_channel_json(spec) for spec in CHANNELS.values()],
     }
@@ -309,8 +309,8 @@ def format_backends(channel: str | None = None) -> str:
         "Each backend lists live/local, custody, and supported verbs.",
         "Pick with init flags or AGENTSELF_*_BACKEND.",
         "Flag, then env, then identity-directory config, then default. No failover.",
-        f"Identity directory: {ENV_VAULT_ROOT} (default ~/.agentself).",
-        f"One identity per directory. Isolate with {ENV_VAULT_ROOT}, not named remotes.",
+        f"Identity directory: {ENV_IDENTITY_DIR} (default ~/.agentself).",
+        f"One identity per directory. Isolate with {ENV_IDENTITY_DIR}, not named remotes.",
         "",
     ]
     for spec in CHANNELS.values():

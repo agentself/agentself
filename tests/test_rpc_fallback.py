@@ -99,7 +99,7 @@ def test_cli_all_urls_fail_json_error_rpc(tmp_path, monkeypatch, capsys):
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", env["AGENTSELF_VAULT_ROOT"])
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
     monkeypatch.setenv("PATH", env["PATH"])
     for key in (
         "AGENTSELF_MAIL_DOMAIN",
@@ -219,7 +219,7 @@ def test_cli_override_rpc_json_error_rpc_no_fallback(tmp_path, monkeypatch, caps
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", env["AGENTSELF_VAULT_ROOT"])
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", env["AGENTSELF_IDENTITY_DIR"])
     monkeypatch.setenv("PATH", env["PATH"])
     monkeypatch.setenv("AGENTSELF_ETH_RPC_URL", OVERRIDE)
     for key in (

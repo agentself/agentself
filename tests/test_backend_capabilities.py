@@ -97,7 +97,7 @@ def test_diagnose_agentmail_token_canary_is_absent(tmp_path):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, TOKEN_CANARY),
         ],
@@ -122,7 +122,7 @@ def test_diagnose_imap_address_ready_after_secrets(tmp_path):
         [
             "secret",
             "create",
-            "email.send.token",
+            "email.credential",
             "--file",
             value_file(tmp_path, TOKEN_CANARY),
         ],

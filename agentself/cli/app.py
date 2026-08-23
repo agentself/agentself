@@ -73,7 +73,7 @@ from agentself.local import (
     resolve_setting,
 )
 
-CLI_SCHEMA_VERSION = 3
+CLI_SCHEMA_VERSION = 1
 _INSTALL_TOOLS_NEXT = "agentself install --tools"
 _DIAGNOSE_NEXT = "agentself diagnose"
 _SKILL_TARGETS = {
@@ -578,7 +578,7 @@ def _diagnose(vault: Path, args) -> int:
         "ready": ready,
         "version": __version__,
         "python": python,
-        "vault": str(vault),
+        "identity_dir": str(vault),
         "tools": {"age-keygen": True, store_name: True},
         "wallet_backend": wallet_backend,
         "email_backend": email_backend,
@@ -601,7 +601,7 @@ def _diagnose(vault: Path, args) -> int:
         f"python: {python}",
         f"package: {paths['package']}",
         f"executable: {paths['executable']}",
-        f"vault: {vault}",
+        f"identity_dir: {vault}",
         "age-keygen: ok",
         f"{store_name}: ok",
         f"initialized: {'yes' if initialized else 'no'}",
@@ -1200,9 +1200,9 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
         return _fail(
             args,
             3,
-            "need email.send.token\n",
+            "need email.credential\n",
             "missing",
-            "need email.send.token",
+            "need email.credential",
             nxt="agentself --json email connect",
         )
     if reason == "need_address":
@@ -1653,7 +1653,7 @@ def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
         "usdc": addr,
         "wallet_backend": view.get("wallet_backend"),
         "email_backend": view.get("email_backend"),
-        "vault": str(vault),
+        "identity_dir": str(vault),
         "email": {**email, "ready": email_ready},
         "ready": {"email": email_ready},
     }

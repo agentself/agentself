@@ -49,10 +49,10 @@ PLAIN_CANARY = "plain-secret-CANARY-must-not-escape"
 
 
 class _LeakMailbox:
-    def send(self, principal_id, to, subject, body, send_token=None, address=None):
-        raise MailboxError(f"send failed token={send_token}")
+    def send(self, principal_id, to, subject, body, credential=None, address=None):
+        raise MailboxError(f"send failed token={credential}")
 
-    def recv(self, principal_id, *, send_token=None, address=None, message_id=None):
+    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
         return [
             {
                 "id": "1",
@@ -60,25 +60,25 @@ class _LeakMailbox:
                 "to": "c@d.e",
                 "subject": "hi",
                 "body": "ok",
-                "send_token": send_token or TOKEN_CANARY,
+                "credential": credential or TOKEN_CANARY,
                 "wallet.key": WALLET_CANARY,
             }
         ]
 
-    def list(self, principal_id, *, send_token=None, address=None):
-        return self.recv(principal_id, send_token=send_token, address=address)
+    def list(self, principal_id, *, credential=None, address=None):
+        return self.recv(principal_id, credential=credential, address=address)
 
-    def describe(self, principal_id, *, send_token=None, address=None):
+    def describe(self, principal_id, *, credential=None, address=None):
         return {
             "address": "inbox@example.com",
             "owned_address": True,
             "needs_domain": False,
-            "send_token": send_token or TOKEN_CANARY,
+            "credential": credential or TOKEN_CANARY,
             "private_key": AGE_CANARY,
         }
 
-    def connect(self, principal_id, *, send_token=None, address=None):
-        return self.describe(principal_id, send_token=send_token, address=address)
+    def connect(self, principal_id, *, credential=None, address=None):
+        return self.describe(principal_id, credential=credential, address=address)
 
 
 class _LeakMailboxFactory:
@@ -101,7 +101,7 @@ class _LeakWallet:
             "amount": "0",
             "address": "0x" + "11" * 20,
             "private_key": WALLET_CANARY,
-            "send_token": TOKEN_CANARY,
+            "credential": TOKEN_CANARY,
         }
 
     def send(self, principal_id, to, amount, asset):
@@ -113,7 +113,7 @@ class _LeakWallet:
             "asset": "USDC",
             "chain": "base",
             "private_key": WALLET_CANARY,
-            "send_token": TOKEN_CANARY,
+            "credential": TOKEN_CANARY,
         }
 
 
@@ -295,13 +295,13 @@ def test_principal_access_drops_extra_keys_and_rejects_secret_recipient(tmp_path
 def test_identity_and_mail_strip_backend_secrets(vault, monkeypatch):
     app = build_app(vault)
     enroll_principal(app, monkeypatch)
-    app.gateway.seal("email.send.token", TOKEN_CANARY)
+    app.gateway.seal("email.credential", TOKEN_CANARY)
     app.manager._mailboxes = _LeakMailboxFactory()
     view = app.gateway.identity()
     dumped = json.dumps(view)
     assert TOKEN_CANARY not in dumped
     assert AGE_CANARY not in dumped
-    assert "send_token" not in dumped
+    assert "credential" not in dumped
     assert "private_key" not in dumped
     assert view["email"]["address"] == "inbox@example.com"
 
@@ -309,7 +309,7 @@ def test_identity_and_mail_strip_backend_secrets(vault, monkeypatch):
     blob = json.dumps(messages)
     assert TOKEN_CANARY not in blob
     assert WALLET_CANARY not in blob
-    assert "send_token" not in blob
+    assert "credential" not in blob
     assert messages[0]["body"] == "ok"
 
 
@@ -339,7 +339,7 @@ def test_cli_wallet_send_does_not_echo_backend_key(tmp_path, monkeypatch, capsys
     env = cli_env(vault)
     start = run_cli(["init"], env)
     assert start.returncode == 0, start.stderr
-    monkeypatch.setenv("AGENTSELF_VAULT_ROOT", str(vault))
+    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
     monkeypatch.setenv("PATH", env["PATH"])
     for key in (
         "AGENTSELF_MAIL_DOMAIN",

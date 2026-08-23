@@ -1,8 +1,8 @@
 {
   "ok": true,
   "prefix": "AGENTSELF_",
-  "vault": "AGENTSELF_VAULT_ROOT",
-  "order": "flag, then env, then vault config, then default",
+  "identity_dir": "AGENTSELF_IDENTITY_DIR",
+  "order": "flag, then env, then identity-directory config, then default",
   "failover": false,
   "channels": [
     {

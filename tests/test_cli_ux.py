@@ -29,7 +29,7 @@ def test_init_show_secrets_and_silent_aliases(tmp_path):
     assert "email: not configured" in shown.stdout
     assert "agentself email connect" in shown.stdout
     assert "agentself email set" not in shown.stdout
-    assert f"vault: {vault}" in shown.stdout
+    assert f"identity_dir: {vault}" in shown.stdout
     assert "AGE-SECRET-KEY" not in shown.stdout + shown.stderr
 
     created = run_cli(

@@ -40,7 +40,7 @@ def test_doctor_json_fresh_vault(tmp_path):
     data = json.loads(proc.stdout)
     assert data["ok"] is True
     assert data["version"] == __version__
-    assert data["vault"] == str(vault)
+    assert data["identity_dir"] == str(vault)
     assert data["initialized"] is False
     assert data["tools"]["age-keygen"] is True
     assert data["tools"]["sops"] is True
@@ -61,7 +61,7 @@ def test_doctor_after_init_includes_binds(tmp_path):
     data = json.loads(proc.stdout)
     assert data["ok"] is True
     assert data["initialized"] is True
-    assert data["vault"] == str(vault)
+    assert data["identity_dir"] == str(vault)
     assert data["wallet_backend"] == "base"
     assert data["email_backend"] == "agentmail"
     assert data["store_backend"] == "sops"

@@ -100,7 +100,7 @@ def test_top_help_teaches_discovery(tmp_path):
     assert "1 error" in text
     assert "2 refused" in text
     assert "3 missing" in text
-    assert "AGENTSELF_VAULT_ROOT" in text
+    assert "AGENTSELF_IDENTITY_DIR" in text
     assert "See the README" not in text
     assert "email: not configured" not in text.lower()
     assert "0x" not in text

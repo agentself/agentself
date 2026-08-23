@@ -55,9 +55,16 @@ def test_package_version_does_not_load_wallet_sdks():
     assert _probe("from agentself import __version__\nassert __version__\n") == []
 
 
-def test_gateway_export_does_not_load_wallet_sdks():
+def test_gateway_is_not_a_top_level_public_export():
     assert (
-        _probe("from agentself import Gateway\nassert Gateway.__name__ == 'Gateway'\n")
+        _probe(
+            "try:\n"
+            "    from agentself import Gateway\n"
+            "except ImportError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise AssertionError('Gateway must remain internal')\n"
+        )
         == []
     )
 

@@ -70,52 +70,52 @@ class AgentMailMailboxAccess(MailboxAccess):
         to: str,
         subject: str,
         body: str,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> None:
         require_safe_token(principal_id, "principal id")
         require_addr(to)
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_send", principal_id, to, "error")
             raise MailboxError("send failed")
-        send_token = require_secret(send_token)
-        inbox = self._inbox(principal_id, send_token, address)
+        credential = require_secret(credential)
+        inbox = self._inbox(principal_id, credential, address)
         url = _send_url(inbox["inbox_id"])
         payload = json.dumps({"to": to, "subject": subject, "text": body}).encode(
             "utf-8"
         )
-        self._post(url, send_token, payload, "send failed")
+        self._post(url, credential, payload, "send failed")
         self._log.record("mailbox_send", principal_id, to, "ok")
 
     def recv(
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(principal_id, "principal id")
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_recv", principal_id, None, "error")
             raise MailboxError("recv failed")
-        send_token = require_secret(send_token)
+        credential = require_secret(credential)
         try:
             with exclusive(self._root):
-                return self._recv_locked(principal_id, send_token, address, message_id)
+                return self._recv_locked(principal_id, credential, address, message_id)
         except VaultBusy as exc:
             raise MailboxError("rpc failed") from exc
 
     def _recv_locked(
         self,
         principal_id: str,
-        send_token: str,
+        credential: str,
         address: str | None,
         message_id: str | None,
     ) -> builtins.list[dict[str, str]]:
-        inbox = self._inbox(principal_id, send_token, address)
+        inbox = self._inbox(principal_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
-        listed = self._list_messages(inbox_id, send_token, "recv failed")
+        listed = self._list_messages(inbox_id, credential, "recv failed")
         seen = self._seen_dir(principal_id)
         ensure_private_dir(seen)
         wanted = (message_id or "").strip()
@@ -132,7 +132,7 @@ class AgentMailMailboxAccess(MailboxAccess):
                 if mark.is_file():
                     continue
             parsed = _meta(item)
-            fetched = self._get_message(_message_url(inbox_id, mid), send_token)
+            fetched = self._get_message(_message_url(inbox_id, mid), credential)
             if fetched is None:
                 parsed["body"] = str(item.get("preview") or "")
                 parsed["reason"] = "mailbox_error"
@@ -150,17 +150,17 @@ class AgentMailMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(principal_id, "principal id")
-        if not send_token:
+        if not credential:
             self._log.record("mailbox_list", principal_id, None, "error")
             raise MailboxError("list failed")
-        send_token = require_secret(send_token)
-        inbox = self._inbox(principal_id, send_token, address)
+        credential = require_secret(credential)
+        inbox = self._inbox(principal_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
-        listed = self._list_messages(inbox_id, send_token, "list failed")
+        listed = self._list_messages(inbox_id, credential, "list failed")
         items = [_meta(item) for item in listed]
         self._write_inbox_id(principal_id, inbox_id)
         self._log.record("mailbox_list", principal_id, None, "ok")
@@ -170,15 +170,15 @@ class AgentMailMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
         wanted = (address or "").strip()
-        if not send_token:
+        if not credential:
             return mailbox_view()
-        send_token = require_secret(send_token)
-        inbox = self._inbox(principal_id, send_token, wanted or None)
+        credential = require_secret(credential)
+        inbox = self._inbox(principal_id, credential, wanted or None)
         email = str(inbox.get("email") or "").strip()
         if not email:
             raise MailboxError("no inbox")
@@ -188,14 +188,14 @@ class AgentMailMailboxAccess(MailboxAccess):
         self,
         principal_id: str,
         *,
-        send_token: str | None = None,
+        credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
         require_safe_token(principal_id, "principal id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
-        token = send_token or extra.get("credential") or ""
+        token = credential or extra.get("credential") or ""
         if not token:
             self._log.record("mailbox_connect", principal_id, None, "error")
             return setup_needed(
@@ -207,8 +207,8 @@ class AgentMailMailboxAccess(MailboxAccess):
                 ),
                 human_action_required=True,
             )
-        send_token = require_secret(token)
-        live = _live_inboxes(self._listed_inboxes(send_token))
+        credential = require_secret(token)
+        live = _live_inboxes(self._listed_inboxes(credential))
         if wanted:
             target = wanted.lower()
             inbox = next(
@@ -239,7 +239,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         elif len(live) == 1:
             inbox = live[0]
         else:
-            inbox = self._create_inbox(principal_id, send_token)
+            inbox = self._create_inbox(principal_id, credential)
         email = str(inbox.get("email") or "").strip()
         inbox_id = inbox.get("inbox_id")
         if not email or not inbox_id:
