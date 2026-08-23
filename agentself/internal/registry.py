@@ -89,7 +89,33 @@ class FileIdentityAccess:
         except IdentityBusy as exc:
             raise RegistryError("identity directory busy") from exc
 
-    def _load(self) -> dict[str, dict[str, str]]:
+    def add_wallet_material_name(self, identity_id: str, name: str) -> Identity:
+        """Record provider-declared wallet material without binding a wallet."""
+
+        require_safe_token(identity_id, "identity id")
+        try:
+            require_safe_token(name, "wallet material name")
+        except ValueError:
+            raise RegistryError("invalid wallet material name") from None
+        try:
+            with exclusive(self._root):
+                records = self._load()
+                raw = records.get(identity_id)
+                if raw is None:
+                    raise RegistryError("identity not found")
+                identity = _identity(raw, self._allowed)
+                if name in identity.wallet_material_names:
+                    return identity
+                raw["wallet_material_names"] = [
+                    *identity.wallet_material_names,
+                    name,
+                ]
+                self._save(records)
+                return _identity(raw, self._allowed)
+        except IdentityBusy as exc:
+            raise RegistryError("identity directory busy") from exc
+
+    def _load(self) -> dict[str, dict[str, object]]:
         if not self._registry.exists():
             return {}
         try:
@@ -104,7 +130,7 @@ class FileIdentityAccess:
         identities = data.get("identities", {})
         if not isinstance(identities, dict):
             raise RegistryError("cannot read registry.json")
-        out: dict[str, dict[str, str]] = {}
+        out: dict[str, dict[str, object]] = {}
         for pid, raw in identities.items():
             if not isinstance(pid, str):
                 raise RegistryError("cannot read registry.json")
@@ -116,9 +142,11 @@ class FileIdentityAccess:
                 "recipient": identity.recipient,
                 "store_binding": identity.store_binding,
             }
+            if identity.wallet_material_names:
+                out[pid]["wallet_material_names"] = list(identity.wallet_material_names)
         return out
 
-    def _save(self, records: dict[str, dict[str, str]]) -> None:
+    def _save(self, records: dict[str, dict[str, object]]) -> None:
         ensure_private_dir(self._root)
         payload = (
             json.dumps(
@@ -137,6 +165,8 @@ def _identity(raw: object, allowed: frozenset[str]) -> Identity:
     pid = raw.get("id")
     recipient = raw.get("recipient")
     store_binding = raw.get("store_binding")
+    raw_names = raw.get("wallet_material_names", [])
+    legacy_name = raw.get("wallet_material_name")
     if (
         not isinstance(pid, str)
         or not isinstance(recipient, str)
@@ -151,10 +181,28 @@ def _identity(raw: object, allowed: frozenset[str]) -> Identity:
         raise RegistryError("cannot read registry.json")
     if store_binding not in allowed:
         raise RegistryError("cannot read registry.json")
+    if not isinstance(raw_names, list) or any(
+        not isinstance(name, str) for name in raw_names
+    ):
+        raise RegistryError("cannot read registry.json")
+    names = list(raw_names)
+    if legacy_name is not None:
+        if not isinstance(legacy_name, str):
+            raise RegistryError("cannot read registry.json")
+        names.insert(0, legacy_name)
+    validated_names: list[str] = []
+    for name in names:
+        try:
+            require_safe_token(name, "wallet material name")
+        except ValueError:
+            raise RegistryError("cannot read registry.json") from None
+        if name not in validated_names:
+            validated_names.append(name)
     return Identity(
         id=pid,
         recipient=recipient,
         store_binding=store_binding,
+        wallet_material_names=tuple(validated_names),
     )
 
 

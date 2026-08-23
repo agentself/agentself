@@ -69,6 +69,10 @@ class InstrumentedIdentityAccess:
         self.calls.append(("init", identity_id, store_binding))
         return self.inner.init(identity_id, recipient, store_binding)
 
+    def add_wallet_material_name(self, identity_id: str, name: str) -> Identity:
+        self.calls.append(("add_wallet_material_name", identity_id, name))
+        return self.inner.add_wallet_material_name(identity_id, name)
+
 
 class InstrumentedStoreAccess:
     def __init__(self, inner: StoreAccess) -> None:

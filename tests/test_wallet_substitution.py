@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from agentself.backends.wallet.contract import WalletMaterial
 from agentself.cli.app import main
 from agentself.internal.custody.errors import CannotSend
 
@@ -81,6 +82,33 @@ def test_wallet_material_diagnose_uses_declared_name(vault, monkeypatch):
     }
     app.client.wallet_address()
     assert app.client.wallet_material_status() == {"ready": True, "missing": None}
+
+
+def test_manager_retains_protection_for_multiple_wallet_material_names(
+    vault, monkeypatch
+):
+    class AlternateWalletAccess(SyntheticWalletAccess):
+        def required_material(self):
+            return WalletMaterial(name="other.seed")
+
+        def create_material(self) -> str:
+            return "alternate-seed"
+
+    app = build_app(vault, wallet_backend="synthetic")
+    init_identity(app, monkeypatch)
+    app.client.wallet_address()
+    monkeypatch.setattr(
+        app.wallets.inner,
+        "for_binding",
+        lambda binding: AlternateWalletAccess(),
+    )
+    app.client.wallet_address()
+
+    assert app.client.protected_secret_names() == [
+        "note.seed",
+        "other.seed",
+        "wallet.key",
+    ]
 
 
 def test_unsupported_asset_is_typed_without_chain_strings(vault, monkeypatch):

@@ -16,6 +16,7 @@ class Identity:
     id: str
     recipient: str
     store_binding: str
+    wallet_material_names: tuple[str, ...] = ()
 
     def public_view(self) -> dict[str, str]:
         return {"id": self.id, "recipient": self.recipient}

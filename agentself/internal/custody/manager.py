@@ -98,6 +98,8 @@ class IdentityAccess(Protocol):
         self, identity_id: str, recipient: str, store_binding: str
     ) -> Identity: ...
 
+    def add_wallet_material_name(self, identity_id: str, name: str) -> Identity: ...
+
 
 class StoreAccessFactory(Protocol):
     def for_binding(self, binding: str) -> StoreAccess: ...
@@ -549,6 +551,9 @@ class CustodyManager:
         if need is None:
             self._log.record("wallet_material", identity.id, None, "ok")
             return {"ready": True, "missing": None}
+        identity = self._remember_wallet_material(
+            identity, need.name, "wallet_material"
+        )
         held = self._optional_secret_value(identity, need.name, "wallet_material")
         if held:
             self._log.record("wallet_material", identity.id, None, "ok")
@@ -816,6 +821,7 @@ class CustodyManager:
         need = wallet.required_material()
         if need is None:
             return wallet
+        identity = self._remember_wallet_material(identity, need.name, operation)
         value = self._optional_secret_value(identity, need.name, operation)
         if not value:
             try:
@@ -841,16 +847,31 @@ class CustodyManager:
         self, identity: Identity, operation: str
     ) -> frozenset[str]:
         names = set(PROTECTED_SECRET_NAMES)
-        wallet = self._wallet_for(identity, operation)
-        need = wallet.required_material()
-        if need is not None:
+        for name in identity.wallet_material_names:
             try:
-                require_safe_token(need.name, "wallet material name")
+                require_safe_token(name, "wallet material name")
             except ValueError:
-                self._log.record(operation, identity.id, need.name, "refused")
+                self._log.record(operation, identity.id, name, "refused")
                 raise Refused("refused") from None
-            names.add(need.name)
+            names.add(name)
         return frozenset(names)
+
+    def _remember_wallet_material(
+        self, identity: Identity, name: str, operation: str
+    ) -> Identity:
+        try:
+            require_safe_token(name, "wallet material name")
+        except ValueError:
+            self._log.record(operation, identity.id, name, "refused")
+            raise Refused("refused") from None
+        if name in PROTECTED_SECRET_NAMES:
+            return identity
+        if name in identity.wallet_material_names:
+            return identity
+        try:
+            return self._identities.add_wallet_material_name(identity.id, name)
+        except RegistryError as exc:
+            self._fail_store(operation, identity.id, "registry.json", exc)
 
     def _optional_secret_value(
         self, identity: Identity, name: str, operation: str
