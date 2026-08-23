@@ -146,6 +146,7 @@
   "mail_item": {
     "allowed": [
       "id",
+      "ref",
       "from",
       "to",
       "subject",

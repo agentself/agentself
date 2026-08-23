@@ -21,3 +21,7 @@ undocumented filenames or fields are not compatibility promises.
 Within a CLI schema version, JSON consumers should ignore unknown object keys.
 For example, mail header objects may gain additive metadata such as local task
 state while retaining provider read state in `status`.
+
+Mail items retain the provider `id`; compact identity-local `ref` values are an
+additive convenience. Their private mapping is copied by backup/restore, while
+its on-disk filename layout is not a compatibility promise.
