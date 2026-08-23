@@ -22,6 +22,11 @@ def test_workflow_actions_use_immutable_refs() -> None:
     assert all(re.search(r"@[0-9a-f]{40}$", ref) for ref in refs)
 
 
+def test_publish_does_not_skip_existing_testpypi_artifacts() -> None:
+    text = WORKFLOWS[1].read_text(encoding="utf-8")
+    assert "skip-existing" not in text
+
+
 def test_ci_host_tool_downloads_have_pinned_digests() -> None:
     linux = (PROJECT_ROOT / ".github" / "scripts" / "linux-host-tools.sh").read_text(
         encoding="utf-8"

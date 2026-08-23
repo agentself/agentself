@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- TestPyPI publish no longer uses `skip-existing`, so a tag rebuild cannot keep an old TestPyPI artifact while uploading a new wheel to PyPI.
 
 ## 0.1.0a3 - 2026-08-23
 
