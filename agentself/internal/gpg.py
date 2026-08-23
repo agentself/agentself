@@ -109,8 +109,11 @@ def _create_link(link: Path, target: Path) -> None:
 
 
 def _owned_by_us(path: Path) -> bool:
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        return False
     try:
-        return os.stat(path, follow_symlinks=False).st_uid == os.getuid()
+        return os.stat(path, follow_symlinks=False).st_uid == getuid()
     except OSError:
         return False
 
