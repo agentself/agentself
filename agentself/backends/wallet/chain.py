@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from eth_account import Account
@@ -191,7 +191,7 @@ class ChainWalletAccess(WalletAccess):
         pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, dest, units, addr, self.chain_id):
             tx_hash = str(pending.get("hash") or "")
-            if self._tx_known(tx_hash):
+            if self._tx_confirmed(pending):
                 self._remember_hash(tx_hash)
                 self._clear_pending(identity_id)
                 self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
@@ -243,11 +243,11 @@ class ChainWalletAccess(WalletAccess):
             "raw": raw_hex,
         }
         self._save_pending(identity_id, record)
-        self._broadcast(identity_id, record, signed)
+        self._broadcast(identity_id, record)
 
     def _finish_pending(self, identity_id: str, pending: dict[str, object]) -> None:
         tx_hash = str(pending.get("hash") or "")
-        if self._tx_known(tx_hash):
+        if self._tx_confirmed(pending):
             self._remember_hash(tx_hash)
             self._clear_pending(identity_id)
             self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
@@ -255,45 +255,60 @@ class ChainWalletAccess(WalletAccess):
         raw = str(pending.get("raw") or "")
         if not raw.startswith("0x"):
             raise WalletError("rpc failed")
-        self._broadcast(identity_id, pending, None)
+        self._broadcast(identity_id, pending)
 
     def _broadcast(
         self,
         identity_id: str,
         pending: dict[str, object],
-        signed: object | None,
     ) -> None:
         raw = str(pending.get("raw") or "")
         tx_hash = str(pending.get("hash") or "")
         try:
             result = self._rpc_request("eth_sendRawTransaction", [raw])
         except WalletError:
-            if self._tx_known(tx_hash):
+            if self._tx_confirmed(pending):
                 self._remember_hash(tx_hash)
                 self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
                 return
             raise
+        if not _same_hash(result, tx_hash):
+            raise WalletError("rpc failed")
         self._remember_hash(tx_hash)
-        if signed is not None:
-            self._log.record(
-                "wallet_send", identity_id, None, _send_result(result, signed)
-            )
-        else:
-            self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
-        if self._tx_known(tx_hash):
+        self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
+        if self._tx_confirmed(pending):
             self._clear_pending(identity_id)
 
-    def _tx_known(self, tx_hash: str) -> bool:
+    def _tx_confirmed(self, pending: dict[str, object]) -> bool:
+        tx_hash = str(pending.get("hash") or "")
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
             return False
         try:
             found = self._rpc_request("eth_getTransactionByHash", [tx_hash])
+            receipt = self._rpc_request("eth_getTransactionReceipt", [tx_hash])
         except WalletError:
             return False
-        if not isinstance(found, dict):
+        if not isinstance(found, dict) or not isinstance(receipt, dict):
             return False
-        got = str(found.get("hash") or "")
-        return got.lower() == tx_hash.lower()
+        expected_input = (
+            "0x"
+            + TRANSFER_SELECTOR.hex()
+            + _pad_address(str(pending.get("to") or ""))
+            + format(_stored_int(pending.get("units")), "x").zfill(64)
+        )
+        return all(
+            (
+                _same_hash(found.get("hash"), tx_hash),
+                _same_hash(receipt.get("transactionHash"), tx_hash),
+                str(found.get("from") or "").lower()
+                == str(pending.get("from") or "").lower(),
+                str(found.get("to") or "").lower() == self.usdc.lower(),
+                _rpc_int(found.get("nonce")) == _stored_int(pending.get("nonce")),
+                _rpc_int(found.get("chainId")) == _stored_int(pending.get("chain_id")),
+                str(found.get("input") or "").lower() == expected_input.lower(),
+                _rpc_int(receipt.get("status")) == 1,
+            )
+        )
 
     def _pending_path(self, identity_id: str) -> Path | None:
         if self._root is None:
@@ -440,10 +455,13 @@ def _usdc_units(amount: str) -> int:
         value = Decimal(str(amount).strip())
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
         raise CannotSend("invalid amount", reason="invalid_amount") from exc
-    if not value.is_finite() or value < 0:
+    if not value.is_finite() or value <= 0:
         raise CannotSend("invalid amount", reason="invalid_amount")
     scaled = value * (Decimal(10) ** USDC_DECIMALS)
-    return int(scaled.to_integral_value(rounding=ROUND_DOWN))
+    integral = scaled.to_integral_value()
+    if scaled != integral:
+        raise CannotSend("invalid amount", reason="invalid_amount")
+    return int(integral)
 
 
 def _account_from_key(key_hex: str):
@@ -462,14 +480,23 @@ def _ok_hash(value: object) -> str:
     return "ok"
 
 
-def _send_result(result: object, signed: object) -> str:
-    hashed = _ok_hash(result)
-    if hashed != "ok":
-        return hashed
-    digest = _signed_hash(signed)
-    if digest:
-        return _ok_hash(digest)
-    return "ok"
+def _same_hash(value: object, expected: str) -> bool:
+    text = str(value or "").strip()
+    return _ok_hash(text) != "ok" and text.lower() == expected.lower()
+
+
+def _rpc_int(value: object) -> int:
+    try:
+        return int(str(value), 16)
+    except (TypeError, ValueError):
+        return -1
+
+
+def _stored_int(value: object) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return -1
 
 
 def _signed_hash(signed: object) -> str:

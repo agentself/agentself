@@ -221,6 +221,22 @@ def test_http_jsonrpc_urlerror_then_next():
     assert opener.urls == [MAINNET, PUBLICNODE]
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"jsonrpc":"1.0","id":1,"result":"0x1"}',
+        b'{"jsonrpc":"2.0","id":2,"result":"0x1"}',
+        b'{"jsonrpc":"2.0","id":1,"result":1}',
+        b'{"jsonrpc":"2.0","id":1,"error":null,"result":"0x1"}',
+    ],
+)
+def test_http_jsonrpc_rejects_invalid_envelope_and_result_types(body):
+    with pytest.raises(WalletError, match="rpc failed"):
+        HttpJsonRpc(MAINNET, opener=lambda *_args, **_kwargs: io.BytesIO(body)).request(
+            "eth_chainId", []
+        )
+
+
 def test_http_jsonrpc_empty_is_no_rpc_configured():
     with pytest.raises(WalletError, match="no RPC configured"):
         HttpJsonRpc("").request("eth_chainId", [])

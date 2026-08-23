@@ -42,12 +42,12 @@ class HttpJsonRpc:
         last: BaseException | None = None
         for url in urls:
             try:
-                return self._post(url, payload)
+                return self._post(url, payload, method)
             except _TryNext as exc:
                 last = exc
         raise WalletError("rpc failed") from last
 
-    def _post(self, url: str, payload: bytes) -> object:
+    def _post(self, url: str, payload: bytes, method: str) -> object:
         req = urllib.request.Request(
             url,
             data=payload,
@@ -73,9 +73,50 @@ class HttpJsonRpc:
             data = json.loads(text)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise _TryNext() from exc
-        if not isinstance(data, dict) or data.get("error"):
+        if (
+            not isinstance(data, dict)
+            or data.get("jsonrpc") != "2.0"
+            or data.get("id") != 1
+            or "error" in data
+            or "result" not in data
+            or not _valid_result(method, data["result"])
+        ):
             raise _TryNext()
-        return data.get("result")
+        return data["result"]
+
+
+def _valid_result(method: str, result: object) -> bool:
+    if method in {
+        "eth_getBalance",
+        "eth_getTransactionCount",
+        "eth_gasPrice",
+        "eth_estimateGas",
+        "eth_chainId",
+        "eth_blockNumber",
+    }:
+        return _hex_value(result, even=False)
+    if method == "eth_call":
+        return _hex_value(result, even=True)
+    if method == "eth_sendRawTransaction":
+        return _hash(result)
+    if method in {"eth_getTransactionByHash", "eth_getTransactionReceipt"}:
+        return result is None or isinstance(result, dict)
+    return False
+
+
+def _hex_value(value: object, *, even: bool) -> bool:
+    if not isinstance(value, str) or not value.startswith("0x"):
+        return False
+    body = value[2:]
+    return (
+        bool(body)
+        and (not even or len(body) % 2 == 0)
+        and all(ch in "0123456789abcdefABCDEF" for ch in body)
+    )
+
+
+def _hash(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 66 and _hex_value(value, even=True)
 
 
 def _body_from_opened(opened: object) -> object:

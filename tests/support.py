@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from eth_utils import keccak
 
 from agentself.backends.email.contract import MailboxAccess
 from agentself.backends.email.factory import MailboxAccessFactory
@@ -324,6 +325,8 @@ class MockRpc:
         self.calls: list[tuple] = []
         self.broadcast = False
         self.sent_raw: list[str] = []
+        self.tx: dict[str, object] = {}
+        self.tx_hash = ""
 
     def request(self, method: str, params: list[object]) -> object:
         if method == "eth_sendRawTransaction":
@@ -331,11 +334,17 @@ class MockRpc:
             self.broadcast = True
             raw = str(params[0] if params else "")
             self.sent_raw.append(raw)
-            return "0x" + "ab" * 32
+            self.tx_hash = "0x" + keccak(bytes.fromhex(raw[2:])).hex()
+            return self.tx_hash
         if method == "eth_getTransactionByHash":
             self.calls.append((method, params))
             if self.broadcast:
-                return {"hash": params[0] if params else "0x"}
+                return {"hash": self.tx_hash, **self.tx}
+            return None
+        if method == "eth_getTransactionReceipt":
+            self.calls.append((method, params))
+            if self.broadcast:
+                return {"transactionHash": self.tx_hash, "status": "0x1"}
             return None
         self.calls.append((method, params))
         if method == "eth_getBalance":
@@ -347,6 +356,14 @@ class MockRpc:
         if method == "eth_gasPrice":
             return "0x3b9aca00"
         if method == "eth_estimateGas":
+            estimate = params[0] if params and isinstance(params[0], dict) else {}
+            self.tx = {
+                "from": estimate.get("from", ""),
+                "to": estimate.get("to", ""),
+                "input": estimate.get("data", ""),
+                "nonce": hex(len(self.sent_raw)),
+                "chainId": "0x2105",
+            }
             return "0x186a0"
         if method == "eth_chainId":
             return "0x2105"

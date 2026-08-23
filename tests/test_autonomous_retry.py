@@ -17,7 +17,7 @@ import pytest
 from agentself.backends.store.contract import StoreResourceError
 from agentself.backends.store.sops import SopsStoreAccess
 from agentself.backends.wallet.contract import WalletError
-from agentself.internal.custody.errors import ChannelFailure, Refused
+from agentself.internal.custody.errors import CannotSend, ChannelFailure, Refused
 from agentself.internal.files import (
     IdentityBusy,
     atomic_write,
@@ -69,8 +69,27 @@ class FailAfterAccept(MockRpc):
             self.broadcast = True
             raw = str(params[0] if params else "")
             self.sent_raw.append(raw)
+            from eth_utils import keccak
+
+            self.tx_hash = "0x" + keccak(bytes.fromhex(raw[2:])).hex()
             raise WalletError("rpc failed")
         return super().request(method, params)
+
+
+class WrongBroadcastHash(MockRpc):
+    def request(self, method: str, params: list[object]) -> object:
+        result = super().request(method, params)
+        if method == "eth_sendRawTransaction":
+            return "0x" + "ff" * 32
+        return result
+
+
+class ForgedLookupAfterAccept(FailAfterAccept):
+    def request(self, method: str, params: list[object]) -> object:
+        result = super().request(method, params)
+        if method == "eth_getTransactionByHash" and isinstance(result, dict):
+            return {**result, "to": _TO}
+        return result
 
 
 def test_atomic_write_crash_keeps_previous_bytes(tmp_path, monkeypatch):
@@ -407,6 +426,39 @@ def test_wallet_send_rpc_failure_before_broadcast_has_no_pending_ack(
     assert caught.value.reason == "rpc"
     pending = identity_home(vault, "P") / "wallet" / "pending-send.json"
     assert not pending.is_file()
+
+
+@pytest.mark.parametrize("amount", ["0", "0.0000001", "1.0000001", "-1"])
+def test_wallet_send_rejects_non_positive_or_subunit_amounts(
+    vault, monkeypatch, amount
+):
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=5_000_000)
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    with pytest.raises(CannotSend):
+        app.client.wallet_send(_TO, amount)
+    assert not rpc.broadcast
+
+
+def test_wallet_send_requires_rpc_to_return_local_hash(vault, monkeypatch):
+    rpc = WrongBroadcastHash(eth_wei=10**18, usdc_raw=5_000_000)
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    with pytest.raises(ChannelFailure):
+        app.client.wallet_send(_TO, "1")
+    pending = identity_home(vault, "P") / "wallet" / "pending-send.json"
+    assert pending.is_file()
+
+
+def test_wallet_send_does_not_trust_hash_only_lookup(vault, monkeypatch):
+    rpc = ForgedLookupAfterAccept(eth_wei=10**18, usdc_raw=5_000_000)
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    with pytest.raises(ChannelFailure):
+        app.client.wallet_send(_TO, "1")
+    app.client.wallet_send(_TO, "1")
+    sends = [call for call in rpc.calls if call[0] == "eth_sendRawTransaction"]
+    assert len(sends) == 2
 
 
 def test_imap_receive_marks_after_fetch_and_survives_mark_failure(vault):

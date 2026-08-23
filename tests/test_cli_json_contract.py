@@ -392,7 +392,7 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
         monkeypatch,
         capsys,
         env,
-        ["wallet", "send", _TO, "1"],
+        ["wallet", "send", _TO, "1.000000"],
         "wallet_send",
     )
     assert sent["ok"] is True

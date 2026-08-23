@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +14,7 @@ from agentself.backends.email.contract import MailboxError, require_secret
 from agentself.backends.store.contract import StoreResourceError
 from agentself.backends.store.run import run_cmd
 from agentself.backends.store.sops import SopsStoreAccess
-from agentself.backends.wallet.chain import _hex_int, _ok_hash, _send_result
+from agentself.backends.wallet.chain import _hex_int, _ok_hash
 from agentself.backends.wallet.contract import (
     CannotSend as WalletCannotSend,
 )
@@ -577,7 +576,7 @@ def test_tx_known_rejects_truthy_non_receipt():
             return "yes"
 
     wallet = BaseWalletAccess(MemoryLog(), rpc=YesRpc())
-    assert wallet._tx_known("0x" + "ab" * 32) is False
+    assert wallet._tx_confirmed({"hash": "0x" + "ab" * 32}) is False
 
 
 def test_wallet_send_log_hash_is_capped():
@@ -586,8 +585,6 @@ def test_wallet_send_log_hash_is_capped():
     assert _ok_hash(huge) == "ok"
     digest = "0x" + "cd" * 32
     assert _ok_hash(digest) == f"ok {digest}"
-    signed = SimpleNamespace(hash=bytes.fromhex("ee" * 32))
-    assert _send_result(huge, signed) == "ok 0x" + "ee" * 32
 
 
 def test_store_failure_message_does_not_include_value(vault, monkeypatch):
