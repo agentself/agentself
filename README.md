@@ -53,6 +53,14 @@ agentself wallet --help
 agentself email --help
 ```
 
+Secret file input preserves exact UTF-8 bytes, including a BOM or trailing
+newline. Retrieval is safe by default: use `secret get NAME --file PATH` or
+`--meta`; plaintext stdout requires `--print`.
+
+`email receive` prints headers and `new`/`seen` status without bodies. Fetch a
+specific body into a private file with `email receive ID --file PATH`. Bodies
+can contain API keys and login links; `--print` is an explicit unsafe choice.
+
 ## Backends & configuration
 
 Backends keep the public commands stable while allowing the implementation to
@@ -125,7 +133,8 @@ agentself install --skills -g
 ## Security
 
 - Secret values are encrypted at rest by the configured store.
-- Secret listings return names, not values; `wallet.key` requires `--unsafe` to export.
+- Secret listings return names, not values; plaintext needs `--print`, and `wallet.key` also requires `--unsafe`.
+- Email bodies stay off stdout unless `email receive --print` is explicit; prefer `ID --file PATH`.
 - Logs and structured errors redact secret values.
 - Missing credentials and host tools fail instead of silently switching backends.
 - Wallet backends are live; `wallet send` can move real assets.

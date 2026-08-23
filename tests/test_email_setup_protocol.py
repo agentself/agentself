@@ -50,8 +50,16 @@ class ScriptedMailbox(MailboxAccess):
         self._require_runtime(credential, address)
         self.calls.append(("send", credential, address))
 
-    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
-        del identity_id, message_id
+    def receive(
+        self,
+        identity_id,
+        *,
+        credential=None,
+        address=None,
+        message_id=None,
+        include_body=True,
+    ):
+        del identity_id, message_id, include_body
         self._require_runtime(credential, address)
         self.calls.append(("receive", credential, address))
         return [{"id": "message-1", "subject": "hello"}]
@@ -792,7 +800,9 @@ def test_persist_as_refuses_reserved_protected_and_invalid(
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
-    got = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
+    got = run_cli(
+        ["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe", "--print"], env
+    )
     assert got.returncode == 0, got.stdout + got.stderr
     wallet = json.loads(got.stdout)["value"]
     option = credential_option(persist=True, persist_as=persist_as)
@@ -823,7 +833,9 @@ def test_persist_as_refuses_reserved_protected_and_invalid(
     assert code == 2
     assert refused["ok"] is False
     assert refused["error"] == "refused"
-    after_proc = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
+    after_proc = run_cli(
+        ["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe", "--print"], env
+    )
     assert after_proc.returncode == 0, after_proc.stdout + after_proc.stderr
     after = json.loads(after_proc.stdout)["value"]
     assert after == wallet

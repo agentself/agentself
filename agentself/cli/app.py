@@ -1221,19 +1221,28 @@ def _secret(client, args) -> int:
 
 def _secret_get(client, args) -> int:
     name = args.name
+    path = (args.to_file or "").strip()
     protected_names = frozenset(client.protected_secret_names())
-    if name in protected_names and not args.unsafe:
+    if name in protected_names and not args.unsafe and not args.meta:
         return _fail(
             args,
             2,
             f"refused: {name} is protected\n",
             "refused",
             f"{name} is protected",
-            nxt="agentself secret get NAME --unsafe",
+            nxt="agentself secret get NAME --unsafe --file PATH",
+        )
+    if not args.meta and not path and not args.print_value:
+        return _fail(
+            args,
+            2,
+            "refused: choose --file, --meta, or --print\n",
+            "refused",
+            "choose --file, --meta, or --print",
+            nxt="agentself secret get NAME --file PATH",
         )
     value = client.get(name)
     meta = value_meta(value)
-    path = (args.to_file or "").strip()
     if args.meta:
         payload = {"name": name, **meta, "protected": name in protected_names}
         if _as_json(args):
@@ -1274,17 +1283,54 @@ def _email(client, args) -> int:
             return _emit_ok(args, {"to": args.to, "subject": args.subject})
         return 0
     if args.email_command in ("receive", "list"):
+        if (
+            args.email_command == "receive"
+            and (args.body_file or "").strip()
+            and not (args.message_id or "").strip()
+        ):
+            return _fail(
+                args,
+                2,
+                "refused: --file requires a message ID\n",
+                "refused",
+                "--file requires a message ID",
+                nxt="agentself email receive ID --file PATH",
+            )
         messages = (
-            client.email_receive(message_id=args.message_id)
+            client.email_receive(
+                message_id=args.message_id,
+                include_body=bool(args.body_file or args.print_body),
+            )
             if args.email_command == "receive"
             else client.email_list()
         )
+        if args.email_command == "receive":
+            file_error = _prepare_received_messages(messages, args)
+            if file_error is not None:
+                return file_error
         if _as_json(args):
             return _emit_ok(args, {"messages": messages})
         for msg in messages:
             sys.stdout.write(json.dumps(msg) + "\n")
         return 0
     return 1
+
+
+def _prepare_received_messages(messages: list[dict[str, str]], args) -> int | None:
+    path = (args.body_file or "").strip()
+    if path and messages:
+        body = messages[0].get("body", "")
+        try:
+            store_value_file(path, body)
+        except OSError:
+            return _fail(args, 1, "error: file\n", "error", "file")
+        messages[0]["body_file"] = path
+        messages[0]["body_bytes"] = str(value_meta(body)["bytes"])
+        messages[0]["body_sha256"] = str(value_meta(body)["sha256"])
+    if not args.print_body:
+        for message in messages:
+            message.pop("body", None)
+    return None
 
 
 def _wallet(client, args) -> int:
@@ -1591,7 +1637,7 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
         return None, "value and --file"
     if path:
         try:
-            return load_value_file(path), None
+            return load_value_file(path, strip_newline=False, strip_bom=False), None
         except (OSError, UnicodeDecodeError):
             return None, "file"
     if argv_value is not None:

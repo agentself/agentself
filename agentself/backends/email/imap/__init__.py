@@ -139,6 +139,7 @@ class ImapMailboxAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_recv")
@@ -148,7 +149,7 @@ class ImapMailboxAccess(MailboxAccess):
             with exclusive(self._root):
                 with self._imap_session(inbox, credential) as box:
                     try:
-                        messages = self._receive_box(box, message_id)
+                        messages = self._receive_box(box, message_id, include_body)
                     except _IMAP_FAIL as exc:
                         raise MailboxError("rpc failed") from exc
         except IdentityBusy as exc:
@@ -169,6 +170,7 @@ class ImapMailboxAccess(MailboxAccess):
         items: list[dict[str, str]] = []
         try:
             with self._imap_session(inbox, credential) as box:
+                unseen = set(box.uids(unseen_only=True))
                 for uid in box.uids(unseen_only=False):
                     parsed = _take(box, uid, mark=False, headers_only=True)
                     if parsed is None:
@@ -179,6 +181,7 @@ class ImapMailboxAccess(MailboxAccess):
                             "from": parsed.get("from", ""),
                             "to": parsed.get("to", ""),
                             "subject": parsed.get("subject", ""),
+                            "status": "new" if uid in unseen else "seen",
                         }
                     )
         except _IMAP_FAIL as exc:
@@ -300,22 +303,25 @@ class ImapMailboxAccess(MailboxAccess):
             raise MailboxError("rpc failed") from exc
 
     def _receive_box(
-        self, box: ImapBox, message_id: str | None
+        self, box: ImapBox, message_id: str | None, include_body: bool
     ) -> builtins.list[dict[str, str]]:
         wanted = (message_id or "").strip()
         if wanted:
-            parsed = _take(box, wanted, mark=True)
+            parsed = _take(box, wanted, mark=True, headers_only=not include_body)
+            if parsed is not None:
+                parsed["status"] = "seen"
             return [] if parsed is None else [parsed]
         messages: list[dict[str, str]] = []
         for uid in box.uids(unseen_only=True)[:_UNSEEN_RECV_CAP]:
-            parsed = _take(box, uid, mark=False)
+            parsed = _take(box, uid, mark=False, headers_only=not include_body)
             if parsed is not None:
                 messages.append(parsed)
         for parsed in messages:
             try:
                 box.mark_seen(parsed["id"])
+                parsed["status"] = "seen"
             except _IMAP_FAIL:
-                pass
+                parsed["status"] = "new"
         return messages
 
 

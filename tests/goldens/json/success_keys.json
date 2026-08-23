@@ -140,6 +140,17 @@
     "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind", "scheme"]
   },
   "mail_item": {
-    "allowed": ["id", "from", "to", "subject", "body", "reason"]
+    "allowed": [
+      "id",
+      "from",
+      "to",
+      "subject",
+      "body",
+      "reason",
+      "status",
+      "body_file",
+      "body_bytes",
+      "body_sha256"
+    ]
   }
 }

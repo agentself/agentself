@@ -145,13 +145,22 @@ class InstrumentedMailboxAccess:
             address=address,
         )
 
-    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
+    def receive(
+        self,
+        identity_id,
+        *,
+        credential=None,
+        address=None,
+        message_id=None,
+        include_body=True,
+    ):
         self.calls.append(("receive", identity_id))
         return self.inner.receive(
             identity_id,
             credential=credential,
             address=address,
             message_id=message_id,
+            include_body=include_body,
         )
 
     def list(self, identity_id, *, credential=None, address=None):
