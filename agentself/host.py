@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from agentself.email_catalog import AGENTMAIL_OPTIONS, IMAP_OPTIONS
 from agentself.internal.setup import public_setup_option, setup_option
+from agentself.internal.store_tools import store_required_tools
 
 ENV_PREFIX = "AGENTSELF_"
 ENV_IDENTITY_DIR = "AGENTSELF_IDENTITY_DIR"
@@ -165,8 +166,12 @@ CHANNELS: dict[str, Channel] = {
                 live=False,
                 verbs=_STORE_VERBS,
                 custody="age-files",
-                tools=("sops",),
-                installable_tools=("sops",),
+                tools=tuple(tool.name for tool in store_required_tools("sops")),
+                installable_tools=tuple(
+                    tool.name
+                    for tool in store_required_tools("sops")
+                    if tool.installable
+                ),
             ),
             Bind(
                 "pass",
@@ -174,7 +179,7 @@ CHANNELS: dict[str, Channel] = {
                 live=False,
                 verbs=_STORE_VERBS,
                 custody="gpg-pass",
-                tools=("gpg", "pass"),
+                tools=tuple(tool.name for tool in store_required_tools("pass")),
             ),
         ),
         note="Recorded on the identity at init. Not an env override.",

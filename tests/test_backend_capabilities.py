@@ -10,6 +10,7 @@ from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.factory import WalletAccessFactory
 from agentself.host import CHANNELS
+from agentself.internal.log import MemoryLog
 
 from tests.support import cli_env, run_cli, value_file
 
@@ -30,6 +31,18 @@ def test_catalog_names_match_factories():
     assert set(CHANNELS["email"].names) <= mailbox
     assert set(CHANNELS["store"].names) == store
     assert tuple(CHANNELS) == ("wallet", "email", "store")
+
+
+def test_store_catalog_tools_match_runtime_requirements(tmp_path):
+    factory = StoreAccessFactory(tmp_path, MemoryLog())
+    for binding in CHANNELS["store"].names:
+        bind = next(item for item in CHANNELS["store"].binds if item.name == binding)
+        runtime = factory.for_binding(binding).required_tools()
+        assert tuple(tool.name for tool in runtime) == bind.tools
+        assert (
+            tuple(tool.name for tool in runtime if tool.installable)
+            == bind.installable_tools
+        )
 
 
 def test_diagnose_agentmail_token_canary_is_absent(tmp_path):

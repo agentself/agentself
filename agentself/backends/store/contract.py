@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+
+from agentself.internal.store_tools import HostTool
 
 
 class StoreError(Exception):
@@ -18,12 +19,6 @@ class SecretExists(StoreError):
 
 class StoreResourceError(StoreError):
     pass
-
-
-@dataclass(frozen=True)
-class HostTool:
-    name: str
-    installable: bool = False
 
 
 class StoreAccess(ABC):

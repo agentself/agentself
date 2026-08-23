@@ -30,6 +30,7 @@ from agentself.internal.gpg import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.store_tools import store_required_tools
 
 _SECRET = re.compile(r"AGE-SECRET-KEY-[A-Za-z0-9-]+")
 
@@ -42,7 +43,7 @@ class PassStoreAccess(StoreAccess):
         self._log = log
 
     def required_tools(self) -> tuple[HostTool, ...]:
-        return (HostTool("gpg"), HostTool("pass"))
+        return store_required_tools("pass")
 
     def prepare(self, identity_id: str) -> None:
         require_safe_token(identity_id, "identity id")

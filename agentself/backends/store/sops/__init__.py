@@ -23,6 +23,7 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.store_tools import store_required_tools
 
 
 class SopsStoreAccess(StoreAccess):
@@ -31,7 +32,7 @@ class SopsStoreAccess(StoreAccess):
         self._log = log
 
     def required_tools(self) -> tuple[HostTool, ...]:
-        return (HostTool("sops", installable=True),)
+        return store_required_tools("sops")
 
     def create(self, identity_id: str, name: str, value: str) -> None:
         try:
