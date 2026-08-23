@@ -5,6 +5,7 @@ import getpass
 import json
 import os
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
+from agentself.internal.files import LOCK_NAME, IdentityBusy, exclusive
 from agentself.internal.format import format_version_error
 from agentself.internal.log import NullLog, StreamLog
 from agentself.internal.names import require_safe_token
@@ -827,7 +829,7 @@ def _init_identity_id(vault: Path, args) -> str:
     env_id = os.environ.get(ENV_IDENTITY_ID, "").strip()
     if env_id:
         return require_safe_token(env_id, "identity id")
-    asked = _ask_identity_name()
+    asked = "" if _as_json(args) else _ask_identity_name()
     if asked:
         return require_safe_token(asked, "identity id")
     return DEFAULT_IDENTITY
@@ -1196,6 +1198,16 @@ def _secret(client, args) -> int:
         value, err = _secret_from_args(args)
         if err is not None:
             return _secret_value_error(args, err)
+        protected_names = frozenset(client.protected_secret_names())
+        if args.name in protected_names and not getattr(args, "unsafe", False):
+            return _fail(
+                args,
+                2,
+                f"refused: {args.name} is protected\n",
+                "refused",
+                f"{args.name} is protected",
+                nxt="agentself secret update NAME --unsafe",
+            )
         client.update(args.name, value)
         if _as_json(args):
             return _emit_ok(args, {"name": args.name})
@@ -1397,7 +1409,11 @@ def _backup_restore(vault: Path, args) -> int:
     src = vault if args.command == "backup" else Path(args.path)
     dest = Path(args.path) if args.command == "backup" else vault
     try:
-        _copy_identity_dir(src, dest, force=args.force)
+        try:
+            with exclusive(vault):
+                _copy_identity_dir(src, dest, force=args.force)
+        except IdentityBusy as exc:
+            raise IdentityStateError("identity directory busy") from exc
     except IdentityStateError as exc:
         return _fail(
             args,
@@ -1417,6 +1433,77 @@ def _backup_restore(vault: Path, args) -> int:
     return 0
 
 
+def _ignore_identity_junk(directory: str, names: list[str]) -> set[str]:
+    del directory
+    return {name for name in names if name.endswith(".tmp") or name == LOCK_NAME}
+
+
+def _copy_identity_file(src: str, dest: str, *, follow_symlinks: bool = True) -> str:
+    del follow_symlinks
+    try:
+        mode = os.lstat(src).st_mode
+    except OSError:
+        return dest
+    if stat.S_ISLNK(mode):
+        if os.path.lexists(dest):
+            os.unlink(dest)
+        os.symlink(os.readlink(src), dest)
+        return dest
+    if not stat.S_ISREG(mode):
+        return dest
+    shutil.copy2(src, dest, follow_symlinks=False)
+    return dest
+
+
+def _install_staged(staging: Path, dest: Path) -> None:
+    if not dest.exists():
+        os.rename(staging, dest)
+        return
+    prev = dest.with_name(dest.name + ".agentself-prev")
+    if prev.exists():
+        shutil.rmtree(prev)
+    try:
+        os.rename(dest, prev)
+    except OSError:
+        _replace_tree_contents(staging, dest)
+        return
+    try:
+        os.rename(staging, dest)
+    except OSError:
+        os.rename(prev, dest)
+        raise
+    shutil.rmtree(prev, ignore_errors=True)
+
+
+def _replace_tree_contents(staging: Path, dest: Path) -> None:
+    keep = {LOCK_NAME}
+    prev = dest.with_name(dest.name + ".agentself-prev")
+    if prev.exists():
+        shutil.rmtree(prev)
+    prev.mkdir(mode=0o700)
+    done = False
+    try:
+        for child in list(dest.iterdir()):
+            if child.name in keep:
+                continue
+            os.rename(child, prev / child.name)
+        for child in list(staging.iterdir()):
+            if child.name in keep:
+                continue
+            os.rename(child, dest / child.name)
+        done = True
+    except Exception:
+        leftover = [path for path in dest.iterdir() if path.name not in keep]
+        if not leftover:
+            for child in list(prev.iterdir()):
+                os.rename(child, dest / child.name)
+        raise
+    finally:
+        if done:
+            shutil.rmtree(prev, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
     if not src.is_dir():
         raise IdentityStateError("identity directory is missing")
@@ -1429,21 +1516,42 @@ def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
         raise IdentityStateError("destination is the identity directory")
     if dest_r.is_relative_to(src_r):
         raise IdentityStateError("destination is inside the identity directory")
+    if src_r.is_relative_to(dest_r):
+        raise IdentityStateError("destination contains the identity directory")
+    if not (src / "config.json").is_file():
+        raise IdentityStateError("identity directory is missing")
     if dest.exists():
         if dest.is_file():
             raise IdentityStateError("destination exists")
         try:
-            nonempty = any(dest.iterdir())
+            meaningful = [path for path in dest.iterdir() if path.name != LOCK_NAME]
         except OSError as exc:
             raise IdentityStateError("cannot read destination") from exc
-        if nonempty:
-            if not force:
-                raise IdentityStateError("destination is not empty")
-            shutil.rmtree(dest)
-        else:
-            dest.rmdir()
+        if meaningful and not force:
+            raise IdentityStateError("destination is not empty")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest, copy_function=shutil.copy2)
+    staging = dest.with_name(dest.name + ".agentself-staging")
+    try:
+        staging_r = staging.resolve()
+    except OSError as exc:
+        raise IdentityStateError("cannot read path") from exc
+    if staging_r == src_r or staging_r.is_relative_to(src_r):
+        raise IdentityStateError("destination is inside the identity directory")
+    if staging.exists():
+        shutil.rmtree(staging)
+    try:
+        shutil.copytree(
+            src,
+            staging,
+            copy_function=_copy_identity_file,
+            ignore=_ignore_identity_junk,
+            symlinks=True,
+        )
+        _install_staged(staging, dest)
+    except Exception:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def _as_json(args) -> bool:

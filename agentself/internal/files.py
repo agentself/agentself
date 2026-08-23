@@ -118,11 +118,16 @@ def shred_unlink(path: Path | str) -> None:
         pass
 
 
-def atomic_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
+def atomic_write(
+    path: Path, data: bytes, *, mode: int = 0o600, private_dir: bool = True
+) -> None:
     """Replace path with data, or leave the previous bytes if this crashes."""
 
     dest = Path(path)
-    ensure_private_dir(dest.parent)
+    if private_dir:
+        ensure_private_dir(dest.parent)
+    else:
+        dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=dest.name + ".", suffix=".tmp", dir=dest.parent
     )

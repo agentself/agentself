@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- `backup`/`restore` copy to a staging directory first, take the identity lock, refuse a destination that contains the live identity, skip plaintext `*.tmp` leftovers and sockets, and require a `config.json` source so `--force` cannot wipe an identity on a failed or empty copy.
+- `secret get --file` writes `0o600` without chmod'ing the parent directory.
+- `secret update` of `wallet.key` (and other protected material) requires `--unsafe`.
+- `--json init` no longer prompts for an identity name on a TTY.
 
 ## 0.1.0a3 - 2026-08-23
 

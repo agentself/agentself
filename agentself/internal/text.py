@@ -41,4 +41,6 @@ def read_text_file(path: Path, *, strip_newline: bool = True) -> str:
 
 
 def write_text_file(path: Path, text: str) -> None:
-    Path(path).write_bytes(utf8_bytes(text))
+    from agentself.internal.files import atomic_write
+
+    atomic_write(Path(path), utf8_bytes(text), mode=0o600, private_dir=False)
