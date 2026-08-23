@@ -262,6 +262,33 @@ def _bundled_skill() -> Path:
     return Path(__file__).resolve().parent.parent / "skills" / "agentself" / "SKILL.md"
 
 
+def _copy_skill_tree(src_dir: Path, dest_dir: Path) -> Path:
+    """Copy packaged skill files without following links in either tree."""
+    entries = sorted(src_dir.rglob("*"))
+    if not entries:
+        raise OSError("skill not packaged")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if dest_dir.is_symlink():
+        raise OSError("refusing linked skill destination")
+    for src in entries:
+        if src.is_symlink():
+            raise OSError("refusing linked packaged skill path")
+        relative = src.relative_to(src_dir)
+        dest = dest_dir / relative
+        if src.is_dir():
+            dest.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink():
+                raise OSError("refusing linked skill destination")
+            continue
+        if not src.is_file():
+            raise OSError("refusing non-file packaged skill path")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            raise OSError("refusing linked skill destination")
+        shutil.copyfile(src, dest)
+    return dest_dir / "SKILL.md"
+
+
 def _install(args) -> int:
     skills = args.skills
     tools = args.tools
@@ -362,10 +389,7 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
     dest_root = Path.home() if args.global_install else Path.cwd()
     dest_dir = dest_root / rel
     try:
-        body = src.read_text(encoding="utf-8")
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / "SKILL.md"
-        dest.write_text(body, encoding="utf-8")
+        dest = _copy_skill_tree(src.parent, dest_dir)
     except OSError as exc:
         detail = str(exc).strip() or "could not install skill"
         return [], _fail(args, 1, f"error: {detail}\n", "error", detail)

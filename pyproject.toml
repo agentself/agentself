@@ -45,7 +45,10 @@ where = ["."]
 include = ["agentself*"]
 
 [tool.setuptools.package-data]
-agentself = ["skills/agentself/SKILL.md"]
+agentself = [
+    "skills/agentself/SKILL.md",
+    "skills/agentself/references/*.md",
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "agentself.__version__"}

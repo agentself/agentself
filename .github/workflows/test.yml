@@ -181,6 +181,9 @@ jobs:
           agentself --json diagnose
           agentself install --skills=agents
           test -f "${empty}/.agents/skills/agentself/SKILL.md"
+          test -f "${empty}/.agents/skills/agentself/references/email-connect.md"
+          test -f "${empty}/.agents/skills/agentself/references/handoff.md"
+          test -f "${empty}/.agents/skills/agentself/references/mail.md"
           export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-pass"
           agentself init --store pass
           agentself --json diagnose
