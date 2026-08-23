@@ -1311,7 +1311,7 @@ def _secret_get(client, args) -> int:
         return 0
     if _as_json(args):
         return _emit_ok(args, {"name": name, "value": value}, redact=False)
-    sys.stdout.write(value + "\n")
+    sys.stdout.write(value if value.endswith("\n") else value + "\n")
     return 0
 
 

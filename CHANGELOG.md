@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AgentMail setup now offers an existing-key route and an explicitly authorized,
+  resumable signup/OTP route without exposing the generated key.
+- Email messages have independent local acted state, with mark/unmark and safe
+  list filters; provider `new`/`seen` status is unchanged.
+- The installed agent skill uses workflow references for email setup, mail
+  processing, and cross-agent identity handoff.
+- Human `secret get --print` emits one trailing newline instead of adding a
+  second newline to values that already end with one.
+
 ## 0.1.0a4 - 2026-08-23
 
 - Safer backup/restore, secret files, `wallet.key` updates, sops encrypt, and Windows host-tool lookup.

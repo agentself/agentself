@@ -79,7 +79,8 @@
             "show",
             "send",
             "receive",
-            "list"
+            "list",
+            "mark"
           ],
           "custody": "none",
           "network": "agentmail",
@@ -163,7 +164,8 @@
             "show",
             "send",
             "receive",
-            "list"
+            "list",
+            "mark"
           ],
           "custody": "none",
           "network": "imap-smtp",

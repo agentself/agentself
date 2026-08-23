@@ -21,9 +21,16 @@ Or:
 pipx install agentself
 ```
 
+If neither tool is available:
+
+```bash
+python -m pip install --user agentself
+```
+
 ## Quick start
 
 ```bash
+agentself install --skills
 agentself install --tools
 agentself init
 agentself wallet address
@@ -46,7 +53,7 @@ and keeps the generated API key encrypted while setup continues.
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
-| Email | `email connect`, `show`, `send`, `receive`, `list` |
+| Email | `email connect`, `show`, `send`, `receive`, `list`, `mark` |
 | Backends | `backends [CHANNEL]` |
 | Recovery | `backup`, `restore` |
 | Setup | `install --tools`, `install --skills` |
@@ -64,9 +71,11 @@ Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
 by default: use `secret get NAME --file PATH` or `--meta`; plaintext stdout
 requires `--print`.
 
-`email receive` prints headers and `new`/`seen` status without bodies. Fetch a
-specific body into a private file with `email receive ID --file PATH`. Bodies
-can contain API keys and login links; `--print` is an explicit unsafe choice.
+`email receive` prints headers and `new`/`seen` status without bodies. `acted`
+is independent local task state: use `email mark ID acted|unacted` and filter
+with `email list --acted|--unacted`. Fetch a specific body into a private file
+with `email receive ID --file PATH`. Bodies can contain API keys and login
+links; `--print` is an explicit unsafe choice.
 
 ## Backends & configuration
 

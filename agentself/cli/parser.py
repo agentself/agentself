@@ -309,7 +309,8 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Export a named secret. Exits 3 if the name is missing. "
             "Use --file for private file output or --meta for size and SHA-256. "
-            "Plaintext stdout requires --print. wallet.key also requires --unsafe."
+            "Plaintext stdout requires --print; human output ends with one newline. "
+            "wallet.key also requires --unsafe."
         ),
         epilog=(
             "Examples:\n"
