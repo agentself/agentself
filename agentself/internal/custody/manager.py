@@ -38,12 +38,14 @@ from agentself.internal.custody.errors import (
     StoreFailure,
     UnknownIdentity,
 )
+from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.log import Log
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
     EMAIL_CONTINUATION_NAME,
     EMAIL_CREDENTIAL_NAME,
     PROTECTED_SECRET_NAMES,
+    WALLET_KEY_NAME,
     is_reserved_secret_name,
     require_safe_token,
 )
@@ -183,6 +185,7 @@ class CustodyManager:
         identity = self._require_identity(caller, "create", name)
         if is_reserved_secret_name(name):
             self._refuse("create", identity.id, name)
+        value = self._prepare_secret_value("create", identity.id, name, value)
         store = self._store_for(identity, "create", name)
         try:
             store.create(identity.id, name, value)
@@ -221,10 +224,16 @@ class CustodyManager:
         caller: BoundCaller,
         name: str,
         value: str,
+        *,
+        unsafe: bool = False,
     ) -> None:
         identity = self._require_identity(caller, "update", name)
         if is_reserved_secret_name(name):
             self._missing("update", identity.id, name)
+        if name in self._protected_secret_names(identity, "update") and not unsafe:
+            self._log.record("update", identity.id, name, "refused")
+            raise ProtectedName(name)
+        value = self._prepare_secret_value("update", identity.id, name, value)
         store = self._store_for(identity, "update", name)
         try:
             store.update(identity.id, name, value)
@@ -816,6 +825,17 @@ class CustodyManager:
             value = created
         wallet.bind_material(value)
         return wallet
+
+    def _prepare_secret_value(
+        self, operation: str, identity_id: str, name: str, value: str
+    ) -> str:
+        if name != WALLET_KEY_NAME:
+            return value
+        parsed = parse_secp256k1_hex(value)
+        if parsed is None:
+            self._log.record(operation, identity_id, name, "refused")
+            raise Refused("wallet.key is not a key") from None
+        return parsed
 
     def _protected_secret_names(
         self, identity: Identity, operation: str

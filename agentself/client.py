@@ -17,7 +17,14 @@ class CustodyManager(Protocol):
 
     def get(self, caller: BoundCaller, name: str) -> str: ...
 
-    def update(self, caller: BoundCaller, name: str, value: str) -> None: ...
+    def update(
+        self,
+        caller: BoundCaller,
+        name: str,
+        value: str,
+        *,
+        unsafe: bool = False,
+    ) -> None: ...
 
     def list(self, caller: BoundCaller) -> builtins.list[str]: ...
 
@@ -99,9 +106,9 @@ class Client:
         caller = self._require_caller()
         return self._manager.get(caller, name)
 
-    def update(self, name: str, value: str) -> None:
+    def update(self, name: str, value: str, *, unsafe: bool = False) -> None:
         caller = self._require_caller()
-        self._manager.update(caller, name, value)
+        self._manager.update(caller, name, value, unsafe=unsafe)
 
     def list(self) -> builtins.list[str]:
         caller = self._require_caller()

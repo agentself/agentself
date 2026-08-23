@@ -114,7 +114,7 @@ def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
         dest="from_file",
         default="",
         metavar="PATH",
-        help="Read the value from a file",
+        help="Read the value from a file. A leading UTF-8 BOM is dropped",
     )
 
 
@@ -291,7 +291,7 @@ def _parser() -> argparse.ArgumentParser:
             "Write a named secret. Refuses if the name exists with a different value. "
             "Repeating the same value is unchanged. "
             "VALUE may be omitted: reads stdin when stdin is not a tty. "
-            "--file PATH preserves the exact UTF-8 file bytes."
+            "--file PATH drops a leading UTF-8 BOM and keeps a trailing newline."
         ),
         epilog=(
             "Examples:\n"
@@ -350,7 +350,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Update a named secret. The name must exist",
         description=(
             "Update a named secret. The name must exist. Same value rules as create. "
-            "wallet.key requires --unsafe."
+            "wallet.key requires --unsafe and must be a hex private key."
         ),
         epilog="Examples:\n  agentself secret update NAME VALUE",
     )
