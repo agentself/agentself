@@ -19,7 +19,11 @@ def test_workflow_actions_use_immutable_refs() -> None:
         refs.extend(re.findall(r"uses:\s*([^\s#]+)", path.read_text(encoding="utf-8")))
 
     assert refs
-    assert all(re.search(r"@[0-9a-f]{40}$", ref) for ref in refs)
+    for ref in refs:
+        if ref.startswith("./"):
+            assert ref.endswith(".yml") or ref.endswith(".yaml")
+            continue
+        assert re.search(r"@[0-9a-f]{40}$", ref), ref
 
 
 def test_ci_host_tool_downloads_have_pinned_digests() -> None:
@@ -33,3 +37,20 @@ def test_ci_host_tool_downloads_have_pinned_digests() -> None:
     assert "Get-FileHash -Algorithm SHA256" in test_workflow
     assert SHA256.findall(linux)
     assert SHA256.findall(test_workflow)
+
+
+def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
+    publish = WORKFLOWS[1].read_text(encoding="utf-8")
+    test = WORKFLOWS[0].read_text(encoding="utf-8")
+    assert "uses: ./.github/workflows/test.yml" in publish
+    assert "python -m build" not in publish
+    assert "pip install build" not in publish
+    assert "id-token: write" in publish
+    assert "PYPI_API_TOKEN" not in publish
+    assert "pypi-token" not in publish.lower()
+    assert "password:" not in publish
+    assert "workflow_call:" in test
+    assert "name: python-package-distributions" in test
+    assert "upload-artifact@" in test
+    assert "needs: [lint, test]" in test
+    assert "needs: ci" in publish or "needs: [ci" in publish

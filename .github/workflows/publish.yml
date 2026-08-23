@@ -4,8 +4,8 @@
 # on PyPI and TestPyPI (GitHub/PyPI UIs). CI does not register the project
 # name. `agentself` had no published distribution when this workflow was added.
 # Actions are pinned to full commit SHAs (with the release tag kept in comments).
-# Tag must be v${__version__}
-# after building the wheel that will be published.
+# Tag must be v${__version__}. Publish reuses the dist/ the test workflow
+# built and smoke-tested for this SHA; it does not rebuild an untested wheel.
 name: publish
 
 on:
@@ -17,19 +17,21 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  ci:
+    uses: ./.github/workflows/test.yml
+
+  verify-dist:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: python-package-distributions
+          path: dist
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
-      - name: Build and check
-        run: |
-          python -m pip install build twine
-          python -m build
-          python -m twine check --strict dist/*
-      - name: Smoke-test the wheel and require tag v${VERSION}
+      - name: Require tag v${VERSION} from the tested wheel
         run: |
           set -euo pipefail
           venv="${RUNNER_TEMP}/wheel-env"
@@ -48,13 +50,9 @@ jobs:
           got="$(agentself --version)"
           test "$got" = "agentself ${version}"
           agentself --help
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: python-package-distributions
-          path: dist/
 
   publish-testpypi:
-    needs: build
+    needs: verify-dist
     runs-on: ubuntu-latest
     environment:
       name: testpypi
@@ -73,7 +71,7 @@ jobs:
           skip-existing: true
 
   publish-pypi:
-    needs: [build, publish-testpypi]
+    needs: [verify-dist, publish-testpypi]
     runs-on: ubuntu-latest
     environment:
       name: pypi

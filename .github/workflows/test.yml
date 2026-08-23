@@ -1,12 +1,18 @@
 # Support matrix (CI-tested):
 #   ubuntu-latest, windows-latest × Python 3.11/3.12
 #   macos-latest × Python 3.11
-# ruff on one Ubuntu job. Artifact job builds wheel+sdist, twine-checks,
-# and smoke-tests a non-editable wheel install (not pip install -e).
+# ruff on one Ubuntu job. Artifact job waits for lint and pytest, then builds
+# wheel+sdist, twine-checks, smoke-tests a non-editable wheel install (not
+# pip install -e), and uploads dist/ for tag publish to reuse.
 # Live `pass` / `init --store pass` smoke is Ubuntu-only (`pass` is a Unix CLI).
 name: test
 
-on: [push, pull_request]
+on:
+  push:
+    tags-ignore:
+      - "v[0-9]*"
+  pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -132,6 +138,7 @@ jobs:
 
   artifact:
     name: wheel and sdist
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -175,3 +182,8 @@ jobs:
           export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-pass"
           agentself init --store pass
           agentself --json diagnose
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error

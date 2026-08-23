@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- Tag publish runs the test workflow for that commit and publishes the
+  already-tested `dist/`. It does not rebuild an untested wheel. Trusted
+  Publishing (OIDC) is unchanged.
 
 ## 0.1.0a3 - 2026-08-23
 
