@@ -54,3 +54,14 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     assert "upload-artifact@" in test
     assert "needs: [lint, test]" in test
     assert "needs: ci" in publish or "needs: [ci" in publish
+
+
+def test_test_workflow_push_runs_on_all_branches() -> None:
+    """tags-ignore without branches does not run on branch pushes, including main."""
+
+    trigger = WORKFLOWS[0].read_text(encoding="utf-8").split("\njobs:", 1)[0]
+    assert re.search(
+        r"push:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+branches:\s*\n[ \t]+-\s+[\'\"]\*\*[\'\"]",
+        trigger,
+    ), trigger
+    assert "tags-ignore:" in trigger

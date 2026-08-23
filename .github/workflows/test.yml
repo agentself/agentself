@@ -9,6 +9,9 @@ name: test
 
 on:
   push:
+    # tags-ignore alone skips branch pushes, including main.
+    branches:
+      - "**"
     tags-ignore:
       - "v[0-9]*"
   pull_request:
