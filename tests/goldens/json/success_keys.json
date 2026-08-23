@@ -98,6 +98,9 @@
   "email_messages": {
     "exact": ["ok", "messages"]
   },
+  "email_mark": {
+    "exact": ["ok", "id", "acted"]
+  },
   "wallet_address": {
     "exact": ["ok", "address"]
   },
@@ -149,6 +152,7 @@
       "body",
       "reason",
       "status",
+      "acted",
       "body_file",
       "body_bytes",
       "body_sha256"

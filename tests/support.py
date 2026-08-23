@@ -509,6 +509,7 @@ def build_app(
         email_backend=email_backend,
         wallet_backend=wallet_backend,
         allowed_store_bindings=allowed,
+        vault_root=vault,
     )
     client = Client(manager, log)
     return App(

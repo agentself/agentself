@@ -44,9 +44,19 @@ class CustodyManager(Protocol):
         *,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, str]]: ...
+    ) -> builtins.list[dict[str, object]]: ...
 
-    def email_list(self, caller: BoundCaller) -> builtins.list[dict[str, str]]: ...
+    def email_list(
+        self,
+        caller: BoundCaller,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+    ) -> builtins.list[dict[str, object]]: ...
+
+    def email_mark(
+        self, caller: BoundCaller, message_id: str, *, acted: bool
+    ) -> bool: ...
 
     def email_connect(
         self,
@@ -135,15 +145,21 @@ class Client:
         *,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[dict[str, object]]:
         caller = self._require_caller()
         return self._manager.email_receive(
             caller, message_id=message_id, include_body=include_body
         )
 
-    def email_list(self) -> builtins.list[dict[str, str]]:
+    def email_list(
+        self, *, status: str | None = None, acted: bool | None = None
+    ) -> builtins.list[dict[str, object]]:
         caller = self._require_caller()
-        return self._manager.email_list(caller)
+        return self._manager.email_list(caller, status=status, acted=acted)
+
+    def email_mark(self, message_id: str, *, acted: bool) -> bool:
+        caller = self._require_caller()
+        return self._manager.email_mark(caller, message_id, acted=acted)
 
     def email_connect(
         self,

@@ -346,6 +346,20 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     assert shown.get("owned_address") is False
 
 
+def test_json_email_mark_contract(tmp_path):
+    _vault, env, _started = _init(tmp_path)
+    marked = assert_ok(
+        run_cli(["--json", "email", "mark", "provider/id", "acted"], env),
+        "email_mark",
+    )
+    assert marked == {"ok": True, "id": "provider/id", "acted": True}
+    unmarked = assert_ok(
+        run_cli(["--json", "email", "mark", "provider/id", "unacted"], env),
+        "email_mark",
+    )
+    assert unmarked == {"ok": True, "id": "provider/id", "acted": False}
+
+
 def test_json_email_connect_never_prompts_and_keeps_option_help(
     tmp_path, monkeypatch, capsys
 ):

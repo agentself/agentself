@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 from collections.abc import Mapping
+from pathlib import Path
 from typing import NoReturn, Protocol
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
@@ -41,6 +42,7 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.log import Log
+from agentself.internal.mail_state import ActedMailState
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
     EMAIL_CONTINUATION_NAME,
@@ -93,6 +95,7 @@ _BALANCE_KEYS = (
     "gas_amount",
 )
 _MAIL_ITEM_KEYS = ("id", "from", "to", "subject", "body", "reason", "status")
+_MAIL_HEADER_KEYS = ("id", "from", "to", "subject", "reason", "status")
 
 
 class IdentityAccess(Protocol):
@@ -131,6 +134,7 @@ class CustodyManager:
         email_backend: str | None = None,
         wallet_backend: str | None = None,
         allowed_store_bindings: frozenset[str] | None = None,
+        vault_root: str | os.PathLike[str],
     ) -> None:
         self._identities = identities
         self._stores = stores
@@ -139,6 +143,7 @@ class CustodyManager:
         self._wallets = wallets
         self._email_backend = email_backend or "agentmail"
         self._wallet_backend = wallet_backend or "base"
+        self._acted_mail = ActedMailState(Path(vault_root))
         # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed_store_bindings = (
             frozenset(allowed_store_bindings)
@@ -405,7 +410,7 @@ class CustodyManager:
         caller: BoundCaller,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[dict[str, object]]:
         identity, mailbox, address, token = self._email_bound(caller, "email_receive")
         try:
             messages = mailbox.receive(
@@ -417,17 +422,56 @@ class CustodyManager:
             )
         except MailboxError as exc:
             self._fail_mailbox("email_receive", identity.id, exc)
+        public = _items(messages, _MAIL_ITEM_KEYS)
+        try:
+            public = self._acted_mail.apply(identity.id, public)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("email_receive", identity.id, "email/acted", exc)
         self._log.record("email_receive", identity.id, None, "ok")
-        return _items(messages, _MAIL_ITEM_KEYS)
+        return public
 
-    def email_list(self, caller: BoundCaller) -> builtins.list[dict[str, str]]:
+    def email_list(
+        self,
+        caller: BoundCaller,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+    ) -> builtins.list[dict[str, object]]:
         identity, mailbox, address, token = self._email_bound(caller, "email_list")
+        if status is not None and status not in ("new", "seen"):
+            self._refuse("email_list", identity.id, None)
         try:
             items = mailbox.list(identity.id, credential=token, address=address)
         except MailboxError as exc:
             self._fail_mailbox("email_list", identity.id, exc)
+        public = _items(items, _MAIL_HEADER_KEYS)
+        try:
+            public = self._acted_mail.apply(identity.id, public)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("email_list", identity.id, "email/acted", exc)
+        if status is not None:
+            public = [item for item in public if item.get("status") == status]
+        if acted is not None:
+            public = [item for item in public if item.get("acted") is acted]
         self._log.record("email_list", identity.id, None, "ok")
-        return _items(items, _MAIL_ITEM_KEYS)
+        return public
+
+    def email_mark(self, caller: BoundCaller, message_id: str, *, acted: bool) -> bool:
+        identity = self._require_identity(caller, "email_mark", None)
+        normalized = message_id.strip()
+        if (
+            not normalized
+            or normalized != message_id
+            or len(normalized.encode("utf-8")) > 4096
+            or any(ord(char) < 32 for char in normalized)
+        ):
+            self._refuse("email_mark", identity.id, None)
+        try:
+            self._acted_mail.set(identity.id, normalized, acted)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("email_mark", identity.id, "email/acted", exc)
+        self._log.record("email_mark", identity.id, None, "ok")
+        return acted
 
     def wallet_address(self, caller: BoundCaller) -> str:
         identity, wallet = self._wallet_bound(caller, "wallet_address")
@@ -1055,7 +1099,7 @@ def _balance_view(result: object) -> dict[str, str]:
     return _str_pick(result, _BALANCE_KEYS)
 
 
-def _items(items: object, keys: tuple[str, ...]) -> list[dict[str, str]]:
+def _items(items: object, keys: tuple[str, ...]) -> list[dict[str, object]]:
     if not isinstance(items, list):
         return []
-    return [_str_pick(item, keys) for item in items]
+    return [dict(_str_pick(item, keys)) for item in items]

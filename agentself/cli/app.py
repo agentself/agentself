@@ -1308,6 +1308,14 @@ def _email(client, args) -> int:
         if _as_json(args):
             return _emit_ok(args, {"to": args.to, "subject": args.subject})
         return 0
+    if args.email_command == "mark":
+        acted = args.mark_state == "acted"
+        client.email_mark(args.message_id, acted=acted)
+        payload = {"id": args.message_id, "acted": acted}
+        if _as_json(args):
+            return _emit_ok(args, payload)
+        sys.stdout.write(args.mark_state + "\n")
+        return 0
     if args.email_command in ("receive", "list"):
         if (
             args.email_command == "receive"
@@ -1328,7 +1336,7 @@ def _email(client, args) -> int:
                 include_body=bool(args.body_file or args.print_body),
             )
             if args.email_command == "receive"
-            else client.email_list()
+            else client.email_list(status=args.status, acted=args.acted_filter)
         )
         if args.email_command == "receive":
             file_error = _prepare_received_messages(messages, args)
@@ -1342,10 +1350,10 @@ def _email(client, args) -> int:
     return 1
 
 
-def _prepare_received_messages(messages: list[dict[str, str]], args) -> int | None:
+def _prepare_received_messages(messages: list[dict[str, object]], args) -> int | None:
     path = (args.body_file or "").strip()
     if path and messages:
-        body = messages[0].get("body", "")
+        body = str(messages[0].get("body", ""))
         try:
             store_value_file(path, body)
         except OSError:
