@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
@@ -13,22 +14,15 @@ class MailboxAccessFactory:
         log: Log,
         *,
         domain: str = "",
-        mail_host: str = "",
-        imap_host: str = "",
-        smtp_host: str = "",
-        imap_port: str = "",
-        smtp_port: str = "",
-        mail_user: str = "",
+        settings: Mapping[str, str] | None = None,
     ) -> None:
         self._root = Path(vault_root)
         self._log = log
-        self._domain = (domain or "").strip()
-        self._mail_host = (mail_host or "").strip()
-        self._imap_host = (imap_host or "").strip()
-        self._smtp_host = (smtp_host or "").strip()
-        self._imap_port = (imap_port or "").strip()
-        self._smtp_port = (smtp_port or "").strip()
-        self._mail_user = (mail_user or "").strip()
+        self._settings = {
+            str(key): "" if value is None else str(value)
+            for key, value in dict(settings or {}).items()
+        }
+        self._domain = (domain or self._settings.get("mail_domain") or "").strip()
 
     def for_binding(self, binding: str) -> MailboxAccess:
         if binding == "agentmail":
@@ -44,11 +38,6 @@ class MailboxAccessFactory:
                 self._root,
                 self._log,
                 domain=self._domain,
-                mail_host=self._mail_host,
-                imap_host=self._imap_host,
-                smtp_host=self._smtp_host,
-                imap_port=self._imap_port,
-                smtp_port=self._smtp_port,
-                mail_user=self._mail_user,
+                settings=self._settings,
             )
         raise MailboxError("unknown mailbox binding")

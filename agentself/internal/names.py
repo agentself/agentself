@@ -5,6 +5,7 @@ _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 WALLET_KEY_NAME = "wallet.key"
 EMAIL_CREDENTIAL_NAME = "email.credential"
 EMAIL_ADDRESS_NAME = "email.address"
+EMAIL_CONTINUATION_NAME = "internal.email.continuation"
 INTERNAL_PREFIX = "internal."
 PROTECTED_SECRET_NAMES = frozenset({WALLET_KEY_NAME})
 

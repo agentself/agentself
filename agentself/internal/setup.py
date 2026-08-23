@@ -46,44 +46,26 @@ class SetupOption(TypedDict):
     source: str | None
     choices: list[str]
     action: NotRequired[SetupAction | None]
+    persist: NotRequired[bool]
+    persist_as: NotRequired[str]
+    runtime_only: NotRequired[bool]
 
 
 ENV_EMAIL_ADDRESS = "AGENTSELF_EMAIL_ADDRESS"
 ENV_EMAIL_CREDENTIAL = "AGENTSELF_EMAIL_CREDENTIAL"
-SOURCE_AGENTMAIL_CREDENTIAL = "AGENTSELF_AGENTMAIL_API_KEY"
-SOURCE_IMAP_CREDENTIAL = "AGENTSELF_MAIL_PASSWORD"
 
-HELP_AGENTMAIL_CREDENTIAL = (
-    "AgentMail API key (starts with am_). Use an existing approved key. If none is "
-    "available, open API Keys at https://console.agentmail.to and wait for the operator "
-    "to create and copy one. Creating a new AgentMail "
-    "organization through signup is an external account action and requires explicit "
-    "user authorization. When that exact action is authorized for a first-time, "
-    "unclaimed signup, follow https://docs.agentmail.to/api-reference/agent/sign-up "
-    "once with the approved email identity and capture the key from its HTTP response. "
-    "If signup reports that the identity is claimed, forbidden, or unavailable, stop "
-    "and ask the user; do not probe aliases or disposable email providers. The OTP or "
-    "confirmation email does not contain the key. A key is shown once and cannot be "
-    "retrieved; if lost, create another in the console. Stop credential discovery as "
-    "soon as one key validates. For transient use, provide "
-    "AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email "
-    "invocation. To store it in this identity, write the key to a file and continue "
-    "with --result-file. Cannot obtain a key: agentself init --force --email imap, "
-    "or stop."
+_PUBLIC_OPTION_KEYS = (
+    "name",
+    "type",
+    "required",
+    "sensitive",
+    "default",
+    "choices",
+    "source",
+    "help",
+    "prompt",
+    "action",
 )
-HELP_AGENTMAIL_ADDRESS = (
-    "Inbox address when this key owns more than one. Use an address the provider "
-    "listed. Do not invent one."
-)
-HELP_IMAP_ADDRESS = "Existing mailbox address (user@domain). Do not invent an address."
-HELP_IMAP_CREDENTIAL = (
-    "Password or app password for that mailbox. Gmail and Outlook need an app "
-    "password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a "
-    "file and continue with --result-file."
-)
-HELP_IMAP_MAIL_HOST = "Shared mail host when IMAP and SMTP use the same hostname."
-HELP_IMAP_IMAP_HOST = "IMAP host override. Default is imap.<address-domain>."
-HELP_IMAP_SMTP_HOST = "SMTP host override. Default is smtp.<address-domain>."
 
 
 def setup_option(
@@ -98,8 +80,11 @@ def setup_option(
     help: str = "",
     prompt: str = "",
     action: SetupAction | None = None,
+    persist: bool = False,
+    persist_as: str = "",
+    runtime_only: bool = False,
 ) -> dict[str, Any]:
-    """Backend discovery / setup option. Stable public fields only."""
+    """Backend discovery / setup option. Catalog JSON uses public fields only."""
 
     return {
         "name": name,
@@ -112,7 +97,14 @@ def setup_option(
         "help": help or "",
         "prompt": prompt or name,
         "action": action,
+        "persist": bool(persist),
+        "persist_as": persist_as or "",
+        "runtime_only": bool(runtime_only),
     }
+
+
+def public_setup_option(option: dict[str, object]) -> dict[str, object]:
+    return {key: option[key] for key in _PUBLIC_OPTION_KEYS if key in option}
 
 
 def credential_option(
@@ -122,6 +114,9 @@ def credential_option(
     help: str = "Secret required to connect. Write it to --result-file and continue.",
     prompt: str = "Paste the credential",
     action: SetupAction | None = None,
+    persist: bool = False,
+    persist_as: str = "",
+    runtime_only: bool = False,
 ) -> dict[str, Any]:
     return setup_option(
         name=OPTION_CREDENTIAL,
@@ -132,6 +127,9 @@ def credential_option(
         help=help,
         prompt=prompt,
         action=action,
+        persist=persist,
+        persist_as=persist_as,
+        runtime_only=runtime_only,
     )
 
 
@@ -142,6 +140,9 @@ def address_option(
     help: str = "Mailbox address",
     prompt: str = "Mailbox address",
     choices: list[str] | tuple[str, ...] | None = None,
+    persist: bool = False,
+    persist_as: str = "",
+    runtime_only: bool = False,
 ) -> dict[str, Any]:
     return setup_option(
         name=OPTION_ADDRESS,
@@ -152,6 +153,9 @@ def address_option(
         help=help,
         prompt=prompt,
         choices=choices,
+        persist=persist,
+        persist_as=persist_as,
+        runtime_only=runtime_only,
     )
 
 

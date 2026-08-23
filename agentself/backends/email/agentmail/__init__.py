@@ -8,6 +8,11 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
+from agentself.backends.email.agentmail.options import (
+    OPTIONS,
+    SOURCE_AGENTMAIL_CREDENTIAL,
+    option_named,
+)
 from agentself.backends.email.contract import (
     MailboxAccess,
     MailboxError,
@@ -27,22 +32,9 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import (
-    HELP_AGENTMAIL_ADDRESS,
-    HELP_AGENTMAIL_CREDENTIAL,
-    SOURCE_AGENTMAIL_CREDENTIAL,
-    SetupAction,
-    address_option,
-    credential_option,
-)
 
 _API = "https://api.agentmail.to"
 _INBOXES_URL = _API + "/v0/inboxes"
-_API_KEYS_ACTION: SetupAction = {
-    "kind": "open_url",
-    "label": "Open AgentMail API Keys",
-    "url": "https://console.agentmail.to",
-}
 
 Poster = Callable[[str, dict[str, str], bytes], tuple[int, bytes]]
 Getter = Callable[[str, dict[str, str]], tuple[int, bytes]]
@@ -190,6 +182,9 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError("no inbox")
         return mailbox_view(email, owned_address=True)
 
+    def setup_options(self) -> tuple[dict[str, object], ...]:
+        return OPTIONS
+
     def connect(
         self,
         identity_id: str,
@@ -197,8 +192,10 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
+        state: object | None = None,
     ) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
+        del state
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = secret_or_env(
@@ -207,12 +204,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not token:
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
-                credential_option(
-                    source=SOURCE_AGENTMAIL_CREDENTIAL,
-                    help=HELP_AGENTMAIL_CREDENTIAL,
-                    prompt="Paste the API key",
-                    action=_API_KEYS_ACTION,
-                ),
+                option_named("credential"),
                 human_action_required=True,
             )
         credential = require_secret(token)
@@ -233,10 +225,11 @@ class AgentMailMailboxAccess(MailboxAccess):
         elif len(live) > 1:
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
-                address_option(
+                option_named(
+                    "address",
                     required=True,
-                    help=HELP_AGENTMAIL_ADDRESS,
                     prompt="Choose the inbox for this identity",
+                    type="choice",
                     choices=[
                         str(item.get("email") or "").strip()
                         for item in live

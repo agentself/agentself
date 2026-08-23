@@ -127,7 +127,7 @@ def _box(
         log,
         imap_opener=imap.opener,
         smtp_opener=smtp.opener,
-        **kwargs,
+        settings=kwargs,
     )
 
 
@@ -489,9 +489,10 @@ def test_compose_forwards_imap_env_knobs(vault, monkeypatch):
     from agentself.compose import compose
 
     compose(vault, email_backend="imap")
-    assert seen["mail_host"] == "mail.example.com"
-    assert seen["imap_host"] == "imap.example.com"
-    assert seen["smtp_host"] == "smtp.example.com"
-    assert seen["mail_user"] == "bot"
-    assert seen["imap_port"] == "993"
-    assert seen["smtp_port"] == "465"
+    settings = seen.get("settings") or {}
+    assert settings["mail_host"] == "mail.example.com"
+    assert settings["imap_host"] == "imap.example.com"
+    assert settings["smtp_host"] == "smtp.example.com"
+    assert settings["mail_user"] == "bot"
+    assert settings["imap_port"] == "993"
+    assert settings["smtp_port"] == "465"

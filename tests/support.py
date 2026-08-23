@@ -148,14 +148,26 @@ class InstrumentedMailboxAccess:
         self.calls.append(("describe", identity_id))
         return self.inner.describe(identity_id, credential=credential, address=address)
 
-    def connect(self, identity_id, *, credential=None, address=None, answers=None):
+    def connect(
+        self,
+        identity_id,
+        *,
+        credential=None,
+        address=None,
+        answers=None,
+        state=None,
+    ):
         self.calls.append(("connect", identity_id))
         return self.inner.connect(
             identity_id,
             credential=credential,
             address=address,
             answers=answers,
+            state=state,
         )
+
+    def setup_options(self):
+        return self.inner.setup_options()
 
 
 class DoubleMailboxFactory:
@@ -172,6 +184,10 @@ class DoubleMailboxFactory:
             from tests.maildir_mailbox import MaildirMailboxAccess
 
             return MaildirMailboxAccess(self._root, self._log, domain=self._domain)
+        if binding == "oauthish":
+            from tests.synthetic_email import SyntheticEmailAccess
+
+            return SyntheticEmailAccess()
         return self.inner.for_binding(binding)
 
 

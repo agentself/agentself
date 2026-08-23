@@ -60,12 +60,15 @@ def compose(
         root,
         log,
         domain=domain,
-        mail_host=resolve_setting(root, "mail_host", ENV_MAIL_HOST),
-        imap_host=resolve_setting(root, "imap_host", ENV_IMAP_HOST),
-        smtp_host=resolve_setting(root, "smtp_host", ENV_SMTP_HOST),
-        imap_port=resolve_setting(root, "imap_port", ENV_IMAP_PORT),
-        smtp_port=resolve_setting(root, "smtp_port", ENV_SMTP_PORT),
-        mail_user=resolve_setting(root, "mail_user", ENV_MAIL_USER),
+        settings={
+            "mail_domain": domain,
+            "mail_host": resolve_setting(root, "mail_host", ENV_MAIL_HOST),
+            "imap_host": resolve_setting(root, "imap_host", ENV_IMAP_HOST),
+            "smtp_host": resolve_setting(root, "smtp_host", ENV_SMTP_HOST),
+            "imap_port": resolve_setting(root, "imap_port", ENV_IMAP_PORT),
+            "smtp_port": resolve_setting(root, "smtp_port", ENV_SMTP_PORT),
+            "mail_user": resolve_setting(root, "mail_user", ENV_MAIL_USER),
+        },
     )
     wallets = WalletAccessFactory(
         log,

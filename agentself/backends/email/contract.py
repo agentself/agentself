@@ -54,6 +54,7 @@ def setup_needed(
     status: str = SETUP_INPUT_REQUIRED,
     human_action_required: bool = False,
     message: str = "",
+    continuation: object | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "status": status,
@@ -66,6 +67,8 @@ def setup_needed(
         payload["option"] = dict(option)
     if message:
         payload["message"] = message
+    if continuation is not None:
+        payload["continuation"] = continuation
     return payload
 
 
@@ -123,6 +126,9 @@ class MailboxAccess(ABC):
         address: str | None = None,
     ) -> dict[str, object]: ...
 
+    def setup_options(self) -> tuple[dict[str, object], ...]:
+        return ()
+
     def connect(
         self,
         identity_id: str,
@@ -130,13 +136,15 @@ class MailboxAccess(ABC):
         credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
+        state: object | None = None,
     ) -> dict[str, object]:
         """Generic setup. Default is describe(); no create.
 
         Return a mailbox view when connected. Return setup_needed() when the
         backend needs input, a human action, or a later continuation. Public
-        callers never see provider workflow names.
+        callers never see provider workflow names. `state` is an opaque
+        backend continuation from a previous incomplete setup.
         """
 
-        del answers
+        del answers, state
         return self.describe(identity_id, credential=credential, address=address)

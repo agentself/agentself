@@ -3,20 +3,9 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 
-from agentself.internal.setup import (
-    HELP_AGENTMAIL_ADDRESS,
-    HELP_AGENTMAIL_CREDENTIAL,
-    HELP_IMAP_ADDRESS,
-    HELP_IMAP_CREDENTIAL,
-    HELP_IMAP_IMAP_HOST,
-    HELP_IMAP_MAIL_HOST,
-    HELP_IMAP_SMTP_HOST,
-    SOURCE_AGENTMAIL_CREDENTIAL,
-    SOURCE_IMAP_CREDENTIAL,
-    address_option,
-    credential_option,
-    setup_option,
-)
+from agentself.backends.email.agentmail.options import OPTIONS as AGENTMAIL_OPTIONS
+from agentself.backends.email.imap.options import OPTIONS as IMAP_OPTIONS
+from agentself.internal.setup import public_setup_option, setup_option
 
 ENV_PREFIX = "AGENTSELF_"
 ENV_IDENTITY_DIR = "AGENTSELF_IDENTITY_DIR"
@@ -27,8 +16,6 @@ ENV_SMTP_HOST = "AGENTSELF_SMTP_HOST"
 ENV_IMAP_PORT = "AGENTSELF_IMAP_PORT"
 ENV_SMTP_PORT = "AGENTSELF_SMTP_PORT"
 ENV_MAIL_USER = "AGENTSELF_MAIL_USER"
-ENV_AGENTMAIL_API_KEY = SOURCE_AGENTMAIL_CREDENTIAL
-ENV_MAIL_PASSWORD = SOURCE_IMAP_CREDENTIAL
 ENV_ETH_RPC_URL = "AGENTSELF_ETH_RPC_URL"
 ENV_WALLET_BACKEND = "AGENTSELF_WALLET_BACKEND"
 ENV_EMAIL_BACKEND = "AGENTSELF_EMAIL_BACKEND"
@@ -43,44 +30,6 @@ ENV_AGE_KEY_FILE = "AGE_KEY_FILE"
 _WALLET_LIVE_VERBS = ("show", "address", "balance", "authorize", "send", "verify")
 _MAIL_VERBS = ("connect", "show", "send", "receive", "list")
 _STORE_VERBS = ("create", "get", "update", "list", "delete")
-
-_AGENTMAIL_OPTIONS = (
-    credential_option(
-        required=True,
-        source=ENV_AGENTMAIL_API_KEY,
-        help=HELP_AGENTMAIL_CREDENTIAL,
-    ),
-    address_option(
-        required=False,
-        help=HELP_AGENTMAIL_ADDRESS,
-    ),
-)
-_IMAP_OPTIONS = (
-    address_option(required=True, help=HELP_IMAP_ADDRESS),
-    credential_option(
-        required=True,
-        source=ENV_MAIL_PASSWORD,
-        help=HELP_IMAP_CREDENTIAL,
-    ),
-    setup_option(
-        name="mail_host",
-        type="string",
-        source=ENV_MAIL_HOST,
-        help=HELP_IMAP_MAIL_HOST,
-    ),
-    setup_option(
-        name="imap_host",
-        type="string",
-        source=ENV_IMAP_HOST,
-        help=HELP_IMAP_IMAP_HOST,
-    ),
-    setup_option(
-        name="smtp_host",
-        type="string",
-        source=ENV_SMTP_HOST,
-        help=HELP_IMAP_SMTP_HOST,
-    ),
-)
 
 
 class UnknownBind(ValueError):
@@ -110,7 +59,7 @@ class Bind:
             "custody": self.custody,
             "network": self.network,
             "asset": self.asset,
-            "options": [dict(item) for item in self.options],
+            "options": [public_setup_option(item) for item in self.options],
         }
 
 
@@ -189,7 +138,7 @@ CHANNELS: dict[str, Channel] = {
                 verbs=_MAIL_VERBS,
                 custody="none",
                 network="agentmail",
-                options=_AGENTMAIL_OPTIONS,
+                options=AGENTMAIL_OPTIONS,
             ),
             Bind(
                 "imap",
@@ -198,7 +147,7 @@ CHANNELS: dict[str, Channel] = {
                 verbs=_MAIL_VERBS,
                 custody="none",
                 network="imap-smtp",
-                options=_IMAP_OPTIONS,
+                options=IMAP_OPTIONS,
             ),
         ),
         note="email connect does not block init.",

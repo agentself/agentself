@@ -6,7 +6,7 @@ import email.policy
 import imaplib
 import smtplib
 import ssl
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Protocol
@@ -20,16 +20,14 @@ from agentself.backends.email.contract import (
     secret_or_env,
     setup_needed,
 )
+from agentself.backends.email.imap.options import (
+    OPTIONS,
+    SOURCE_IMAP_CREDENTIAL,
+    option_named,
+)
 from agentself.internal.files import IdentityBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import (
-    HELP_IMAP_ADDRESS,
-    HELP_IMAP_CREDENTIAL,
-    SOURCE_IMAP_CREDENTIAL,
-    address_option,
-    credential_option,
-)
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
@@ -73,24 +71,23 @@ class ImapMailboxAccess(MailboxAccess):
         log: Log,
         *,
         domain: str = "",
-        mail_host: str = "",
-        imap_host: str = "",
-        smtp_host: str = "",
-        imap_port: str = "",
-        smtp_port: str = "",
-        mail_user: str = "",
+        settings: Mapping[str, str] | None = None,
         imap_opener: ImapOpener | None = None,
         smtp_opener: SmtpOpener | None = None,
     ) -> None:
+        values = {
+            str(key): ("" if value is None else str(value)).strip()
+            for key, value in dict(settings or {}).items()
+        }
         self._root = Path(vault_root)
         self._log = log
-        self._domain = (domain or "").strip()
-        self._mail_host = (mail_host or "").strip()
-        self._imap_host = (imap_host or "").strip()
-        self._smtp_host = (smtp_host or "").strip()
-        self._imap_port = (imap_port or "").strip()
-        self._smtp_port = (smtp_port or "").strip()
-        self._mail_user = (mail_user or "").strip()
+        self._domain = (domain or values.get("mail_domain") or "").strip()
+        self._mail_host = values.get("mail_host") or ""
+        self._imap_host = values.get("imap_host") or ""
+        self._smtp_host = values.get("smtp_host") or ""
+        self._imap_port = values.get("imap_port") or ""
+        self._smtp_port = values.get("smtp_port") or ""
+        self._mail_user = values.get("mail_user") or ""
         self._imap_opener = imap_opener
         self._smtp_opener = smtp_opener
 
@@ -213,6 +210,9 @@ class ImapMailboxAccess(MailboxAccess):
             return mailbox_view(self._inbox(wanted), owned_address=True)
         return mailbox_view()
 
+    def setup_options(self) -> tuple[dict[str, object], ...]:
+        return OPTIONS
+
     def connect(
         self,
         identity_id: str,
@@ -220,8 +220,10 @@ class ImapMailboxAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
+        state: object | None = None,
     ) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
+        del state
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = secret_or_env(
@@ -229,16 +231,10 @@ class ImapMailboxAccess(MailboxAccess):
         )
         if not wanted:
             self._log.record("mailbox_connect", identity_id, None, "error")
-            return setup_needed(address_option(required=True, help=HELP_IMAP_ADDRESS))
+            return setup_needed(option_named("address"))
         if not token:
             self._log.record("mailbox_connect", identity_id, None, "error")
-            return setup_needed(
-                credential_option(
-                    required=True,
-                    source=SOURCE_IMAP_CREDENTIAL,
-                    help=HELP_IMAP_CREDENTIAL,
-                )
-            )
+            return setup_needed(option_named("credential"))
         token = require_secret(token)
         inbox = self._inbox(wanted)
         box = self._imap_login(inbox, token)

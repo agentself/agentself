@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
+import hmac
+import json
 import os
+import secrets
 from typing import NoReturn, Protocol
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
@@ -37,6 +41,7 @@ from agentself.internal.custody.errors import (
 from agentself.internal.log import Log
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
+    EMAIL_CONTINUATION_NAME,
     EMAIL_CREDENTIAL_NAME,
     PROTECTED_SECRET_NAMES,
     is_reserved_secret_name,
@@ -57,6 +62,7 @@ from agentself.internal.setup import (
     continue_command,
     decode_state,
     encode_state,
+    public_setup_option,
     setup_status_of,
 )
 from agentself.internal.types import BoundCaller, Identity
@@ -285,14 +291,14 @@ class CustodyManager:
             for key, value in (answers or {}).items()
             if str(value).strip()
         }
-        asked = ""
+        blob: object | None = None
         token = (state or "").strip()
         if token:
-            decoded = decode_state(token)
-            if decoded is None:
+            loaded = self._load_email_continuation(identity, token)
+            if loaded is None:
                 self._log.record("email_connect", identity.id, None, "error")
                 return {"status": SETUP_FAILED, "reason": "unknown setup"}
-            asked = str(decoded.get("option") or "").strip()
+            blob, asked = loaded
             raw_value = incoming.pop("value", "").strip()
             if asked and raw_value and asked not in incoming:
                 incoming[asked] = raw_value
@@ -306,29 +312,35 @@ class CustodyManager:
                 credential=credential,
                 address=address,
                 answers=incoming,
+                state=blob,
             )
         except MailboxError as exc:
+            self._delete_email_continuation(identity)
             self._log.record("email_connect", identity.id, None, "error")
             raise _channel_from_mailbox(exc) from None
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
-            self._persist_setup_answers(identity, incoming)
+            self._persist_setup_answers(identity, mailbox, incoming)
             view = _email_view(desc)
             self._persist_email_success(identity, view, sources.get(OPTION_ADDRESS))
+            self._delete_email_continuation(identity)
             view["status"] = SETUP_CONNECTED
             self._log.record("email_connect", identity.id, None, "ok")
             return view
         if status == SETUP_FAILED:
+            self._delete_email_continuation(identity)
             self._log.record("email_connect", identity.id, None, "error")
             reason = str(desc.get("reason") or "error")
             return {"status": SETUP_FAILED, "reason": reason}
-        self._persist_setup_answers(identity, incoming)
+        self._persist_setup_answers(identity, mailbox, incoming)
         option = _setup_option_of(desc)
         human = (
             bool(desc.get("human_action_required")) or status == SETUP_ACTION_REQUIRED
         )
-        next_state = encode_state(
-            {"option": str(option.get("name") or "")} if option else {"status": status}
+        next_state = self._store_email_continuation(
+            identity,
+            desc.get("continuation"),
+            str(option.get("name") or "") if option else "",
         )
         payload: dict[str, object] = {
             "status": status,
@@ -337,7 +349,7 @@ class CustodyManager:
             "continue": continue_command(next_state),
         }
         if option:
-            payload["option"] = option
+            payload["option"] = public_setup_option(option)
         if desc.get("message"):
             payload["message"] = desc["message"]
         self._log.record("email_connect", identity.id, None, "ok")
@@ -593,16 +605,30 @@ class CustodyManager:
         return None, None
 
     def _persist_setup_answers(
-        self, identity: Identity, answers: dict[str, str]
+        self,
+        identity: Identity,
+        mailbox: MailboxAccess,
+        answers: dict[str, str],
     ) -> None:
-        credential = (answers.get(OPTION_CREDENTIAL) or "").strip()
-        if credential:
-            self._store_put(
-                identity, EMAIL_CREDENTIAL_NAME, credential, "email_connect"
-            )
-        address = (answers.get(OPTION_ADDRESS) or "").strip()
-        if address:
-            self._store_put(identity, EMAIL_ADDRESS_NAME, address, "email_connect")
+        descriptors = {
+            str(item.get("name") or ""): item
+            for item in mailbox.setup_options()
+            if str(item.get("name") or "").strip()
+        }
+        for name, value in answers.items():
+            text = (value or "").strip()
+            if not text:
+                continue
+            option = descriptors.get(name)
+            if option is None:
+                continue
+            if option.get("runtime_only") is True:
+                continue
+            if option.get("persist") is not True:
+                continue
+            persist_as = str(option.get("persist_as") or "").strip()
+            key = persist_as or f"email.{self._email_backend}.{name}"
+            self._store_put(identity, key, text, "email_connect")
 
     def _persist_email_success(
         self,
@@ -633,6 +659,70 @@ class CustodyManager:
                 self._fail_store(operation, identity.id, name, exc)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, identity.id, name, exc)
+
+    def _store_delete(self, identity: Identity, name: str, operation: str) -> None:
+        store = self._store_for(identity, operation, name)
+        try:
+            store.delete(identity.id, name)
+        except SecretMissing:
+            return
+        except (StoreError, FileNotFoundError) as exc:
+            self._fail_store(operation, identity.id, name, exc)
+
+    def _store_email_continuation(
+        self, identity: Identity, blob: object, option: str
+    ) -> str:
+        nonce = secrets.token_urlsafe(16)
+        mac = _continuation_mac(
+            _continuation_key(identity), nonce, blob, option, identity.id
+        )
+        envelope = {"nonce": nonce, "blob": blob, "option": option, "mac": mac}
+        self._store_put(
+            identity,
+            EMAIL_CONTINUATION_NAME,
+            json.dumps(envelope, sort_keys=True, separators=(",", ":")),
+            "email_connect",
+        )
+        return encode_state({"n": nonce})
+
+    def _load_email_continuation(
+        self, identity: Identity, token: str
+    ) -> tuple[object | None, str] | None:
+        decoded = decode_state(token)
+        if decoded is None:
+            return None
+        nonce = str(decoded.get("n") or "").strip()
+        if not nonce:
+            return None
+        raw = self._optional_secret_value(
+            identity, EMAIL_CONTINUATION_NAME, "email_connect"
+        )
+        if not raw:
+            return None
+        try:
+            stored = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(stored, dict):
+            return None
+        stored_nonce = str(stored.get("nonce") or "")
+        option = str(stored.get("option") or "")
+        mac = stored.get("mac")
+        if stored_nonce != nonce or not isinstance(mac, str) or not mac:
+            return None
+        expected = _continuation_mac(
+            _continuation_key(identity),
+            stored_nonce,
+            stored.get("blob"),
+            option,
+            identity.id,
+        )
+        if not hmac.compare_digest(mac, expected):
+            return None
+        return stored.get("blob"), option
+
+    def _delete_email_continuation(self, identity: Identity) -> None:
+        self._store_delete(identity, EMAIL_CONTINUATION_NAME, "email_connect")
 
     def _require_identity(
         self,
@@ -744,6 +834,25 @@ class CustodyManager:
         if isinstance(exc, RegistryFormatError):
             raise StoreFailure(str(exc)) from None
         raise StoreFailure("store error", name=name) from None
+
+
+def _continuation_key(identity: Identity) -> bytes:
+    return hmac.new(
+        identity.recipient.encode("utf-8"),
+        identity.id.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+
+
+def _continuation_mac(
+    key: bytes, nonce: str, blob: object, option: str, identity_id: str
+) -> str:
+    payload = json.dumps(
+        {"blob": blob, "id": identity_id, "nonce": nonce, "option": option},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
 
 
 def _channel_from_mailbox(exc: BaseException) -> ChannelFailure:

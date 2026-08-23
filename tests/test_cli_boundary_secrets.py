@@ -77,7 +77,13 @@ class _LeakMailbox:
             "private_key": AGE_CANARY,
         }
 
-    def connect(self, identity_id, *, credential=None, address=None):
+    def setup_options(self):
+        return ()
+
+    def connect(
+        self, identity_id, *, credential=None, address=None, answers=None, state=None
+    ):
+        del answers, state
         return self.describe(identity_id, credential=credential, address=address)
 
 

@@ -17,6 +17,7 @@ from agentself.backends.email.contract import (
 )
 from agentself.cli.app import main
 from agentself.internal.custody.manager import _channel_from_mailbox
+from agentself.internal.names import EMAIL_ADDRESS_NAME, EMAIL_CREDENTIAL_NAME
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_PENDING,
@@ -61,8 +62,16 @@ class ScriptedMailbox(MailboxAccess):
             return mailbox_view(address, owned_address=True)
         return mailbox_view()
 
-    def connect(self, identity_id, *, credential=None, address=None, answers=None):
-        del identity_id
+    def setup_options(self):
+        return (
+            credential_option(persist=True, persist_as=EMAIL_CREDENTIAL_NAME),
+            address_option(persist=True, persist_as=EMAIL_ADDRESS_NAME),
+        )
+
+    def connect(
+        self, identity_id, *, credential=None, address=None, answers=None, state=None
+    ):
+        del identity_id, state
         extra = dict(answers or {})
         return self._connect(credential, address, extra)
 
@@ -497,12 +506,12 @@ def test_tty_without_option_falls_through_to_setup_pending(
     monkeypatch.setattr("agentself.cli.app.getpass.getpass", no_prompt)
     monkeypatch.setattr("builtins.input", no_prompt)
 
-    assert main(["email", "connect"]) == 3
+    assert main(["email", "connect", "--continue", "--state", state]) == 3
     output = capsys.readouterr()
     assert "nothing entered" not in output.err
     assert reason in output.err
 
-    assert main(["email", "connect", "--continue", "--state", state]) == 3
+    assert main(["email", "connect"]) == 3
     output = capsys.readouterr()
     assert "nothing entered" not in output.err
     assert reason in output.err
