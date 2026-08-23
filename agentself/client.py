@@ -67,7 +67,7 @@ class CustodyManager(Protocol):
         to: str,
         amount: str,
         asset: str = "",
-    ) -> str: ...
+    ) -> dict[str, str]: ...
 
     def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]: ...
 
@@ -159,7 +159,7 @@ class Client:
         caller = self._require_caller()
         return self._manager.wallet_balance(caller)
 
-    def wallet_send(self, to: str, amount: str, asset: str = "") -> str:
+    def wallet_send(self, to: str, amount: str, asset: str = "") -> dict[str, str]:
         caller = self._require_caller()
         return self._manager.wallet_send(caller, to, amount, asset)
 

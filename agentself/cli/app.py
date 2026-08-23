@@ -1384,11 +1384,18 @@ def _wallet(client, args) -> int:
         sys.stdout.write("valid\n" if valid else "invalid\n")
         return 0 if valid else 2
     if args.wallet_command == "send":
-        asset = client.wallet_send(args.to, args.amount, args.asset or "")
+        sent = client.wallet_send(args.to, args.amount, args.asset or "")
+        payload = {
+            "to": args.to,
+            "amount": args.amount,
+            "asset": sent["asset"],
+        }
+        if sent.get("hash"):
+            payload["hash"] = sent["hash"]
         if _as_json(args):
-            return _emit_ok(
-                args, {"to": args.to, "amount": args.amount, "asset": asset}
-            )
+            return _emit_ok(args, payload, redact=False)
+        if payload.get("hash"):
+            sys.stdout.write(payload["hash"] + "\n")
         return 0
     return 1
 

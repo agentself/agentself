@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- After a confirmed `wallet send`, a later send of the same destination and
+  amount is a new payment. Crash and timeout retries before confirmation still
+  reuse the pending transaction. Successful send output includes the
+  transaction hash.
 
 ## 0.1.0a3 - 2026-08-23
 

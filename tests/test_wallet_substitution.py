@@ -17,7 +17,7 @@ from tests.synthetic_wallet import MATERIAL_NAME, SyntheticWalletAccess
 def test_omitted_asset_resolves_to_backend_default(vault, monkeypatch):
     app = build_app(vault, wallet_backend="synthetic")
     init_identity(app, monkeypatch)
-    assert app.client.wallet_send("dest", "1") == "NOTE"
+    assert app.client.wallet_send("dest", "1") == {"asset": "NOTE"}
 
 
 def test_manager_does_not_create_or_get_wallet_key(vault, monkeypatch):

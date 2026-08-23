@@ -372,6 +372,27 @@ def test_wallet_send_different_destination_is_a_new_payment(vault, monkeypatch):
     assert rpc.sent_raw[0] != rpc.sent_raw[1]
 
 
+def test_wallet_send_same_dest_after_confirm_is_a_new_payment(vault, monkeypatch):
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=5_000_000)
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    first = app.client.wallet_send(_TO, "1")
+    pending = identity_home(vault, "P") / "wallet" / "pending-send.json"
+    assert not pending.is_file()
+    assert first["asset"] == "USDC"
+    assert first["hash"].startswith("0x")
+    assert len(first["hash"]) == 66
+    second = app.client.wallet_send(_TO, "1")
+    sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
+    assert len(sends) == 2
+    assert len(rpc.sent_raw) == 2
+    assert rpc.sent_raw[0] != rpc.sent_raw[1]
+    assert second["hash"] != first["hash"]
+    assert second["hash"].startswith("0x")
+    assert len(second["hash"]) == 66
+    assert not pending.is_file()
+
+
 def test_wallet_send_rpc_failure_before_broadcast_has_no_pending_ack(
     vault, monkeypatch
 ):

@@ -379,7 +379,23 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
         ["wallet", "send", _TO, "1"],
         "wallet_send",
     )
-    assert sent == {"ok": True, "to": _TO, "amount": "1", "asset": "USDC"}
+    assert sent["ok"] is True
+    assert sent["to"] == _TO
+    assert sent["amount"] == "1"
+    assert sent["asset"] == "USDC"
+    assert sent["hash"].startswith("0x")
+    assert len(sent["hash"]) == 66
+    assert all(ch in "0123456789abcdefABCDEF" for ch in sent["hash"][2:])
+    again = _main_ok(
+        monkeypatch,
+        capsys,
+        env,
+        ["wallet", "send", _TO, "1"],
+        "wallet_send",
+    )
+    assert again["hash"] != sent["hash"]
+    assert again["hash"].startswith("0x")
+    assert len(again["hash"]) == 66
 
 
 def test_json_failure_envelope_and_streams(tmp_path):
