@@ -71,7 +71,7 @@ jobs:
           esac
           case "${SOPS_VERSION}:${goarch}" in
             v3.13.3:amd64) sops_sha256=42162d5cef10b74fcf80a045a70e658d7ce6e63d6ea1be6f347e44015714468d ;;
-            v3.13.3:arm64) sops_sha256=b97c0d434aab577dc40310e8d22ff9e45eef4c80638ab978daae9b4681c59286d ;;
+            v3.13.3:arm64) sops_sha256=b97c0d434aab577dc40310e8d22ff9e45eef4c80638ab978daae9b4681c59286 ;;
             *) echo "no pinned sops checksum for ${SOPS_VERSION}/${goarch}" >&2; exit 1 ;;
           esac
           age_archive="${RUNNER_TEMP}/age.tgz"

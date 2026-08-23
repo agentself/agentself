@@ -78,8 +78,10 @@ def _create_link(link: Path, target: Path) -> None:
         try:
             import _winapi
 
-            _winapi.CreateJunction(str(target), str(link))
-            return
+            create_junction = getattr(_winapi, "CreateJunction", None)
+            if create_junction is not None:
+                create_junction(str(target), str(link))
+                return
         except (OSError, ImportError):
             pass
         link.symlink_to(target, target_is_directory=True)
