@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- POSIX `pass` GNUPGHOME short-links under `/tmp` are reused only when owned by the current user, so an attacker-owned `/tmp/as-gpg-*` symlink is not trusted.
 
 ## 0.1.0a3 - 2026-08-23
 

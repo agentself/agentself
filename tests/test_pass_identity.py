@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -167,6 +168,34 @@ def test_bindable_home_uses_short_symlink(tmp_path):
     assert len(os.fsencode(home / "S.gpg-agent.browser")) <= 106
     assert str(home).startswith("/tmp/as-gpg-")
     assert bindable_home(gnupg) == home
+
+
+@pytest.mark.skipif(os.name == "nt", reason="unix socket path limit")
+def test_bindable_home_does_not_reuse_unowned_symlink(tmp_path, monkeypatch):
+    gnupg = tmp_path / ("n" * 80) / "identities" / "agent" / "gnupg"
+    gnupg.mkdir(parents=True, mode=0o700)
+    home = bindable_home(gnupg)
+    assert home.is_symlink()
+    orig_stat = os.stat
+
+    def fake_stat(path, *args, dir_fd=None, follow_symlinks=True):
+        st = orig_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if Path(path) == home:
+            fields = list(st)
+            fields[stat.ST_UID] = st.st_uid + 1
+            return os.stat_result(fields)
+        return st
+
+    orig_unlink = Path.unlink
+
+    def fake_unlink(self, *args, **kwargs):
+        if self == home:
+            raise OSError("sticky bit")
+        return orig_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", fake_stat)
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+    assert bindable_home(gnupg) == gnupg
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows TEMP GNUPGHOME link")
