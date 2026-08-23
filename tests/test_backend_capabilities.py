@@ -13,7 +13,6 @@ from agentself.host import (
     CHANNELS,
     default_wallet_asset,
 )
-from agentself.internal.log import NullLog
 
 from tests.support import cli_env, run_cli, value_file
 
@@ -34,7 +33,7 @@ def test_catalog_names_match_factories():
             re.findall(r'binding == "([^"]+)"', inspect.getsource(factory.for_binding))
         )
 
-    wallet = set(WalletAccessFactory(NullLog())._makers)
+    wallet = equals_binds(WalletAccessFactory)
     mailbox = equals_binds(MailboxAccessFactory)
     store = equals_binds(StoreAccessFactory)
     assert set(CHANNELS["wallet"].names) <= wallet

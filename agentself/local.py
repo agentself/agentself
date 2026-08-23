@@ -27,7 +27,7 @@ from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
 )
-from agentself.internal.gpg import bindable_home, pass_argv
+from agentself.internal.gpg import gpg_fingerprint, pass_argv, pass_env
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
 
@@ -249,10 +249,10 @@ def _ensure_pass_principal(vault: Path, identity_id: str) -> Path:
         key = _ensure_age_keygen(vault, identity_id)
         gnupg = ensure_private_dir(pdir / "gnupg")
         store_dir = pdir / "password-store"
-        env = _pass_env(gnupg, store_dir)
-        if not _gpg_has_secret(env, gnupg):
-            _generate_principal_gpg(pdir, identity_id, env, gnupg)
-        fingerprint = _gpg_fingerprint(env, gnupg)
+        env = pass_env(gnupg, store_dir)
+        if not _gpg_has_secret(env):
+            _generate_principal_gpg(pdir, identity_id, env)
+        fingerprint = _gpg_fingerprint(env)
         if not (store_dir / ".gpg-id").is_file():
             _pass_init(env, store_dir, fingerprint)
         return key
@@ -276,17 +276,6 @@ def _have_tool(name: str) -> bool:
         return False
 
 
-def _pass_env(gnupg: Path, store_dir: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env["GNUPGHOME"] = str(bindable_home(gnupg))
-    env["PASSWORD_STORE_DIR"] = str(store_dir)
-    env["PASSWORD_STORE_GPG_OPTS"] = "--pinentry-mode loopback --batch"
-    env["GPG_TTY"] = ""
-    if os.name == "nt":
-        env.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
-    return env
-
-
 def _run_host(
     argv: list[str],
     *,
@@ -294,7 +283,7 @@ def _run_host(
     timeout: int = 30,
     failed: str = "keygen failed",
 ) -> subprocess.CompletedProcess[bytes]:
-    cmd = [resolve_tool(str(argv[0])), *[str(part) for part in argv[1:]]]
+    cmd = [resolve_tool(argv[0]), *argv[1:]]
     try:
         return subprocess.run(
             cmd,
@@ -341,11 +330,7 @@ def _strip_gpg_agent_prefix(line: str) -> str:
     return line
 
 
-def _raise_host_failed(prefix: str, proc: subprocess.CompletedProcess[bytes]) -> None:
-    raise RuntimeError(_host_failure_message(prefix, proc))
-
-
-def _gpg_has_secret(env: dict[str, str], gnupg: Path) -> bool:
+def _gpg_has_secret(env: dict[str, str]) -> bool:
     proc = _run_host(
         [
             "gpg",
@@ -367,9 +352,7 @@ def _gpg_has_secret(env: dict[str, str], gnupg: Path) -> bool:
     return any(line.startswith("sec:") for line in text.splitlines())
 
 
-def _generate_principal_gpg(
-    pdir: Path, identity_id: str, env: dict[str, str], gnupg: Path
-) -> None:
+def _generate_principal_gpg(pdir: Path, identity_id: str, env: dict[str, str]) -> None:
     batch = pdir / ".gpg-batch"
     body = "\n".join(
         [
@@ -405,12 +388,12 @@ def _generate_principal_gpg(
             failed="gpg keygen failed",
         )
         if proc.returncode != 0:
-            _raise_host_failed("gpg keygen failed", proc)
+            raise RuntimeError(_host_failure_message("gpg keygen failed", proc))
     finally:
         shred_unlink(batch)
 
 
-def _gpg_fingerprint(env: dict[str, str], gnupg: Path) -> str:
+def _gpg_fingerprint(env: dict[str, str]) -> str:
     proc = _run_host(
         [
             "gpg",
@@ -424,18 +407,17 @@ def _gpg_fingerprint(env: dict[str, str], gnupg: Path) -> str:
         failed="failed to read GPG fingerprint",
     )
     if proc.returncode != 0:
-        _raise_host_failed("failed to read GPG fingerprint", proc)
+        raise RuntimeError(
+            _host_failure_message("failed to read GPG fingerprint", proc)
+        )
     try:
         text = proc.stdout.decode("utf-8")
     except UnicodeDecodeError:
         raise RuntimeError("failed to read GPG fingerprint") from None
-    for line in text.splitlines():
-        parts = line.split(":")
-        if parts and parts[0] == "fpr" and len(parts) > 9:
-            fpr = parts[9]
-            if len(fpr) >= 40 and all(ch in "0123456789abcdefABCDEF" for ch in fpr):
-                return fpr
-    raise RuntimeError("failed to read GPG fingerprint")
+    fpr = gpg_fingerprint(text)
+    if fpr is None:
+        raise RuntimeError("failed to read GPG fingerprint")
+    return fpr
 
 
 def _pass_init(env: dict[str, str], store_dir: Path, fingerprint: str) -> None:
@@ -447,7 +429,7 @@ def _pass_init(env: dict[str, str], store_dir: Path, fingerprint: str) -> None:
         failed="pass init failed",
     )
     if proc.returncode != 0 or not (store_dir / ".gpg-id").is_file():
-        _raise_host_failed("pass init failed", proc)
+        raise RuntimeError(_host_failure_message("pass init failed", proc))
 
 
 def _read_config(vault: Path) -> dict[str, str]:

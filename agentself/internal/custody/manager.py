@@ -46,6 +46,7 @@ from agentself.internal.names import (
     EMAIL_CREDENTIAL_NAME,
     PROTECTED_SECRET_NAMES,
     WALLET_KEY_NAME,
+    is_reserved_secret_name,
     require_safe_token,
 )
 from agentself.internal.registry import (
@@ -61,7 +62,6 @@ from agentself.internal.setup import (
     continue_command,
     decode_state,
     encode_state,
-    is_reserved_secret_name,
     setup_status_of,
 )
 from agentself.internal.types import BoundCaller, Identity
@@ -246,7 +246,7 @@ class CustodyManager:
             self._fail_store("list", identity.id, None, exc)
         public = [name for name in names if not is_reserved_secret_name(name)]
         self._log.record("list", identity.id, None, "ok")
-        return list(public)
+        return public
 
     def exists(
         self,
@@ -673,7 +673,6 @@ class CustodyManager:
             return self._stores.for_binding(identity.store_binding)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, identity.id, name, exc)
-            raise StoreFailure("store error") from None
 
     def _mailbox_for(self, identity: Identity, operation: str) -> MailboxAccess:
         if self._mailboxes is None:
@@ -860,8 +859,6 @@ def _balance_view(result: object) -> dict[str, str]:
 def _items(items: object, keys: tuple[str, ...]) -> list[dict[str, str]]:
     if not isinstance(items, list):
         return []
-    out: list[dict[str, str]] = []
-    for item in items:
-        picked = _pick(item, keys)
-        out.append({key: str(value) for key, value in picked.items()})
-    return out
+    return [
+        {key: str(value) for key, value in _pick(item, keys).items()} for item in items
+    ]

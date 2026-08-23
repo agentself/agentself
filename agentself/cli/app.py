@@ -256,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             1,
             f"error: {exc}\n",
             "error",
-            getattr(exc, "reason", None) or "not_ready",
+            exc.reason,
             nxt="agentself backends email",
         )
     except HostToolMissing as exc:
@@ -269,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
             nxt=_INSTALL_TOOLS_NEXT,
         )
     except ChannelFailure as exc:
-        reason = getattr(exc, "reason", None) or "error"
+        reason = exc.reason
         return _fail(
             args,
             1,
@@ -1096,8 +1096,6 @@ def _print_setup_action(action: dict[str, object]) -> None:
 
 
 def _prompt_setup_option(result: dict[str, object]) -> dict[str, str] | None:
-    """Render one backend-provided setup request for a human operator."""
-
     option = result.get("option")
     if not isinstance(option, dict):
         return None
@@ -1197,7 +1195,7 @@ def _email_setup_pending(args, result: dict[str, object], status: str) -> int:
 
 
 def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
-    reason = getattr(exc, "reason", None) or "error"
+    reason = exc.reason
     if reason == "no_token":
         return _fail(
             args,
@@ -1512,11 +1510,11 @@ def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
             nonempty = any(dest.iterdir())
         except OSError as exc:
             raise IdentityStateError("cannot read destination") from exc
-        if nonempty and not force:
-            raise IdentityStateError("destination is not empty")
-        if nonempty and force:
+        if nonempty:
+            if not force:
+                raise IdentityStateError("destination is not empty")
             shutil.rmtree(dest)
-        elif not nonempty:
+        else:
             dest.rmdir()
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest, copy_function=shutil.copy2)
@@ -1563,9 +1561,8 @@ def _channel_next(args) -> str:
 
 
 def _store_reason(exc: StoreFailure) -> str:
-    name = getattr(exc, "name", None)
-    if name:
-        return f"cannot read {name}"
+    if exc.name:
+        return f"cannot read {exc.name}"
     return str(exc).strip() or "store error"
 
 
@@ -1581,11 +1578,10 @@ def _store_fail(args, exc: StoreFailure) -> int:
     )
 
 
-def _secret_value_error(args, err: str, *, kind: str = "secret") -> int:
-    nxt = f"agentself {kind} create --help"
-    verb = getattr(args, f"{kind}_command", None)
-    if verb == "update":
-        nxt = f"agentself {kind} update --help"
+def _secret_value_error(args, err: str) -> int:
+    nxt = "agentself secret create --help"
+    if getattr(args, "secret_command", None) == "update":
+        nxt = "agentself secret update --help"
     if err == "need a value":
         return _fail(args, 3, f"missing: {err}\n", "missing", err, nxt=nxt)
     return _fail(args, 1, f"error: {err}\n", "error", err, nxt=nxt)
@@ -1669,9 +1665,7 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
     if path:
         try:
             return load_value_file(path), None
-        except OSError:
-            return None, "file"
-        except UnicodeDecodeError:
+        except (OSError, UnicodeDecodeError):
             return None, "file"
     if argv_value is not None:
         return argv_value, None

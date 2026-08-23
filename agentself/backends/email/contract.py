@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from agentself.internal.setup import (
-    SETUP_FAILED,
-    SETUP_INPUT_REQUIRED,
-    setup_status_of,
-)
+from agentself.internal.setup import SETUP_FAILED, SETUP_INPUT_REQUIRED
 
 
 class MailboxError(Exception):
@@ -136,7 +132,3 @@ class MailboxAccess(ABC):
 
         del answers
         return self.describe(identity_id, credential=credential, address=address)
-
-
-def connect_status(payload: object) -> str:
-    return setup_status_of(payload)

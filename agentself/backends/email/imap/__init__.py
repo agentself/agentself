@@ -533,12 +533,8 @@ class _StdSmtp:
                 return
 
 
-def _ssl_context() -> ssl.SSLContext:
-    return ssl.create_default_context()
-
-
 def _default_imap_opener(host: str, port: int, mode: str) -> _StdImap:
-    ctx = _ssl_context()
+    ctx = ssl.create_default_context()
     client: imaplib.IMAP4 | None = None
     try:
         if mode == "ssl":
@@ -557,7 +553,7 @@ def _default_imap_opener(host: str, port: int, mode: str) -> _StdImap:
 
 
 def _default_smtp_opener(host: str, port: int, mode: str) -> _StdSmtp:
-    ctx = _ssl_context()
+    ctx = ssl.create_default_context()
     client: smtplib.SMTP | None = None
     try:
         if mode == "ssl":

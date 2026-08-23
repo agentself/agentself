@@ -30,6 +30,27 @@ def bindable_home(gnupg: Path) -> Path:
     return _short_link(home, parent)
 
 
+def pass_env(gnupg: Path, store_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["GNUPGHOME"] = str(bindable_home(gnupg))
+    env["PASSWORD_STORE_DIR"] = str(store_dir)
+    env["PASSWORD_STORE_GPG_OPTS"] = "--pinentry-mode loopback --batch"
+    env["GPG_TTY"] = ""
+    if os.name == "nt":
+        env.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+    return env
+
+
+def gpg_fingerprint(colon_listing: str) -> str | None:
+    for line in colon_listing.splitlines():
+        parts = line.split(":")
+        if parts[0] == "fpr" and len(parts) > 9:
+            fpr = parts[9]
+            if len(fpr) >= 40 and all(ch in "0123456789abcdefABCDEF" for ch in fpr):
+                return fpr
+    return None
+
+
 def pass_argv(argv: list[str]) -> list[str]:
     """Windows pass.sh under Git bash with native gpg first on PATH.
 

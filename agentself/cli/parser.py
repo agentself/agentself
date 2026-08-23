@@ -553,7 +553,6 @@ def _parser() -> argparse.ArgumentParser:
         "address",
         json_parent,
         help="Print the destination identifier",
-        description="Print the destination identifier",
         epilog="Examples:\n  agentself wallet address\n  agentself --json wallet address",
     )
     _cmd(

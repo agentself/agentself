@@ -36,6 +36,7 @@ from agentself.internal.setup import (
 )
 
 _API = "https://api.agentmail.to"
+_INBOXES_URL = _API + "/v0/inboxes"
 _API_KEYS_ACTION: SetupAction = {
     "kind": "open_url",
     "label": "Open AgentMail API Keys",
@@ -250,7 +251,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         return mailbox_view(email, owned_address=True)
 
     def _listed_inboxes(self, token: str) -> builtins.list[object]:
-        raw = self._get(_inboxes_url(), token, "no inbox")
+        raw = self._get(_INBOXES_URL, token, "no inbox")
         data = _object(raw, "no inbox")
         inboxes = data.get("inboxes")
         if not isinstance(inboxes, list):
@@ -259,7 +260,7 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def _create_inbox(self, identity_id: str, token: str) -> dict[str, object]:
         payload = json.dumps({"client_id": "agentself-" + identity_id}).encode("utf-8")
-        body = self._post(_inboxes_url(), token, payload, "no inbox")
+        body = self._post(_INBOXES_URL, token, payload, "no inbox")
         created = _object(body, "no inbox")
         email = str(created.get("email") or "").strip()
         if created.get("inbox_id") and email:
@@ -362,17 +363,13 @@ def _http_error(status: int) -> str:
 
 
 def _live_inboxes(inboxes: list[object]) -> list[dict[str, object]]:
-    live: list[dict[str, object]] = []
-    for item in inboxes:
-        if not isinstance(item, dict):
-            continue
-        if item.get("inbox_id") and str(item.get("email") or "").strip():
-            live.append(item)
-    return live
-
-
-def _inboxes_url() -> str:
-    return _API + "/v0/inboxes"
+    return [
+        item
+        for item in inboxes
+        if isinstance(item, dict)
+        and item.get("inbox_id")
+        and str(item.get("email") or "").strip()
+    ]
 
 
 def _enc(value: object) -> str:

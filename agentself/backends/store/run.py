@@ -21,8 +21,7 @@ def run_cmd(
         cmd[0] = resolve_tool(str(cmd[0]))
     env_map = None if env is None else dict(env)
     if os.name == "nt":
-        if env_map is None:
-            env_map = os.environ.copy()
+        env_map = os.environ.copy() if env_map is None else env_map
         env_map.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
     try:
         return subprocess.run(

@@ -24,7 +24,7 @@ from agentself.host import (
 )
 from agentself.internal.custody.manager import CustodyManager
 from agentself.internal.files import ensure_private_dir
-from agentself.internal.log import StreamLog
+from agentself.internal.log import Log, StreamLog
 from agentself.internal.registry import FileIdentityAccess
 from agentself.internal.types import BoundCaller
 from agentself.local import default_identity_dir, resolve_setting
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 def compose(
     vault_root: str | Path | None = None,
     *,
-    log: Any = None,
+    log: Log | None = None,
     bind: Callable[[], BoundCaller] | None = None,
     email_backend: str | None = None,
     wallet_backend: str | None = None,

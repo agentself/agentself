@@ -9,6 +9,10 @@ INTERNAL_PREFIX = "internal."
 PROTECTED_SECRET_NAMES = frozenset({WALLET_KEY_NAME})
 
 
+def is_reserved_secret_name(name: str) -> bool:
+    return name.startswith(INTERNAL_PREFIX)
+
+
 def require_safe_token(value: str, label: str) -> str:
     if not value or not _SAFE.fullmatch(value):
         raise ValueError(f"invalid {label}")

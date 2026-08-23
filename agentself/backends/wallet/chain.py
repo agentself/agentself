@@ -39,6 +39,7 @@ class ChainWalletAccess(WalletAccess):
     chain_label: str
     chain_id: int
     default_rpc: str
+    fallback_rpcs: tuple[str, ...] = ()
     usdc: str
 
     def __init__(
@@ -313,9 +314,7 @@ class ChainWalletAccess(WalletAccess):
         return self._key_hex
 
     def _rpc_urls(self) -> list[str]:
-        extras = list(getattr(self, "fallback_rpcs", ()) or ())
-        if self._rpc_override:
-            extras = []
+        extras = [] if self._rpc_override else list(self.fallback_rpcs)
         return _dedup_urls(self._rpc_url, extras)
 
     def _http_client(self) -> HttpJsonRpc:

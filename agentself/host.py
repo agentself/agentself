@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from agentself.internal.setup import (
     HELP_AGENTMAIL_ADDRESS,
@@ -101,7 +101,7 @@ class Bind:
     custody: str = ""
     network: str = ""
     asset: str = ""
-    options: tuple[dict[str, object], ...] = field(default_factory=tuple)
+    options: tuple[dict[str, object], ...] = ()
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -134,12 +134,10 @@ class Channel:
         return tuple(item.name for item in self.binds)
 
     def flag_help(self) -> str:
-        parts: list[str] = []
-        for item in self.binds:
-            if item.name == self.default:
-                parts.append(f"{item.name} (default)")
-            else:
-                parts.append(item.name)
+        parts = [
+            f"{item.name} (default)" if item.name == self.default else item.name
+            for item in self.binds
+        ]
         label = self.name.capitalize()
         return f"{label} backend: {', '.join(parts)}"
 
@@ -280,9 +278,7 @@ def unknown_bind_message(channel: str, value: str = "") -> str:
 
 def unknown_bind(channel: str, value: str) -> str | None:
     spec = CHANNELS.get(channel)
-    if spec is None:
-        return unknown_bind_message(channel, value)
-    if value not in spec.names:
+    if spec is None or value not in spec.names:
         return unknown_bind_message(channel, value)
     return None
 

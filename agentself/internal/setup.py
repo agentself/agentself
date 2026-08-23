@@ -4,8 +4,6 @@ import base64
 import json
 from typing import Any, Literal, NotRequired, TypedDict
 
-from agentself.internal.names import INTERNAL_PREFIX
-
 SETUP_CONNECTED = "connected"
 SETUP_INPUT_REQUIRED = "input_required"
 SETUP_ACTION_REQUIRED = "action_required"
@@ -153,14 +151,6 @@ def address_option(
         prompt=prompt,
         choices=choices,
     )
-
-
-def is_internal_name(name: str) -> bool:
-    return name.startswith(INTERNAL_PREFIX)
-
-
-def is_reserved_secret_name(name: str) -> bool:
-    return is_internal_name(name)
 
 
 def encode_state(payload: dict[str, object]) -> str:

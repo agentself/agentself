@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from agentself.backends.store.contract import (
@@ -11,7 +10,7 @@ from agentself.backends.store.contract import (
 )
 from agentself.backends.store.run import run_cmd
 from agentself.internal.files import IdentityBusy, exclusive, identity_home
-from agentself.internal.gpg import bindable_home, pass_argv
+from agentself.internal.gpg import gpg_fingerprint, pass_argv, pass_env
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 
@@ -70,11 +69,9 @@ class PassStoreAccess(StoreAccess):
     def list(self, identity_id: str) -> list[str]:
         self._ensure_store(identity_id)
         store = self._store_dir(identity_id)
-        names: list[str] = []
-        for path in store.rglob("*.gpg"):
-            rel = path.relative_to(store)
-            names.append(str(rel.with_suffix("")))
-        names.sort()
+        names = sorted(
+            str(path.relative_to(store).with_suffix("")) for path in store.rglob("*.gpg")
+        )
         self._log.record("store_list", identity_id, None, "ok")
         return names
 
@@ -116,12 +113,7 @@ class PassStoreAccess(StoreAccess):
         return self._store_dir(identity_id) / f"{name}.gpg"
 
     def _env(self, identity_id: str) -> dict[str, str]:
-        env = os.environ.copy()
-        env["GNUPGHOME"] = str(bindable_home(self._gpg_home(identity_id)))
-        env["PASSWORD_STORE_DIR"] = str(self._store_dir(identity_id))
-        env["PASSWORD_STORE_GPG_OPTS"] = "--pinentry-mode loopback --batch"
-        env["GPG_TTY"] = ""
-        return env
+        return pass_env(self._gpg_home(identity_id), self._store_dir(identity_id))
 
     def _ensure_store(self, identity_id: str) -> None:
         store = self._store_dir(identity_id)
@@ -146,13 +138,10 @@ class PassStoreAccess(StoreAccess):
         )
         if proc.returncode != 0:
             raise StoreResourceError("pass key missing")
-        for line in proc.stdout.decode("utf-8").splitlines():
-            parts = line.split(":")
-            if parts and parts[0] == "fpr" and len(parts) > 9:
-                fpr = parts[9]
-                if len(fpr) >= 40 and all(ch in "0123456789abcdefABCDEF" for ch in fpr):
-                    return fpr
-        raise StoreResourceError("pass key missing")
+        fpr = gpg_fingerprint(proc.stdout.decode("utf-8"))
+        if fpr is None:
+            raise StoreResourceError("pass key missing")
+        return fpr
 
     def _insert(self, identity_id: str, name: str, value: str, *, force: bool) -> None:
         argv = ["pass", "insert", "-m"]
