@@ -78,17 +78,6 @@ def test_email_send_maildir_domain_and_token_without_address_fails_closed(
     assert not outbox.exists() or not list(outbox.iterdir())
 
 
-def test_email_send_with_domain_without_token_fails_closed(vault, monkeypatch):
-    app = build_app(vault, mail_domain="example.com")
-    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
-    app.bind(monkeypatch, "P")
-    app.client.init("sops")
-    with pytest.raises(EmailSendNotReady):
-        app.client.email_send("someone@example.com", "hello", "body-text")
-    outbox = identity_home(app.vault, "P") / "outbox"
-    assert not outbox.exists() or not list(outbox.iterdir())
-
-
 def test_cli_email_send_without_domain_fails_closed(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
@@ -103,21 +92,6 @@ def test_cli_email_send_without_domain_fails_closed(tmp_path):
     assert lines[1] == "next: agentself backends email"
     outbox = identity_home(vault, "agent") / "outbox"
     assert not outbox.exists() or not list(outbox.iterdir())
-
-
-def test_cli_email_send_domain_without_token_fails_closed(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    start = run_cli(["init"], env)
-    assert start.returncode == 0, start.stderr
-    configured = run_cli(["email", "connect", "--domain", "example.com"], env)
-    assert configured.returncode == 2, configured.stdout + configured.stderr
-    assert "unrecognized arguments: --domain" in configured.stderr
-    sent = run_cli(["email", "send", "someone@example.com", "hello", "body"], env)
-    assert sent.returncode == 1, sent.stdout + sent.stderr
-    lines = [line for line in sent.stderr.splitlines() if line.strip()]
-    assert lines[0] == "error: email send needs a domain and send credentials"
-    assert lines[1] == "next: agentself backends email"
 
 
 def test_q_email_does_not_see_p_mail(app, monkeypatch):

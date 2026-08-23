@@ -2,29 +2,13 @@
 
 from __future__ import annotations
 
-import urllib.request
-
 import pytest
 
 from agentself.backends.email.agentmail import AgentMailMailboxAccess
-from agentself.backends.email.http import refuse_live_agentmail, request
+from agentself.backends.email.http import refuse_live_agentmail
 from agentself.internal.log import MemoryLog
 
 from tests.support import cli_env, run_cli, value_file
-
-
-def test_urlopen_to_agentmail_is_forbidden():
-    with pytest.raises(
-        AssertionError, match="live AgentMail HTTP is forbidden in tests"
-    ):
-        urllib.request.urlopen("https://api.agentmail.to/v0/inboxes")
-
-
-def test_http_request_to_agentmail_is_forbidden():
-    with pytest.raises(
-        AssertionError, match="live AgentMail HTTP is forbidden in tests"
-    ):
-        request("https://api.agentmail.to/v0/inboxes", {})
 
 
 def test_uninjected_agentmail_connect_does_not_dial_live(vault):

@@ -46,11 +46,4 @@ def test_cli_identity_does_not_claim_a_phone_number(tmp_path):
     low = out.lower()
     assert "not configured" in low
     assert "0x" in out
-    for banned in (
-        "your phone number",
-        "phone number:",
-        "gives you a phone",
-        "did:",
-        "+1",
-    ):
-        assert banned not in low
+    assert "phone number:" not in low

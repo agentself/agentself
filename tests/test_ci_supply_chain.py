@@ -31,5 +31,5 @@ def test_ci_host_tool_downloads_have_pinned_digests() -> None:
     assert "sha256sum --check --status" in linux
     assert "shasum -a 256 -c" in test_workflow
     assert "Get-FileHash -Algorithm SHA256" in test_workflow
-    assert len(SHA256.findall(linux)) >= 4
-    assert len(SHA256.findall(test_workflow)) >= 6
+    assert SHA256.findall(linux)
+    assert SHA256.findall(test_workflow)

@@ -70,7 +70,8 @@ class PassStoreAccess(StoreAccess):
         self._ensure_store(identity_id)
         store = self._store_dir(identity_id)
         names = sorted(
-            str(path.relative_to(store).with_suffix("")) for path in store.rglob("*.gpg")
+            str(path.relative_to(store).with_suffix(""))
+            for path in store.rglob("*.gpg")
         )
         self._log.record("store_list", identity_id, None, "ok")
         return names

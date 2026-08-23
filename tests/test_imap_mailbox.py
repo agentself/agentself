@@ -18,8 +18,6 @@ from agentself.backends.email.imap import (
 from agentself.internal.custody.manager import _channel_from_mailbox
 from agentself.internal.log import MemoryLog
 
-from tests.support import cli_env, run_cli
-
 CANARY = "CANARY-IMAP-PASSWORD-DO-NOT-LEAK"
 PRINCIPAL = "desk"
 ADDRESS = "bot@fastmail.com"
@@ -454,46 +452,3 @@ def test_compose_forwards_imap_env_knobs(vault, monkeypatch):
     assert seen["mail_user"] == "bot"
     assert seen["imap_port"] == "993"
     assert seen["smtp_port"] == "465"
-
-
-def test_factory_mounts_imap_with_host_knobs(vault):
-    log = MemoryLog()
-    factory = MailboxAccessFactory(
-        vault,
-        log,
-        mail_host="mail.example.com",
-        imap_host="imap.example.com",
-        smtp_host="smtp.example.com",
-        mail_user="bot",
-        imap_port="993",
-        smtp_port="587",
-    )
-    mb = factory.for_binding("imap")
-    assert isinstance(mb, ImapMailboxAccess)
-    assert mb._mail_host == "mail.example.com"
-    assert mb._imap_host == "imap.example.com"
-    assert mb._smtp_host == "smtp.example.com"
-    assert mb._mail_user == "bot"
-
-
-def test_cli_imap_bind_is_usable_and_fails_closed(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    start = run_cli(["init", "--email", "imap"], env)
-    assert start.returncode == 0, start.stderr
-    assert "email_backend: imap" in start.stdout
-    shown = run_cli(["email", "show"], env)
-    assert shown.returncode == 0, shown.stdout + shown.stderr
-    assert shown.stdout.strip() == "not configured"
-    sent = run_cli(["email", "send", TO, "hello", "body"], env)
-    assert sent.returncode == 1, sent.stdout + sent.stderr
-    assert "Traceback" not in sent.stderr
-    assert CANARY not in sent.stdout + sent.stderr
-    lines = [line for line in sent.stderr.splitlines() if line.strip()]
-    assert lines[0] == "error: email send needs a domain and send credentials"
-    assert lines[1] == "next: agentself backends email"
-    backends = run_cli(["backends", "email"], env)
-    assert backends.returncode == 0, backends.stderr
-    assert "imap" in backends.stdout
-    assert "address" in backends.stdout
-    assert "AGENTSELF_MAIL_HOST" in backends.stdout

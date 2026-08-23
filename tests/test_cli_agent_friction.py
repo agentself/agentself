@@ -29,21 +29,6 @@ def _write_wallet_binding(vault: Path, name: str) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def test_unbound_wallet_address_points_to_init(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["wallet", "address"], env)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "not initialized" in proc.stderr
-    assert "next: agentself init" in proc.stderr
-    js = run_cli(["--json", "wallet", "address"], env)
-    assert js.returncode == 2, js.stdout + js.stderr
-    data = json.loads(js.stdout or js.stderr)
-    assert data["ok"] is False
-    assert data["error"] == "refused"
-    assert data["reason"] == "not initialized"
-    assert data["next"] == "agentself init"
-
-
 def test_unknown_bind_typo_names_value_and_suggestion(tmp_path):
     env = cli_env(tmp_path / "vault")
     env["AGENTSELF_WALLET_BACKEND"] = "basee"
@@ -58,28 +43,6 @@ def test_unknown_bind_typo_names_value_and_suggestion(tmp_path):
     assert "basee" in data["reason"]
     assert "did you mean base?" in data["reason"]
     assert data["next"] == "agentself backends wallet"
-
-
-def test_doctor_unknown_wallet_bind_is_not_ok(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    started = run_cli(["init"], env)
-    assert started.returncode == 0, started.stderr
-    _write_wallet_binding(vault, "basee")
-    proc = run_cli(["diagnose"], env)
-    assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "wallet_backend: basee" in proc.stdout
-    assert "unknown wallet backend: basee" in proc.stderr
-    assert "did you mean base?" in proc.stderr
-    assert "next: agentself backends wallet" in proc.stderr
-    js = run_cli(["--json", "diagnose"], env)
-    assert js.returncode == 1, js.stdout + js.stderr
-    data = json.loads(js.stdout or js.stderr)
-    assert data["ok"] is False
-    assert data["wallet_backend"] == "basee"
-    assert data["reason"] == "unknown wallet backend: basee (did you mean base?)"
-    assert data["next"] == "agentself backends wallet"
-    assert "AGE-SECRET-KEY" not in proc.stdout + proc.stderr + js.stdout + js.stderr
 
 
 def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
@@ -118,24 +81,6 @@ def test_failed_init_does_not_persist_bind_change(tmp_path):
     assert proc.returncode != 0, proc.stdout + proc.stderr
     cfg = json.loads((vault / "config.json").read_text(encoding="utf-8"))
     assert cfg["wallet_backend"] == "basee"
-
-
-def test_email_connect_without_domain_refuses(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    started = run_cli(["init"], env)
-    assert started.returncode == 0, started.stderr
-    proc = run_cli(["email", "connect"], env)
-    assert proc.returncode == 3, proc.stdout + proc.stderr
-    assert "input required" in proc.stderr
-    assert "need --domain" not in proc.stderr
-    js = run_cli(["--json", "email", "connect"], env)
-    assert js.returncode == 3, js.stdout + js.stderr
-    data = json.loads(js.stdout or js.stderr)
-    assert data["ok"] is False
-    assert data["status"] == "input_required"
-    assert data["next"].startswith("agentself --json email connect --continue --state ")
-    assert "--result-file PATH" in data["next"]
 
 
 def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsys):

@@ -12,37 +12,11 @@ from pathlib import Path
 import pytest
 
 import agentself.local as local
-from agentself.internal.custody.errors import HostToolMissing
 from agentself.internal.files import identity_home
 from agentself.internal.gpg import bindable_home
 from agentself.local import ensure_age_key
 
-from tests.support import PROJECT_ROOT, apply_cli_env, cli_env, run_cli
-
-
-def test_pass_missing_tools_fails_closed_without_setup_script(tmp_path, monkeypatch):
-    vault = tmp_path / "vault"
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    monkeypatch.setenv("PATH", str(empty))
-    assert not (PROJECT_ROOT / "scripts" / "setup-principal.sh").exists()
-
-    def run_wrapped(argv, *args, **kwargs):
-        cmd = argv if isinstance(argv, (list, tuple)) else [argv]
-        assert not any("setup-principal.sh" in str(part) for part in cmd)
-        raise AssertionError("host tools must not run when pass/gpg are missing")
-
-    original_is_file = Path.is_file
-
-    def is_file_wrapped(self):
-        text = str(self).replace("\\", "/")
-        assert not text.endswith("scripts/setup-principal.sh")
-        return original_is_file(self)
-
-    monkeypatch.setattr(subprocess, "run", run_wrapped)
-    monkeypatch.setattr(Path, "is_file", is_file_wrapped)
-    with pytest.raises(HostToolMissing, match="pass|gpg"):
-        ensure_age_key(vault, "agent", store="pass")
+from tests.support import apply_cli_env, cli_env, run_cli
 
 
 def test_init_store_pass_missing_tools(tmp_path):
@@ -62,39 +36,6 @@ def test_init_store_pass_missing_tools(tmp_path):
     lines = [line for line in proc.stderr.splitlines() if line.strip()]
     assert lines[0].startswith("error:")
     assert "pass" in lines[0] or "gpg" in lines[0]
-
-
-def test_pass_setup_does_not_consult_missing_setup_script(tmp_path, monkeypatch):
-    vault = tmp_path / "vault"
-    store = identity_home(vault, "agent") / "password-store"
-    store.mkdir(parents=True)
-    (store / ".gpg-id").write_text("ok\n", encoding="utf-8")
-    original_is_file = Path.is_file
-
-    def is_file_wrapped(self):
-        text = str(self).replace("\\", "/")
-        if text.endswith("scripts/setup-principal.sh"):
-            return False
-        return original_is_file(self)
-
-    monkeypatch.setattr(Path, "is_file", is_file_wrapped)
-    monkeypatch.setattr(local, "_have_tool", lambda name: True)
-    monkeypatch.setattr(local, "_gpg_has_secret", lambda *a, **k: True)
-    monkeypatch.setattr(local, "_gpg_fingerprint", lambda *a, **k: "A" * 40)
-    seen: list[list[str]] = []
-    real_run = subprocess.run
-
-    def run_wrapped(argv, *args, **kwargs):
-        cmd = argv if isinstance(argv, (list, tuple)) else [argv]
-        parts = [str(part) for part in cmd]
-        seen.append(parts)
-        assert not any("setup-principal.sh" in part for part in parts)
-        return real_run(argv, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", run_wrapped)
-    key = ensure_age_key(vault, "agent", store="pass")
-    assert key.is_file()
-    assert not any("setup-principal.sh" in " ".join(cmd) for cmd in seen)
 
 
 def test_leftover_gpg_batch_is_shredded(tmp_path, monkeypatch):

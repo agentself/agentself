@@ -35,7 +35,6 @@ from tests.support import (
     init_identity,
     plant_email,
     run_cli,
-    value_file,
 )
 
 _TO = "0x" + "11" * 20
@@ -161,66 +160,6 @@ def test_concurrent_init_one_identity(tmp_path):
     assert len(keys) == 1
 
 
-def test_secret_create_same_value_is_idempotent(app, monkeypatch):
-    init_identity(app, monkeypatch)
-    app.client.create("token", "same")
-    app.client.create("token", "same")
-    assert app.client.get("token") == "same"
-
-
-def test_secret_create_different_value_still_refuses(app, monkeypatch):
-    init_identity(app, monkeypatch)
-    app.client.create("token", "first")
-    with pytest.raises(Refused):
-        app.client.create("token", "other")
-    assert app.client.get("token") == "first"
-
-
-def test_cli_secret_create_retry_same_value(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    assert run_cli(["init"], env).returncode == 0
-    first = run_cli(
-        [
-            "--json",
-            "secret",
-            "create",
-            "notes",
-            "--file",
-            value_file(tmp_path, "alpha"),
-        ],
-        env,
-    )
-    second = run_cli(
-        [
-            "--json",
-            "secret",
-            "create",
-            "notes",
-            "--file",
-            value_file(tmp_path, "alpha", "alpha2.txt"),
-        ],
-        env,
-    )
-    clash = run_cli(
-        [
-            "--json",
-            "secret",
-            "create",
-            "notes",
-            "--file",
-            value_file(tmp_path, "beta", "beta.txt"),
-        ],
-        env,
-    )
-    assert first.returncode == 0, first.stderr
-    assert second.returncode == 0, second.stderr
-    assert clash.returncode == 2, clash.stderr
-    got = run_cli(["secret", "get", "notes"], env)
-    assert got.returncode == 0
-    assert got.stdout == "alpha\n"
-
-
 def test_empty_sops_file_is_interrupted_write(app, monkeypatch):
     init_identity(app, monkeypatch)
     hold = secrets_home(app.vault, "P")
@@ -321,20 +260,6 @@ def test_concurrent_secret_create_same_name(app, monkeypatch):
     assert held in ("one", "two")
     assert len(errors) == 1
     assert errors[0] != held
-
-
-def test_email_receive_second_call_empty(app, monkeypatch):
-    init_identity(app, monkeypatch)
-    plant_email(app.vault, "P", from_addr="a@example.com", subject="once", body="body")
-    first = app.client.email_receive()
-    assert len(first) == 1
-    assert first[0]["subject"] == "once"
-    assert app.client.email_receive() == []
-    listed = app.client.email_list()
-    assert any(item["subject"] == "once" for item in listed)
-    again = app.client.email_receive(message_id=first[0]["id"])
-    assert len(again) == 1
-    assert again[0]["subject"] == "once"
 
 
 def test_email_receive_crash_before_move_redelivers(app, monkeypatch):

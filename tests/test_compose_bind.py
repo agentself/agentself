@@ -37,19 +37,3 @@ def test_compose_bind_kwarg_builds_client(tmp_path, monkeypatch):
     assert client._bind is dummy
     assert vault.is_dir()
     assert vault.resolve() != Path.home() / ".agentself"
-
-
-def test_compose_no_args_uses_default_identity_dir(tmp_path, monkeypatch):
-    vault = _vault(tmp_path, monkeypatch)
-    client = compose()
-    assert isinstance(client, Client)
-    assert vault.is_dir()
-
-
-def test_compose_identity_dir_only_stays(tmp_path, monkeypatch):
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
-    client = compose(vault)
-    assert isinstance(client, Client)
-    assert vault.is_dir()

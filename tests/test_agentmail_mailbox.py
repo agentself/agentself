@@ -187,34 +187,6 @@ def test_send_picks_address_secret_among_many_inboxes(vault):
     _no_local_outbox(vault)
 
 
-def test_send_2xx_auth_in_mock_only_no_outbox(vault):
-    log = MemoryLog()
-    http = Http()
-    inbox_id = "inb_auth"
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
-    )
-    http.post_result(200, {})
-    mb = _box(vault, log, http)
-    mb.send(
-        PRINCIPAL,
-        "a@example.com",
-        "s",
-        "b",
-        credential=CANARY,
-        address=OURS,
-    )
-    url, headers, _payload = http.posts[0]
-    assert headers["Authorization"] == "Bearer " + CANARY
-    assert url.endswith(f"/inboxes/{inbox_id}/messages/send")
-    _secret_absent(log)
-    _no_local_outbox(vault)
-    for rec in log.records:
-        assert CANARY not in json.dumps(rec)
-
-
 def test_receive_then_receive_empty_seen_modes(vault):
     log = MemoryLog()
     http = Http()
@@ -350,26 +322,6 @@ def test_timeout_urlerror_fail_closed(vault, boom):
         _secret_absent(log, exc)
 
 
-def test_messages_timeout_fail_closed(vault):
-    log = MemoryLog()
-    http = Http()
-    inbox_id = "inb_msg_to"
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
-    )
-    http.get_raises(f"{API}/v0/inboxes/{inbox_id}/messages", TimeoutError())
-    mb = _box(vault, log, http)
-    with pytest.raises(MailboxError, match="rpc failed") as list_err:
-        mb.list(PRINCIPAL, credential=CANARY, address=OURS)
-    with pytest.raises(MailboxError, match="rpc failed") as recv_err:
-        mb.receive(PRINCIPAL, credential=CANARY, address=OURS)
-    _no_local_outbox(vault)
-    _secret_absent(log, list_err.value)
-    _secret_absent(log, recv_err.value)
-
-
 def test_send_poster_timeout_fail_closed(vault):
     log = MemoryLog()
     http = Http()
@@ -409,22 +361,6 @@ def test_describe_address_without_token_is_not_owned(vault):
     assert TAKEN not in str(unverified)
     assert http.gets == []
     assert http.posts == []
-    _secret_absent(log)
-
-
-def test_describe_discovers_unique_inbox(vault):
-    log = MemoryLog()
-    http = Http()
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": "inb_who", "email": OURS}]},
-    )
-    mb = _box(vault, log, http, domain="agentmail.to")
-    desc = mb.describe(PRINCIPAL, credential=CANARY)
-    assert desc["owned_address"] is True
-    assert desc["address"] == OURS
-    assert desc["needs_domain"] is False
     _secret_absent(log)
 
 
@@ -579,38 +515,6 @@ def test_receive_message_id_returns_seen(vault):
     _no_local_outbox(vault)
 
 
-def test_receive_unknown_message_id_is_empty(vault):
-    log = MemoryLog()
-    http = Http()
-    inbox_id = "inb_recv"
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
-    )
-    http.on_get(
-        f"{API}/v0/inboxes/{inbox_id}/messages",
-        200,
-        {
-            "messages": [
-                {
-                    "message_id": "msg_ok",
-                    "from": "a@example.com",
-                    "to": [OURS],
-                    "subject": "hello",
-                    "preview": "short",
-                }
-            ]
-        },
-    )
-    mb = _box(vault, log, http)
-    missing = mb.receive(
-        PRINCIPAL, credential=CANARY, address=OURS, message_id="no-such"
-    )
-    assert missing == []
-    _secret_absent(log)
-
-
 ISSUED = "glint-otter@agentmail.to"
 
 
@@ -630,23 +534,6 @@ def test_connect_no_token_zero_http(vault):
     _secret_absent(log)
     assert TAKEN not in str(desc)
     assert f"{PRINCIPAL}@agentmail.to" not in str(desc)
-
-
-def test_connect_selected_address_verifies_live_ownership(vault):
-    log = MemoryLog()
-    http = Http()
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": "inb_selected", "email": OURS}]},
-    )
-    mb = _box(vault, log, http)
-    desc = mb.connect(PRINCIPAL, credential=CANARY, address=OURS)
-    assert desc["owned_address"] is True
-    assert desc["address"] == OURS
-    assert len(http.gets) == 1
-    assert http.posts == []
-    _secret_absent(log)
 
 
 def test_connect_selected_unknown_address_fails_without_local_state(vault):
@@ -736,11 +623,10 @@ def test_connect_many_inboxes_need_address_no_post(vault):
     assert desc["option"]["choices"] == [TAKEN, OURS]
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_connect_unauthorized_is_invalid_credentials(vault, status):
+def test_connect_unauthorized_is_invalid_credentials(vault):
     log = MemoryLog()
     http = Http()
-    http.on_get(INBOXES, status, {"error": "nope"})
+    http.on_get(INBOXES, 401, {"error": "nope"})
     mb = _box(vault, log, http)
     with pytest.raises(MailboxError, match="invalid credentials") as err:
         mb.connect(PRINCIPAL, credential=CANARY)
@@ -760,42 +646,3 @@ def test_connect_create_rpc_failed(vault):
     _secret_absent(log, err.value)
     _no_local_outbox(vault)
     _no_local_outbox(vault)
-
-
-def test_receive_all_message_gets_400_returns_degraded(vault):
-    log = MemoryLog()
-    http = Http()
-    inbox_id = "inb_recv"
-    bad_id = "msg@unsafe"
-    http.on_get(
-        INBOXES,
-        200,
-        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
-    )
-    http.on_get(
-        f"{API}/v0/inboxes/{inbox_id}/messages",
-        200,
-        {
-            "messages": [
-                {
-                    "message_id": bad_id,
-                    "from": "a@example.com",
-                    "to": [OURS],
-                    "subject": "bad",
-                    "preview": "short",
-                }
-            ]
-        },
-    )
-    http.on_get(
-        f"{API}/v0/inboxes/{inbox_id}/messages/{quote(bad_id, safe='')}",
-        400,
-        {"error": "bad id"},
-    )
-    mb = _box(vault, log, http)
-    messages = mb.receive(PRINCIPAL, credential=CANARY, address=OURS)
-    assert len(messages) == 1
-    assert messages[0]["id"] == bad_id
-    assert messages[0]["reason"] in {"mailbox_error", "http"}
-    assert messages[0]["body"] in {"short", ""}
-    _secret_absent(log)

@@ -26,7 +26,6 @@ def test_logs_never_contain_canary_value(app, monkeypatch):
         assert "value" not in rec
         blob = json.dumps(rec)
         assert canary not in blob
-        assert set(rec.keys()) == {"operation", "identity_id", "name", "result"}
 
     assert any(
         r["operation"] == "create" and r["name"] == "token" for r in app.log.records

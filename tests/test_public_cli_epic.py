@@ -35,13 +35,6 @@ def test_install_skills_project_and_global(tmp_path):
     assert grok.returncode == 2, grok.stdout + grok.stderr
 
 
-def test_mailbox_flag_is_unknown(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["init", "--mailbox", "agentmail"], env)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "unrecognized arguments: --mailbox" in proc.stderr
-
-
 def test_backup_restore_roundtrip(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)

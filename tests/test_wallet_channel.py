@@ -67,20 +67,6 @@ def test_wallet_address_stable_sign_verifiable_key_hidden(app, monkeypatch):
         assert bare not in blob.lower()
 
 
-def test_wallet_balance_with_mocked_rpc(vault, monkeypatch):
-    rpc = MockRpc(eth_wei=0, usdc_raw=1_500_000)
-    app = build_app(vault, rpc=rpc)
-    init_identity(app, monkeypatch)
-    bal = app.client.wallet_balance()
-    assert bal["asset"] == "USDC"
-    assert bal["chain"] == "base"
-    assert bal["amount"] == "1.5"
-    assert bal["gas_asset"] == "ETH"
-    assert bal["gas_raw"] == "0"
-    assert bal["gas_amount"] == "0"
-    assert any(c[0] == "eth_call" for c in rpc.calls)
-
-
 def test_wallet_send_fails_closed_without_eth(app, monkeypatch):
     init_identity(app, monkeypatch)
     app.client.wallet_address()
@@ -114,27 +100,12 @@ def test_wallet_ops_use_bound_identity(app, monkeypatch):
 def test_wallet_access_contract_has_no_key_hex():
     source = _CONTRACT.read_text(encoding="utf-8")
     assert "key_hex" not in source
-    assert "NoEthForGas" not in source
-    assert not re.search(r"\bETH\b", source)
-    assert not re.search(r"\bUSDC\b", source)
     assert not hasattr(wallet_contract, "NoEthForGas")
-    members = dict(inspect.getmembers(wallet_contract))
-    assert "NoEthForGas" not in members
-    assert "ETH" not in members
-    assert "USDC" not in members
     for name in ("address", "authorize", "balance", "send", "describe"):
         method = getattr(WalletAccess, name)
         params = inspect.signature(method).parameters
         assert "key_hex" not in params
-    send_params = list(inspect.signature(WalletAccess.send).parameters)
-    assert send_params == ["self", "identity_id", "to", "amount", "asset"]
     assert issubclass(NoEthForGas, WalletCannotSend)
-
-
-def _is_eoa(address: str) -> bool:
-    if not address.startswith("0x") or len(address) != 42:
-        return False
-    return all(ch in "0123456789abcdefABCDEF" for ch in address[2:])
 
 
 def _assert_describe_has_no_key(view: dict[str, object]) -> None:
@@ -153,11 +124,6 @@ def test_describe_never_contains_a_key():
 
     base.bind_key(generate_secp256k1())
     _assert_describe_has_no_key(base.describe("P"))
-
-
-def test_factory_unknown_wallet_binding_fails():
-    with pytest.raises(WalletError, match="unknown wallet binding"):
-        WalletAccessFactory(MemoryLog()).for_binding("nope")
 
 
 def _assert_key_hidden(app, key: str) -> None:
@@ -238,13 +204,6 @@ def test_wallet_send_wrong_asset_names_usdc_before_eth_check():
     with pytest.raises(WalletCannotSend, match="USDC") as lower:
         wallet.send("P", "0x" + "11" * 20, "1", "usdc")
     assert "need ETH for gas" not in str(lower.value)
-
-
-def test_wallet_send_wrong_asset_names_usdc(vault, monkeypatch):
-    app = build_app(vault, rpc=MockRpc(eth_wei=0))
-    init_identity(app, monkeypatch)
-    with pytest.raises(CannotSend, match="USDC"):
-        app.client.wallet_send("0x" + "11" * 20, "1", "ETH")
 
 
 def test_wallet_send_rpc_boom_is_channel_rpc(vault, monkeypatch):

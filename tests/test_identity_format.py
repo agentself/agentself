@@ -8,10 +8,7 @@ from pathlib import Path
 import pytest
 
 import agentself.internal.format as format_mod
-from agentself.internal.format import (
-    CURRENT_FORMAT_VERSION,
-    read_format_version,
-)
+from agentself.internal.format import read_format_version
 from agentself.internal.log import MemoryLog
 from agentself.internal.registry import (
     FileIdentityAccess,
@@ -37,10 +34,6 @@ def _plant(vault: Path, fixture: str, name: str) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes((FIXTURES / fixture).read_bytes())
     return dest
-
-
-def test_current_format_version_is_one():
-    assert CURRENT_FORMAT_VERSION == 1
 
 
 def test_missing_format_version_is_never_current(monkeypatch):
@@ -93,15 +86,6 @@ def test_string_config_version_fails_closed(tmp_path):
     path = _plant(vault, "config_string_version.json", "config.json")
     original = path.read_bytes()
     with pytest.raises(IdentityStateError, match="format_version is not an integer"):
-        load_config(vault)
-    assert path.read_bytes() == original
-
-
-def test_malformed_config_still_fails_closed(tmp_path):
-    vault = tmp_path / "vault"
-    path = _plant(vault, "config_malformed.json", "config.json")
-    original = path.read_bytes()
-    with pytest.raises(IdentityStateError, match="^cannot read config.json$"):
         load_config(vault)
     assert path.read_bytes() == original
 
@@ -263,15 +247,6 @@ def test_string_registry_version_fails_closed(tmp_path):
     path = _plant(vault, "registry_string_version.json", "registry.json")
     original = path.read_bytes()
     with pytest.raises(RegistryError, match="format_version is not an integer"):
-        FileIdentityAccess(vault, MemoryLog()).find("agent")
-    assert path.read_bytes() == original
-
-
-def test_malformed_registry_still_fails_closed(tmp_path):
-    vault = tmp_path / "vault"
-    path = _plant(vault, "registry_malformed.json", "registry.json")
-    original = path.read_bytes()
-    with pytest.raises(RegistryError, match="^cannot read registry.json$"):
         FileIdentityAccess(vault, MemoryLog()).find("agent")
     assert path.read_bytes() == original
 

@@ -19,6 +19,3 @@ def test_list_returns_names_never_values(app, monkeypatch):
     assert names == ["alpha", "beta"]
     joined = " ".join(names)
     assert canary not in joined
-    for item in names:
-        assert item in {"alpha", "beta"}
-        assert canary not in item

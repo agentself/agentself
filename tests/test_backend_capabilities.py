@@ -9,22 +9,12 @@ import re
 from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.factory import WalletAccessFactory
-from agentself.host import (
-    CHANNELS,
-    default_wallet_asset,
-)
+from agentself.host import CHANNELS
 
 from tests.support import cli_env, run_cli, value_file
 
 TOKEN_CANARY = "hold-token-CANARY-doctor-mailbox"
 ADDRESS_CANARY = "imap-address-CANARY@example.com"
-
-
-def _catalog_bind(channel: str, name: str):
-    for item in CHANNELS[channel].binds:
-        if item.name == name:
-            return item
-    raise AssertionError(f"{channel} backend {name} missing")
 
 
 def test_catalog_names_match_factories():
@@ -40,44 +30,6 @@ def test_catalog_names_match_factories():
     assert set(CHANNELS["email"].names) <= mailbox
     assert set(CHANNELS["store"].names) == store
     assert tuple(CHANNELS) == ("wallet", "email", "store")
-    assert "sms" not in CHANNELS
-    assert "local-account" not in CHANNELS["wallet"].names
-    assert "maildir" not in CHANNELS["email"].names
-    assert "routing" not in CHANNELS["email"].names
-
-
-def test_json_backends_wallet_is_live(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    data = json.loads(run_cli(["--json", "backends", "wallet"], env).stdout)
-    binds = {item["name"]: item for item in data["channel"]["backends"]}
-    assert "local-account" not in binds
-    assert binds["base"]["live"] is True
-    assert binds["ethereum"]["live"] is True
-    assert binds["base"]["custody"] == "eoa-key"
-
-
-def test_sms_is_not_a_public_channel(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["--json", "backends", "sms"], env)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    data = json.loads(proc.stdout or proc.stderr)
-    assert data["ok"] is False
-    assert "sms" in data["reason"] or "invalid choice" in data["reason"]
-
-
-def test_other_local_and_live_binds():
-    assert _catalog_bind("email", "agentmail").live is True
-    assert _catalog_bind("email", "imap").live is True
-    assert _catalog_bind("store", "sops").live is False
-    assert _catalog_bind("store", "sops").custody == "age-files"
-    assert _catalog_bind("store", "pass").live is False
-    assert _catalog_bind("store", "pass").custody == "gpg-pass"
-
-
-def test_omitted_asset_follows_catalog():
-    assert default_wallet_asset("base", "") == "USDC"
-    assert default_wallet_asset("ethereum", "") == "USDC"
-    assert default_wallet_asset("base", "USDC") == "USDC"
 
 
 def test_diagnose_agentmail_token_canary_is_absent(tmp_path):

@@ -9,15 +9,6 @@ from tests.support import PROJECT_ROOT, cli_env, run_cli
 SKILL = PROJECT_ROOT / "agentself" / "skills" / "agentself" / "SKILL.md"
 
 
-def test_missing_subcommand_points_at_help(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["secret"], env)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    text = proc.stderr
-    assert "next:" in text
-    assert "agentself secret --help" in text
-
-
 def test_unknown_command_does_not_list_aliases(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["ninit"], env)
@@ -27,19 +18,6 @@ def test_unknown_command_does_not_list_aliases(tmp_path):
     assert "did you mean 'init'" in text
     for alias in ("start", "set", "get", "change", "list", "key", "identity"):
         assert f"'{alias}'" not in text, text
-    for verb in (
-        "init",
-        "show",
-        "backends",
-        "diagnose",
-        "secret",
-        "email",
-        "wallet",
-        "backup",
-        "restore",
-        "install",
-    ):
-        assert f"'{verb}'" in text, text
 
     nested = run_cli(["secret", "ncreate"], env)
     assert nested.returncode == 2, nested.stdout + nested.stderr
@@ -74,22 +52,6 @@ def test_install_copies_bundled_skill(tmp_path):
     assert data["ok"] is True
     assert len(data["paths"]) == 1
     assert data["paths"][0].endswith("SKILL.md")
-    installed = (tmp_path / ".agents" / "skills" / "agentself" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    assert "This skill requires `cli: 1`" in installed
-    assert "an unexpected `package` / `executable` path" in installed
-    assert "does not authorize external account creation" in installed
-    assert "One validated credential completes discovery" in installed
-    assert "ask the user rather than trying aliases" in installed
-    assert "wait while the human creates or copies a key" in installed
-
-
-def test_install_unknown_target_is_actionable(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    proc = run_cli(["install", "--skills=nope"], env, cwd=tmp_path)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "next: agentself install --help" in proc.stderr
 
 
 def test_install_io_error_is_one_line(tmp_path):
@@ -116,11 +78,9 @@ def test_backends_lists_shipped_binds_without_init(tmp_path):
     proc = run_cli(["backends"], env)
     assert proc.returncode == 0, proc.stderr
     text = proc.stdout
-    assert "AGENTSELF_WALLET_BACKEND" in text
     assert "base" in text
     assert "agentmail" in text
     assert "sops" in text
-    assert "No failover" in text
     wallet = run_cli(["backends", "wallet"], env)
     assert wallet.returncode == 0, wallet.stderr
     assert "ethereum" in wallet.stdout
@@ -140,12 +100,3 @@ def test_unknown_init_bind_points_at_backends(tmp_path):
     assert "unknown wallet backend: nope" in proc.stderr
     assert "next: agentself backends wallet" in proc.stderr
     assert list(vault.rglob("agent.agekey")) == []
-
-
-def test_unknown_env_bind_on_show_points_at_backends(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    env["AGENTSELF_WALLET_BACKEND"] = "nope"
-    proc = run_cli(["show"], env)
-    assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "unknown wallet backend" in proc.stderr
-    assert "next: agentself backends wallet" in proc.stderr

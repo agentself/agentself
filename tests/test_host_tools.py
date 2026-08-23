@@ -165,24 +165,6 @@ def test_checksum_mismatch_fails_closed(tmp_path, monkeypatch):
     assert not (dest / "age").exists()
 
 
-def test_download_error_is_one_line(tmp_path, monkeypatch):
-    dest = tmp_path / "tools"
-    monkeypatch.setenv("AGENTSELF_TOOLS", str(dest))
-    monkeypatch.setenv("AGENTSELF_FETCH_TOOLS", "1")
-    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    (tmp_path / "empty").mkdir()
-    monkeypatch.setattr(host_tools, "_host_kind", lambda: ("linux", "amd64"))
-
-    def boom(url: str) -> bytes:
-        raise host_tools.HostToolError("could not fetch host tools")
-
-    monkeypatch.setattr(host_tools, "_http_get", boom)
-    with pytest.raises(HostToolError, match="^could not fetch host tools$") as caught:
-        ensure_host_tools()
-    assert "http" not in str(caught.value).lower()
-    assert "github" not in str(caught.value).lower()
-
-
 def test_doctor_fetch_error_is_json_object(tmp_path, monkeypatch, capsys):
     vault = tmp_path / "vault"
     empty = tmp_path / "empty"

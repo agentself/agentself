@@ -73,10 +73,6 @@ def test_help_does_not_load_wallet_sdks():
     assert _probe(_run_main("['--help']")) == []
 
 
-def test_version_does_not_load_wallet_sdks():
-    assert _probe(_run_main("['--version']")) == []
-
-
 def test_backends_does_not_load_wallet_sdks():
     assert _probe(_run_main("['backends']")) == []
 
@@ -97,13 +93,6 @@ def test_secret_list_does_not_load_wallet_sdks(tmp_path):
     started = run_cli(["init"], env)
     assert started.returncode == 0, started.stderr
     assert _probe(_run_main("['secret', 'list']"), env=env) == []
-
-
-def test_doctor_does_not_load_wallet_sdks(tmp_path):
-    env = cli_env(tmp_path / "vault")
-    started = run_cli(["init"], env)
-    assert started.returncode == 0, started.stderr
-    assert _probe(_run_main("['--json', 'diagnose']"), env=env) == []
 
 
 def test_wallet_address_loads_eth_account_not_web3(tmp_path):

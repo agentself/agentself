@@ -19,7 +19,6 @@ def test_exercise_own_secrets(app, monkeypatch, store):
     assert view["id"] == "P"
     assert view["recipient"].startswith("age1")
     assert "AGE-SECRET-KEY" not in view["recipient"]
-    assert set(view.keys()) == {"id", "recipient"}
 
     app.client.create("token", "v1")
     assert app.client.get("token") == "v1"

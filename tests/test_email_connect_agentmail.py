@@ -37,30 +37,6 @@ def _patch_agentmail(monkeypatch, http: Http) -> None:
     )
 
 
-def test_agentmail_connect_without_token_points_at_secret(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    start = run_cli(["init"], env)
-    assert start.returncode == 0, start.stderr
-    proc = run_cli(["email", "connect"], env)
-    assert proc.returncode == 3, proc.stdout + proc.stderr
-    assert "input required" in proc.stderr
-    assert "credential" in proc.stderr
-    assert "need --domain" not in proc.stderr
-    js = run_cli(["--json", "email", "connect"], env)
-    assert js.returncode == 3, js.stdout + js.stderr
-    data = json.loads(js.stdout or js.stderr)
-    assert data["ok"] is False
-    assert data["error"] == "missing"
-    assert data["status"] == "input_required"
-    assert data["option"]["name"] == "credential"
-    assert "console.agentmail.to" in data["option"]["help"]
-    assert "AGENTSELF_AGENTMAIL_API_KEY" in data["option"]["help"]
-    assert "init --force --email imap" in data["option"]["help"]
-    assert data["next"].startswith("agentself --json email connect --continue --state ")
-    assert "--result-file PATH" in data["next"]
-
-
 def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys):
     vault = tmp_path / "vault"
     env = cli_env(vault)

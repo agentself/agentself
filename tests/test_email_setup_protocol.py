@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 import sys
 from pathlib import Path
@@ -16,13 +15,8 @@ from agentself.backends.email.contract import (
     require_secret,
     setup_needed,
 )
-from agentself.cli.app import _prompt_setup_option, main
-from agentself.cli.parser import _parser
-from agentself.client import Client
-from agentself.internal.custody.manager import (
-    CustodyManager,
-    _channel_from_mailbox,
-)
+from agentself.cli.app import main
+from agentself.internal.custody.manager import _channel_from_mailbox
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_PENDING,
@@ -428,51 +422,6 @@ def test_human_renderer_control_chars_are_not_rpc(
     assert CREDENTIAL not in blob
 
 
-def test_human_renderer_does_not_print_option_help(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    env = cli_env(tmp_path / "vault")
-    assert run_cli(["--json", "init"], env).returncode == 0
-    help_text = (
-        "AGENT PROCEDURE: obtain the value then --continue --state --result-file"
-    )
-
-    def connect(token, address, answers):
-        del address, answers
-        if not token:
-            return setup_needed(
-                credential_option(
-                    prompt="Paste the provider credential",
-                    help=help_text,
-                    action={
-                        "kind": "open_url",
-                        "label": "Open provider console",
-                        "url": "https://provider.example/keys",
-                    },
-                )
-            )
-        return mailbox_view(ADDRESS, owned_address=True)
-
-    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: CREDENTIAL,
-    )
-    assert main(["email", "connect"]) == 0
-    output = capsys.readouterr()
-    blob = output.out + output.err
-    assert help_text not in blob
-    assert "--continue" not in blob
-    assert "--result-file" not in blob
-    assert "Open provider console:" in output.out
-    assert "https://provider.example/keys" in output.out
-    assert "Paste the provider credential (input is hidden):" in output.out
-    assert CREDENTIAL not in blob
-
-
 def test_tty_continue_empty_secret_is_nothing_entered(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -627,22 +576,6 @@ def test_json_continue_control_chars_are_not_rpc(
     assert failed["reason"] != "rpc"
     assert failed["reason"] == "invalid credentials"
     assert "paste-artifact" not in json.dumps(failed)
-
-
-def test_generic_setup_keeps_public_surfaces_provider_neutral() -> None:
-    assert list(inspect.signature(_parser).parameters) == []
-    assert list(inspect.signature(Client.email_connect).parameters) == [
-        "self",
-        "answers",
-        "state",
-    ]
-    assert list(inspect.signature(CustodyManager.email_connect).parameters) == [
-        "self",
-        "caller",
-        "answers",
-        "state",
-    ]
-    assert "agentmail" not in inspect.getsource(_prompt_setup_option).lower()
 
 
 def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:

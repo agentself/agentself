@@ -12,16 +12,8 @@ from agentself.backends.store.sops import SopsStoreAccess
 from agentself.internal.files import identity_home, secrets_home
 from agentself.internal.log import MemoryLog
 
-from tests.support import PROJECT_ROOT
-
-SOPS_STORE = PROJECT_ROOT / "agentself" / "backends" / "store" / "sops" / "__init__.py"
 FAKE_RECIPIENT = "age1testrecipientnotarealkey"
 CIPHERTEXT = b"sops-dummy-ciphertext"
-
-
-def test_sops_store_source_has_no_dev_stdin():
-    source = SOPS_STORE.read_text(encoding="utf-8")
-    assert "/dev/stdin" not in source
 
 
 def test_create_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):

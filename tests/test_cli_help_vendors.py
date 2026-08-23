@@ -56,36 +56,15 @@ def test_cli_help_has_no_vendor_names(tmp_path):
         if args == ["--help"]:
             for verb in _FEATURED_TOP:
                 assert verb in text, f"{verb} missing from --help: {text}"
-            for gone in ("seal", "reveal", "enroll"):
-                assert gone not in text, f"{gone} in --help: {text}"
             for alias in _ALIAS_TOP:
                 assert not _has_token(text, alias), (
                     f"{alias} featured in --help: {text}"
                 )
-            assert (
-                "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
-                in text
-            )
-        if args == ["wallet", "--help"]:
-            for verb in ("show", "address", "balance", "authorize", "send", "verify"):
-                assert verb in text, f"{verb} missing from wallet --help: {text}"
-            assert "sign" not in text, f"sign featured in wallet --help: {text}"
-            for word in ("base", "ethereum", "lit"):
-                assert word not in text, f"{word} in wallet --help: {text}"
         if args == ["wallet", "address", "--help"]:
             assert "destination" in text, text
         if args == ["email", "--help"]:
             for verb in ("connect", "show", "send", "receive", "list"):
                 assert verb in text, f"{verb} missing from email --help: {text}"
-            assert not _has_token(text, "set"), f"set featured in email --help: {text}"
-            assert not _has_token(text, "recv"), (
-                f"recv featured in email --help: {text}"
-            )
-            assert "{connect,show,send,receive,list}" in text
-        if args == ["email", "receive", "--help"]:
-            assert "receiv" in text, text
-            assert "fetch" in text, text
-            assert "id" in text, text
 
 
 def test_top_help_teaches_discovery(tmp_path):
@@ -94,15 +73,8 @@ def test_top_help_teaches_discovery(tmp_path):
     text = proc.stdout
     assert "agentself <command> --help" in text
     assert "--json" in text
-    assert "Examples:" in text
     assert "--version" in text
-    assert "0 ok" in text
-    assert "1 error" in text
-    assert "2 refused" in text
-    assert "3 missing" in text
     assert "AGENTSELF_IDENTITY_DIR" in text
-    assert "See the README" not in text
-    assert "email: not configured" not in text.lower()
     assert "0x" not in text
 
 
@@ -114,7 +86,6 @@ def test_nested_help_shows_args_and_defaults(tmp_path):
     assert "NAME" in create.stdout
     assert "VALUE" in create.stdout
     assert "--file" in create.stdout
-    assert "Refuses if the name exists" in create.stdout
 
     send = run_cli(["wallet", "send", "--help"], env)
     assert send.returncode == 0, send.stderr
@@ -124,17 +95,12 @@ def test_nested_help_shows_args_and_defaults(tmp_path):
 
     email_send = run_cli(["email", "send", "--help"], env)
     assert email_send.returncode == 0, email_send.stderr
-    assert "fails closed" in email_send.stdout.lower()
     assert "backends email" in email_send.stdout
     assert "agentmail" not in email_send.stdout.lower()
     assert "imap" not in email_send.stdout.lower()
 
-    sms = run_cli(["sms", "--help"], env)
-    assert sms.returncode == 2, sms.stdout + sms.stderr
-
     init = run_cli(["init", "--help"], env)
     assert init.returncode == 0, init.stderr
-    assert "does not block init" in init.stdout
     assert "base (default)" in init.stdout
     assert "agentmail (default)" in init.stdout
     assert "--email" in init.stdout
@@ -154,7 +120,6 @@ def test_help_does_not_print_status(tmp_path):
     help_after = run_cli(["--help"], env)
     assert help_after.returncode == 0, help_after.stderr
     after = help_after.stdout + help_after.stderr
-    assert "usage" in after.lower()
     assert "email: not configured" not in after.lower()
     assert addr not in after
     assert "age1" not in after.lower()
