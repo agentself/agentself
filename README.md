@@ -21,9 +21,16 @@ Or:
 pipx install agentself
 ```
 
+If neither tool is available:
+
+```bash
+python -m pip install --user agentself
+```
+
 ## Quick start
 
 ```bash
+agentself install --skills
 agentself install --tools
 agentself init
 agentself wallet address
@@ -34,6 +41,10 @@ agentself email connect
 `init` creates one identity directory. Run `agentself show` to inspect it;
 repeat `init` is safe, and `--force` is required to change an existing
 identity or its backends. Email setup is optional and does not block init.
+For AgentMail, `email connect` offers two explicit routes: connect an existing
+API key, or create an account when that external action has been authorized.
+The account route asks for the approved human email, sends its six-digit OTP,
+and keeps the generated API key encrypted while setup continues.
 
 ## Commands
 
@@ -42,7 +53,7 @@ identity or its backends. Email setup is optional and does not block init.
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
-| Email | `email connect`, `show`, `send`, `receive`, `list` |
+| Email | `email connect`, `show`, `send`, `receive`, `list`, `mark` |
 | Backends | `backends [CHANNEL]` |
 | Recovery | `backup`, `restore` |
 | Setup | `install --tools`, `install --skills` |
@@ -60,9 +71,11 @@ Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
 by default: use `secret get NAME --file PATH` or `--meta`; plaintext stdout
 requires `--print`.
 
-`email receive` prints headers and `new`/`seen` status without bodies. Fetch a
-specific body into a private file with `email receive ID --file PATH`. Bodies
-can contain API keys and login links; `--print` is an explicit unsafe choice.
+`email receive` prints headers and `new`/`seen` status without bodies. `acted`
+is independent local task state: use `email mark ID acted|unacted` and filter
+with `email list --acted|--unacted`. Fetch a specific body into a private file
+with `email receive ID --file PATH`. Bodies can contain API keys and login
+links; `--print` is an explicit unsafe choice.
 
 ## Backends & configuration
 
@@ -107,6 +120,9 @@ Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient
 email configuration when appropriate. Runtime environment credentials are
 not copied into the identity; complete `email connect` with its secure result
 file when the credential should be encrypted into the identity.
+If authorized AgentMail signup reports that the requested identity is claimed,
+forbidden, or unavailable, stop and use the existing-key route. The CLI does
+not probe alternate aliases.
 
 ## Automation and agents
 

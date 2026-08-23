@@ -309,7 +309,8 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Export a named secret. Exits 3 if the name is missing. "
             "Use --file for private file output or --meta for size and SHA-256. "
-            "Plaintext stdout requires --print. wallet.key also requires --unsafe."
+            "Plaintext stdout requires --print; human output ends with one newline. "
+            "wallet.key also requires --unsafe."
         ),
         epilog=(
             "Examples:\n"
@@ -415,7 +416,7 @@ def _parser() -> argparse.ArgumentParser:
     email_sub = email.add_subparsers(
         dest="email_command",
         required=True,
-        metavar="{connect,show,send,receive,list}",
+        metavar="{connect,show,send,receive,list,mark}",
         parser_class=_Parser,
         prog="agentself email",
     )
@@ -530,12 +531,65 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Explicitly include message bodies on stdout",
     )
-    _cmd(
+    email_list = _cmd(
         email_sub,
         "list",
         json_parent,
-        help="List inbound messages",
-        epilog="Examples:\n  agentself email list\n  agentself --json email list",
+        help="List inbound message headers",
+        description=(
+            "List inbound message headers only. Filter backend read state with "
+            "--status, or independent local task state with --acted/--unacted."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself email list\n"
+            "  agentself email list --status new --unacted\n"
+            "  agentself --json email list --acted"
+        ),
+    )
+    email_list.add_argument(
+        "--status",
+        choices=("new", "seen"),
+        default=None,
+        help="Keep messages with this backend read state",
+    )
+    acted_filter = email_list.add_mutually_exclusive_group()
+    acted_filter.add_argument(
+        "--acted",
+        dest="acted_filter",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Keep messages marked acted",
+    )
+    acted_filter.add_argument(
+        "--unacted",
+        dest="acted_filter",
+        action="store_const",
+        const=False,
+        help="Keep messages not marked acted",
+    )
+    email_mark = _cmd(
+        email_sub,
+        "mark",
+        json_parent,
+        help="Mark a message acted or unacted",
+        description=(
+            "Set independent local task state for a provider message ID. "
+            "This does not change the backend new/seen status."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself email mark ID acted\n"
+            "  agentself email mark ID unacted\n"
+            "  agentself --json email mark ID acted"
+        ),
+    )
+    email_mark.add_argument("message_id", metavar="ID", help="Provider message ID")
+    email_mark.add_argument(
+        "mark_state",
+        choices=("acted", "unacted"),
+        help="Local task state",
     )
 
     wallet = _cmd(

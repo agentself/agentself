@@ -98,7 +98,7 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert secret not in sealed.stderr
     got = run_cli(["secret", "get", "notes", "--print"], env)
     assert got.returncode == 0, got.stderr
-    assert got.stdout.strip() == secret
+    assert got.stdout == secret + "\n"
 
     argv = run_cli(["secret", "create", "other", "argv-value"], env)
     assert argv.returncode == 0, argv.stderr
@@ -106,7 +106,29 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert "argv-value" not in argv.stderr
     got_argv = run_cli(["secret", "get", "other", "--print"], env)
     assert got_argv.returncode == 0, got_argv.stderr
-    assert got_argv.stdout.strip() == "argv-value"
+    assert got_argv.stdout == "argv-value\n"
+
+    line_file = tmp_path / "line.txt"
+    line_file.write_text("already-terminated\n", encoding="utf-8")
+    created = run_cli(
+        ["secret", "create", "line", "--file", str(line_file)],
+        env,
+    )
+    assert created.returncode == 0, created.stderr
+    got_line = run_cli(["secret", "get", "line", "--print"], env)
+    assert got_line.returncode == 0, got_line.stderr
+    assert got_line.stdout == "already-terminated\n"
+
+    crlf_file = tmp_path / "crlf.txt"
+    crlf_file.write_bytes(b"windows-terminated\r\n")
+    created_crlf = run_cli(
+        ["secret", "create", "crlf", "--file", str(crlf_file)],
+        env,
+    )
+    assert created_crlf.returncode == 0, created_crlf.stderr
+    got_crlf = run_cli(["secret", "get", "crlf", "--print"], env)
+    assert got_crlf.returncode == 0, got_crlf.stderr
+    assert got_crlf.stdout == "windows-terminated\n"
 
 
 def test_set_value_and_file_fails_closed(tmp_path):

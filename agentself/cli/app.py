@@ -262,6 +262,33 @@ def _bundled_skill() -> Path:
     return Path(__file__).resolve().parent.parent / "skills" / "agentself" / "SKILL.md"
 
 
+def _copy_skill_tree(src_dir: Path, dest_dir: Path) -> Path:
+    """Copy packaged skill files without following links in either tree."""
+    entries = sorted(src_dir.rglob("*"))
+    if not entries:
+        raise OSError("skill not packaged")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if dest_dir.is_symlink():
+        raise OSError("refusing linked skill destination")
+    for src in entries:
+        if src.is_symlink():
+            raise OSError("refusing linked packaged skill path")
+        relative = src.relative_to(src_dir)
+        dest = dest_dir / relative
+        if src.is_dir():
+            dest.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink():
+                raise OSError("refusing linked skill destination")
+            continue
+        if not src.is_file():
+            raise OSError("refusing non-file packaged skill path")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            raise OSError("refusing linked skill destination")
+        shutil.copyfile(src, dest)
+    return dest_dir / "SKILL.md"
+
+
 def _install(args) -> int:
     skills = args.skills
     tools = args.tools
@@ -362,10 +389,7 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
     dest_root = Path.home() if args.global_install else Path.cwd()
     dest_dir = dest_root / rel
     try:
-        body = src.read_text(encoding="utf-8")
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / "SKILL.md"
-        dest.write_text(body, encoding="utf-8")
+        dest = _copy_skill_tree(src.parent, dest_dir)
     except OSError as exc:
         detail = str(exc).strip() or "could not install skill"
         return [], _fail(args, 1, f"error: {detail}\n", "error", detail)
@@ -788,6 +812,11 @@ def _init(vault: Path, args) -> int:
             f"recipient: {recipient}\n"
             f"email_backend: {email_backend}\n"
         )
+        if email_backend == "agentmail":
+            text += (
+                "email_setup: agentself email connect; choose existing_credential, "
+                "or create_account with explicit authorization\n"
+            )
         sys.stdout.write(redact_secrets(text))
         return 0
     except UnboundCaller:
@@ -1282,7 +1311,13 @@ def _secret_get(client, args) -> int:
         return 0
     if _as_json(args):
         return _emit_ok(args, {"name": name, "value": value}, redact=False)
-    sys.stdout.write(value + "\n")
+    if value.endswith("\r\n"):
+        value = value[:-2] + "\n"
+    elif value.endswith("\r"):
+        value = value[:-1] + "\n"
+    elif not value.endswith("\n"):
+        value += "\n"
+    sys.stdout.write(value)
     return 0
 
 
@@ -1302,6 +1337,14 @@ def _email(client, args) -> int:
         client.email_send(args.to, args.subject, args.body)
         if _as_json(args):
             return _emit_ok(args, {"to": args.to, "subject": args.subject})
+        return 0
+    if args.email_command == "mark":
+        acted = args.mark_state == "acted"
+        client.email_mark(args.message_id, acted=acted)
+        payload = {"id": args.message_id, "acted": acted}
+        if _as_json(args):
+            return _emit_ok(args, payload)
+        sys.stdout.write(args.mark_state + "\n")
         return 0
     if args.email_command in ("receive", "list"):
         if (
@@ -1323,7 +1366,7 @@ def _email(client, args) -> int:
                 include_body=bool(args.body_file or args.print_body),
             )
             if args.email_command == "receive"
-            else client.email_list()
+            else client.email_list(status=args.status, acted=args.acted_filter)
         )
         if args.email_command == "receive":
             file_error = _prepare_received_messages(messages, args)
@@ -1337,10 +1380,10 @@ def _email(client, args) -> int:
     return 1
 
 
-def _prepare_received_messages(messages: list[dict[str, str]], args) -> int | None:
+def _prepare_received_messages(messages: list[dict[str, object]], args) -> int | None:
     path = (args.body_file or "").strip()
     if path and messages:
-        body = messages[0].get("body", "")
+        body = str(messages[0].get("body", ""))
         try:
             store_value_file(path, body)
         except OSError:

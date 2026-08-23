@@ -88,6 +88,7 @@ def compose(
         email_backend=_resolved_backend(root, "email", email_backend),
         wallet_backend=_resolved_backend(root, "wallet", wallet_backend),
         allowed_store_bindings=allowed,
+        vault_root=root,
     )
     return Client(manager, log, bind=bind)
 

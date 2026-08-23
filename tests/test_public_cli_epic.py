@@ -5,9 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tests.support import PROJECT_ROOT, cli_env, run_cli
 
-SKILL = PROJECT_ROOT / "agentself" / "skills" / "agentself" / "SKILL.md"
+SKILL_DIR = PROJECT_ROOT / "agentself" / "skills" / "agentself"
+SKILL = SKILL_DIR / "SKILL.md"
+SKILL_FILES = {
+    path.relative_to(SKILL_DIR) for path in SKILL_DIR.rglob("*") if path.is_file()
+}
 
 
 def test_install_skills_project_and_global(tmp_path):
@@ -23,17 +29,33 @@ def test_install_skills_project_and_global(tmp_path):
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
     assert dest.read_text(encoding="utf-8") == SKILL.read_text(encoding="utf-8")
+    installed_dir = dest.parent
+    assert {
+        path.relative_to(installed_dir)
+        for path in installed_dir.rglob("*")
+        if path.is_file()
+    } == SKILL_FILES
+    for relative in SKILL_FILES:
+        assert (installed_dir / relative).read_bytes() == (
+            SKILL_DIR / relative
+        ).read_bytes()
     gdest = home / ".claude" / "skills" / "agentself" / "SKILL.md"
     glob = run_cli(["install", "--skills", "-g"], env, cwd=project)
     assert glob.returncode == 0, glob.stderr
     assert gdest.is_file()
+    assert (gdest.parent / "references" / "email-connect.md").is_file()
     agents = run_cli(["--json", "install", "--skills=agents"], env, cwd=project)
     assert agents.returncode == 0, agents.stderr
     data = json.loads(agents.stdout)
     assert data["ok"] is True
+    assert len(data["paths"]) == 1
     assert data["paths"][0].endswith(
         str(Path(".agents") / "skills" / "agentself" / "SKILL.md")
     )
+    agents_dir = project / ".agents" / "skills" / "agentself"
+    assert {
+        path.relative_to(agents_dir) for path in agents_dir.rglob("*") if path.is_file()
+    } == SKILL_FILES
     grok = run_cli(["install", "--skills=grok"], env, cwd=project)
     assert grok.returncode == 2, grok.stdout + grok.stderr
 
@@ -55,6 +77,25 @@ def test_install_blocked_path_is_one_line_error(tmp_path):
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data.get("reason")
+
+
+def test_install_skills_refuses_linked_nested_destination(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    destination = tmp_path / ".agents" / "skills" / "agentself"
+    destination.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (destination / "references").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+
+    proc = run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    data = json.loads(proc.stdout)
+    assert data["ok"] is False
+    assert data["error"] == "error"
+    assert list(outside.iterdir()) == []
 
 
 def test_backup_restore_roundtrip(tmp_path):

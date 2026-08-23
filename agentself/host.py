@@ -30,7 +30,7 @@ ENV_TOOLS_DIR = "AGENTSELF_TOOLS"
 ENV_AGE_KEY_FILE = "AGE_KEY_FILE"
 
 _WALLET_LIVE_VERBS = ("show", "address", "balance", "authorize", "send", "verify")
-_MAIL_VERBS = ("connect", "show", "send", "receive", "list")
+_MAIL_VERBS = ("connect", "show", "send", "receive", "list", "mark")
 _STORE_VERBS = ("create", "get", "update", "list", "delete")
 
 

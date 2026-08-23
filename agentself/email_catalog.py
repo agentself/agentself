@@ -17,23 +17,24 @@ from agentself.internal.setup import (
 
 SOURCE_AGENTMAIL_CREDENTIAL = "AGENTSELF_AGENTMAIL_API_KEY"
 
+HELP_AGENTMAIL_SETUP_METHOD = (
+    "Choose existing_credential to connect an approved API key, or create_account "
+    "only when the user explicitly authorizes creating a new external AgentMail "
+    "account. Account creation sends a verification code to the approved human email."
+)
 HELP_AGENTMAIL_CREDENTIAL = (
-    "AgentMail API key (starts with am_). Use an existing approved key. If none is "
-    "available, open API Keys at https://console.agentmail.to and wait for the operator "
-    "to create and copy one. Creating a new AgentMail "
-    "organization through signup is an external account action and requires explicit "
-    "user authorization. When that exact action is authorized for a first-time, "
-    "unclaimed signup, follow https://docs.agentmail.to/api-reference/agent/sign-up "
-    "once with the approved email identity and capture the key from its HTTP response. "
-    "If signup reports that the identity is claimed, forbidden, or unavailable, stop "
-    "and ask the user; do not probe aliases or disposable email providers. The OTP or "
-    "confirmation email does not contain the key. A key is shown once and cannot be "
-    "retrieved; if lost, create another in the console. Stop credential discovery as "
-    "soon as one key validates. For transient use, provide "
+    "Existing AgentMail API key (starts with am_). Open API Keys at "
+    "https://console.agentmail.to if an operator needs to create one. For transient "
+    "use, provide "
     "AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email "
     "invocation. To store it in this identity, write the key to a file and continue "
-    "with --result-file. Cannot obtain a key: agentself init --force --email imap, "
-    "or stop."
+    "with --result-file."
+)
+HELP_AGENTMAIL_HUMAN_EMAIL = (
+    "Human email approved for this authorized account creation. A six-digit "
+    "verification code will be sent there. If signup says the identity is claimed, "
+    "forbidden, or unavailable, stop and ask the user to use existing_credential; "
+    "aliases are not tried."
 )
 HELP_AGENTMAIL_ADDRESS = (
     "Inbox address when this key owns more than one. Use an address the provider "
@@ -47,6 +48,15 @@ _API_KEYS_ACTION: SetupAction = {
 }
 
 AGENTMAIL_OPTIONS = (
+    setup_option(
+        name="setup_method",
+        type="choice",
+        required=True,
+        choices=("existing_credential", "create_account"),
+        help=HELP_AGENTMAIL_SETUP_METHOD,
+        prompt="Choose how to connect AgentMail",
+        runtime_only=True,
+    ),
     credential_option(
         required=True,
         source=SOURCE_AGENTMAIL_CREDENTIAL,
@@ -55,6 +65,23 @@ AGENTMAIL_OPTIONS = (
         persist=True,
         persist_as=EMAIL_CREDENTIAL_NAME,
         action=_API_KEYS_ACTION,
+    ),
+    setup_option(
+        name="human_email",
+        type="string",
+        required=True,
+        help=HELP_AGENTMAIL_HUMAN_EMAIL,
+        prompt="Approved human email for verification",
+        runtime_only=True,
+    ),
+    setup_option(
+        name="otp",
+        type="secret",
+        required=True,
+        sensitive=True,
+        help="Six-digit verification code sent to the approved human email.",
+        prompt="Enter the six-digit verification code",
+        runtime_only=True,
     ),
     address_option(
         required=False,

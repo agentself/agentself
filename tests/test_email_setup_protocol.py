@@ -681,6 +681,34 @@ def test_env_connects_without_copying_into_identity_dir(
     assert json.loads(missing.stdout)["exists"] is False
 
 
+def test_private_generated_setup_output_is_persisted_but_never_rendered(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["--json", "init"], env).returncode == 0
+    generated = "generated-private-credential-do-not-leak"
+
+    def connect(_token, _address, _answers):
+        return {
+            **mailbox_view(ADDRESS, owned_address=True),
+            "private_outputs": {"credential": generated, "ignored": "not-declared"},
+        }
+
+    option = credential_option(persist=True, persist_as=EMAIL_CREDENTIAL_NAME)
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect, options=(option,)))
+    code, result = _connect(monkeypatch, capsys, env)
+    assert code == 0
+    assert result["status"] == "connected"
+    assert generated not in json.dumps(result)
+    assert "private_outputs" not in result
+    saved = run_cli(["--json", "secret", "get", EMAIL_CREDENTIAL_NAME, "--print"], env)
+    assert saved.returncode == 0
+    assert json.loads(saved.stdout)["value"] == generated
+    ignored = run_cli(["--json", "secret", "exists", "ignored"], env)
+    assert ignored.returncode == 3
+
+
 @pytest.mark.parametrize(
     "credential_env",
     ["AGENTSELF_EMAIL_CREDENTIAL", "AGENTSELF_AGENTMAIL_API_KEY"],

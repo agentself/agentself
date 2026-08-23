@@ -12,6 +12,6 @@
     "install"
   ],
   "secret": ["create", "get", "update", "list", "delete", "exists"],
-  "email": ["connect", "show", "send", "receive", "list"],
+  "email": ["connect", "show", "send", "receive", "list", "mark"],
   "wallet": ["show", "address", "balance", "authorize", "verify", "send"]
 }

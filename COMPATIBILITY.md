@@ -17,3 +17,7 @@ schema at `cli: 1`.
 
 Internal Python modules, private imports, backend implementation details, and
 undocumented filenames or fields are not compatibility promises.
+
+Within a CLI schema version, JSON consumers should ignore unknown object keys.
+For example, mail header objects may gain additive metadata such as local task
+state while retaining provider read state in `status`.

@@ -14,7 +14,9 @@ from tests.test_agentmail_mailbox import (
     ISSUED,
     OURS,
     PRINCIPAL,
+    SIGN_UP,
     TAKEN,
+    VERIFY,
     Http,
 )
 
@@ -191,6 +193,22 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     first = main(["--json", "email", "connect"])
     captured = capsys.readouterr()
     assert first == 3, captured.out + captured.err
+    method_state = json.loads(captured.out)["state"]
+    method = value_file(tmp_path, "existing_credential", "method.txt")
+    choose = main(
+        [
+            "--json",
+            "email",
+            "connect",
+            "--continue",
+            "--state",
+            method_state,
+            "--result-file",
+            method,
+        ]
+    )
+    captured = capsys.readouterr()
+    assert choose == 3, captured.out + captured.err
     state = json.loads(captured.out)["state"]
     http = Http()
     http.on_get(INBOXES, 401, {"error": "nope"})
@@ -218,6 +236,126 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert TOKEN not in captured.out + captured.err
     exists = run_cli(["--json", "secret", "exists", "email.credential"], env)
     assert exists.returncode == 3
+
+
+def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    start = run_cli(["--json", "init"], env)
+    assert start.returncode == 0, start.stderr
+    apply_cli_env(monkeypatch, env)
+    generated = "am_generated_api_key_do_not_leak"
+    inbox_id = "inb_signed_up"
+    http = Http()
+    http.on_post(
+        SIGN_UP,
+        200,
+        {
+            "organization_id": "org_signed_up",
+            "inbox_id": inbox_id,
+            "api_key": generated,
+        },
+    )
+    http.on_post(VERIFY, 200, {"verified": True})
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": ISSUED}]},
+    )
+    _patch_agentmail(monkeypatch, http)
+    outputs: list[str] = []
+
+    assert main(["--json", "email", "connect"]) == 3
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    method_step = json.loads(captured.out)
+    assert method_step["option"]["name"] == "setup_method"
+    assert method_step["option"]["choices"] == [
+        "existing_credential",
+        "create_account",
+    ]
+
+    create = value_file(tmp_path, "create_account", "method.txt")
+    assert (
+        main(
+            [
+                "--json",
+                "email",
+                "connect",
+                "--continue",
+                "--state",
+                method_step["state"],
+                "--result-file",
+                create,
+            ]
+        )
+        == 3
+    )
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    email_step = json.loads(captured.out)
+    assert email_step["option"]["name"] == "human_email"
+
+    human_email = value_file(tmp_path, "owner@example.com", "human-email.txt")
+    assert (
+        main(
+            [
+                "--json",
+                "email",
+                "connect",
+                "--continue",
+                "--state",
+                email_step["state"],
+                "--result-file",
+                human_email,
+            ]
+        )
+        == 3
+    )
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    otp_step = json.loads(captured.out)
+    assert otp_step["option"]["name"] == "otp"
+    assert otp_step["option"]["sensitive"] is True
+    continuation = (
+        vault / "identities" / "agent" / "secrets" / "internal.email.continuation.sops"
+    )
+    assert continuation.is_file()
+    assert generated.encode() not in continuation.read_bytes()
+
+    otp = value_file(tmp_path, "123456", "otp.txt")
+    assert (
+        main(
+            [
+                "--json",
+                "email",
+                "connect",
+                "--continue",
+                "--state",
+                otp_step["state"],
+                "--result-file",
+                otp,
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    connected = json.loads(captured.out)
+    assert connected["address"] == ISSUED
+    assert connected["status"] == "connected"
+    assert "private_outputs" not in connected
+    assert not continuation.exists()
+    persisted = run_cli(["--json", "secret", "get", "email.credential", "--print"], env)
+    assert persisted.returncode == 0
+    assert json.loads(persisted.stdout)["value"] == generated
+    address = run_cli(["--json", "secret", "get", "email.address", "--print"], env)
+    assert json.loads(address.stdout)["value"] == ISSUED
+    assert generated not in "".join(outputs)
+    assert "123456" not in "".join(outputs)
+    assert len([post for post in http.posts if post[0] == SIGN_UP]) == 1
 
 
 def test_agentmail_connect_unknown_env_address_persists_nothing(
