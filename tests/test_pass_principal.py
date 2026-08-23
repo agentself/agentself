@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -211,6 +212,59 @@ def test_bindable_home_uses_short_symlink(tmp_path):
     assert len(os.fsencode(home / "S.gpg-agent.browser")) <= 106
     assert str(home).startswith("/tmp/as-gpg-")
     assert bindable_home(gnupg) == home
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows TEMP GNUPGHOME link")
+def test_bindable_home_uses_short_temp_link(tmp_path):
+    gnupg = tmp_path / ("n" * 80) / "identities" / "agent" / "gnupg"
+    gnupg.mkdir(parents=True)
+    probe = tmp_path / "probe-link"
+    try:
+        probe.symlink_to(gnupg, target_is_directory=True)
+    except OSError as symlink_exc:
+        try:
+            import _winapi
+
+            _winapi.CreateJunction(str(gnupg), str(probe))
+        except OSError as exc:
+            pytest.skip(f"symlinks not available: {exc}")
+        except Exception:
+            pytest.skip(f"symlinks not available: {symlink_exc}")
+    try:
+        probe.unlink()
+    except OSError:
+        pass
+    home = bindable_home(gnupg)
+    assert home != gnupg
+    assert home.parent.resolve() == Path(tempfile.gettempdir()).resolve()
+    assert home.name.startswith("as-gpg-")
+    try:
+        home.readlink()
+    except OSError:
+        pytest.fail("expected a symlink or junction")
+    assert home.resolve() == gnupg.resolve()
+    assert bindable_home(gnupg) == home
+    assert len(os.fsencode(home / "S.gpg-agent.browser")) < len(
+        os.fsencode(gnupg / "S.gpg-agent.browser")
+    )
+
+
+def test_bindable_home_returns_gnupg_when_link_fails(tmp_path, monkeypatch):
+    gnupg = tmp_path / "identities" / "agent" / "gnupg"
+    gnupg.mkdir(parents=True)
+
+    def fail_symlink(self, target, target_is_directory=False):
+        raise OSError("symlink denied")
+
+    monkeypatch.setattr(Path, "symlink_to", fail_symlink)
+    if os.name == "nt":
+        import _winapi
+
+        def fail_junction(src, dest):
+            raise OSError("junction denied")
+
+        monkeypatch.setattr(_winapi, "CreateJunction", fail_junction)
+    assert bindable_home(gnupg) == gnupg
 
 
 @pytest.mark.skipif(
