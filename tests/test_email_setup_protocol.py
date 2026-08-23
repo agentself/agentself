@@ -628,24 +628,43 @@ def test_env_connects_without_copying_into_identity_dir(
     assert json.loads(missing.stdout)["exists"] is False
 
 
+@pytest.mark.parametrize(
+    "credential_env",
+    ["AGENTSELF_EMAIL_CREDENTIAL", "AGENTSELF_AGENTMAIL_API_KEY"],
+)
 def test_runtime_credential_env_sources_cover_all_email_operations(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, capsys, credential_env: str
 ) -> None:
+    from agentself.internal.log import MemoryLog
+
+    from tests.test_agentmail_mailbox import API, INBOXES, OURS, Http, _box
+
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
+    http = Http()
+    inbox_id = "inb_runtime_env"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        200,
+        {"messages": []},
+    )
 
-    def connect(token, address, answers):
-        del answers
-        if not token or not address:
-            return setup_needed(address_option(required=True))
-        return mailbox_view(address, owned_address=True)
+    def for_binding(self, binding: str):
+        del binding
+        return _box(Path(env["AGENTSELF_IDENTITY_DIR"]), MemoryLog(), http)
 
-    mailbox = ScriptedMailbox(connect)
-    _patch_mailbox(monkeypatch, mailbox)
-    env["AGENTSELF_EMAIL_ADDRESS"] = ADDRESS
-    env["AGENTSELF_EMAIL_CREDENTIAL"] = CREDENTIAL
-    code, connected = _connect(monkeypatch, capsys, env)
-    assert code == 0, connected
+    monkeypatch.setattr(
+        "agentself.compose.MailboxAccessFactory.for_binding",
+        for_binding,
+    )
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", OURS)
+    monkeypatch.setenv(credential_env, CREDENTIAL)
 
     assert main(["email", "show"]) == 0
     assert main(["email", "send", "to@example.com", "subject", "body"]) == 0
@@ -653,15 +672,10 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     assert main(["email", "list"]) == 0
     captured = capsys.readouterr()
     assert CREDENTIAL not in captured.out + captured.err
-    assert [call[0] for call in mailbox.calls[-4:]] == [
-        "describe",
-        "send",
-        "receive",
-        "list",
-    ]
-    assert all(call[1:] == (CREDENTIAL, ADDRESS) for call in mailbox.calls[-4:])
+    assert http.posts
+    assert http.gets
 
-    for key in ("AGENTSELF_EMAIL_ADDRESS", "AGENTSELF_EMAIL_CREDENTIAL"):
+    for key in ("AGENTSELF_EMAIL_ADDRESS", credential_env):
         monkeypatch.delenv(key)
     assert main(["--json", "email", "show"]) == 0
     without_env = json.loads(capsys.readouterr().out)
@@ -686,3 +700,38 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     names = json.loads(run_cli(["--json", "secret", "list"], env).stdout)["names"]
     assert "email.address" not in names
     assert "email.credential" not in names
+
+
+def test_imap_alias_env_covers_send_receive_list(tmp_path: Path, monkeypatch, capsys):
+    from agentself.internal.log import MemoryLog
+
+    from tests.test_imap_mailbox import ADDRESS, TO, FakeImap, FakeSmtp, _box
+
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init", "--email", "imap"], env).returncode == 0
+    imap = FakeImap()
+    smtp = FakeSmtp()
+    mailbox = _box(Path(env["AGENTSELF_IDENTITY_DIR"]), MemoryLog(), imap, smtp)
+
+    def for_binding(self, binding: str):
+        del binding
+        return mailbox
+
+    monkeypatch.setattr(
+        "agentself.compose.MailboxAccessFactory.for_binding",
+        for_binding,
+    )
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", ADDRESS)
+    monkeypatch.setenv("AGENTSELF_MAIL_PASSWORD", CREDENTIAL)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
+    monkeypatch.setenv("AGENTSELF_EMAIL_BACKEND", "imap")
+
+    assert main(["email", "show"]) == 0
+    assert main(["email", "send", TO, "subject", "body"]) == 0
+    assert main(["email", "receive"]) == 0
+    assert main(["email", "list"]) == 0
+    captured = capsys.readouterr()
+    assert CREDENTIAL not in captured.out + captured.err
+    assert smtp.logins
+    assert imap.logins

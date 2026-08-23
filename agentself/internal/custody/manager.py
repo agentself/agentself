@@ -309,7 +309,7 @@ class CustodyManager:
             )
         except MailboxError as exc:
             self._log.record("email_connect", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(credential)) from None
+            raise _channel_from_mailbox(exc) from None
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
             self._persist_setup_answers(identity, incoming)
@@ -359,8 +359,8 @@ class CustodyManager:
             desc = mailbox.describe(identity.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("email_send", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(token)) from None
-        if not desc.get("owned_address") or not token:
+            raise _channel_from_mailbox(exc) from None
+        if not desc.get("owned_address"):
             self._log.record("email_send", identity.id, None, "error")
             raise EmailSendNotReady()
         try:
@@ -374,7 +374,7 @@ class CustodyManager:
             )
         except MailboxError as exc:
             self._log.record("email_send", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(token)) from None
+            raise _channel_from_mailbox(exc) from None
         self._log.record("email_send", identity.id, None, "ok")
 
     def email_receive(
@@ -396,7 +396,7 @@ class CustodyManager:
             )
         except MailboxError as exc:
             self._log.record("email_receive", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(token)) from None
+            raise _channel_from_mailbox(exc) from None
         self._log.record("email_receive", identity.id, None, "ok")
         return _items(messages, _MAIL_ITEM_KEYS)
 
@@ -410,7 +410,7 @@ class CustodyManager:
             items = mailbox.list(identity.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("email_list", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(token)) from None
+            raise _channel_from_mailbox(exc) from None
         self._log.record("email_list", identity.id, None, "ok")
         return _items(items, _MAIL_ITEM_KEYS)
 
@@ -526,7 +526,7 @@ class CustodyManager:
             email = mailbox.describe(identity.id, credential=token, address=address)
         except MailboxError as exc:
             self._log.record("identity", identity.id, None, "error")
-            raise _channel_from_mailbox(exc, has_token=bool(token)) from None
+            raise _channel_from_mailbox(exc) from None
         wallet = self._ready_wallet(identity, "identity")
         try:
             wallet_view = wallet.describe(identity.id)
@@ -611,11 +611,7 @@ class CustodyManager:
         address_source: str | None,
     ) -> None:
         email = str(view.get("address") or "").strip()
-        if (
-            view.get("owned_address")
-            and email
-            and address_source not in {"env", "alias"}
-        ):
+        if view.get("owned_address") and email and address_source != "env":
             self._store_put(identity, EMAIL_ADDRESS_NAME, email, "email_connect")
 
     def _store_put(
@@ -750,12 +746,10 @@ class CustodyManager:
         raise StoreFailure("store error", name=name) from None
 
 
-def _channel_from_mailbox(
-    exc: BaseException, *, has_token: bool | None = None
-) -> ChannelFailure:
+def _channel_from_mailbox(exc: BaseException) -> ChannelFailure:
     msg = str(exc)
     low = msg.lower()
-    if has_token is False or (
+    if (
         "no token" in low
         or "missing credentials" in low
         or "missing token" in low

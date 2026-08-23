@@ -108,7 +108,7 @@ class ImapMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_send", identity_id, to, "error")
-            raise MailboxError("send failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         from_addr = self._inbox(address)
         host, port, mode = self._endpoint("smtp", from_addr)
@@ -135,7 +135,7 @@ class ImapMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_recv", identity_id, None, "error")
-            raise MailboxError("recv failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         inbox = self._inbox(address)
         try:
@@ -176,7 +176,7 @@ class ImapMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_list", identity_id, None, "error")
-            raise MailboxError("list failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         inbox = self._inbox(address)
         box = self._imap_login(inbox, credential)

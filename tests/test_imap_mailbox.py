@@ -18,6 +18,8 @@ from agentself.backends.email.imap import (
 from agentself.internal.custody.manager import _channel_from_mailbox
 from agentself.internal.log import MemoryLog
 
+from tests.support import build_app, init_identity
+
 CANARY = "CANARY-IMAP-PASSWORD-DO-NOT-LEAK"
 PRINCIPAL = "desk"
 ADDRESS = "bot@fastmail.com"
@@ -156,11 +158,11 @@ def test_no_token_zero_connections(vault, monkeypatch):
     imap = FakeImap()
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    with pytest.raises(MailboxError, match="send failed") as send_err:
+    with pytest.raises(MailboxError, match="missing credentials") as send_err:
         mb.send(PRINCIPAL, TO, "s", "b", address=ADDRESS)
-    with pytest.raises(MailboxError, match="recv failed") as recv_err:
+    with pytest.raises(MailboxError, match="missing credentials") as recv_err:
         mb.receive(PRINCIPAL, address=ADDRESS)
-    with pytest.raises(MailboxError, match="list failed") as list_err:
+    with pytest.raises(MailboxError, match="missing credentials") as list_err:
         mb.list(PRINCIPAL, address=ADDRESS)
     assert smtp.opened == []
     assert imap.opened == []
@@ -444,6 +446,29 @@ def test_alias_env_fills_empty_credential(vault, monkeypatch):
     assert connected["owned_address"] is True
     assert connected["address"] == ADDRESS
     _secret_absent(log)
+
+
+def test_alias_env_alone_sends_receives_and_lists_through_manager(vault, monkeypatch):
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", ADDRESS)
+    monkeypatch.setenv("AGENTSELF_MAIL_PASSWORD", CANARY)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
+    app = build_app(vault, email_backend="imap")
+    init_identity(app, monkeypatch)
+    imap = FakeImap()
+    smtp = FakeSmtp()
+    mailbox = _box(app.vault, app.log, imap, smtp)
+
+    class Factory:
+        def for_binding(self, binding: str) -> ImapMailboxAccess:
+            del binding
+            return mailbox
+
+    app.manager._mailboxes = Factory()
+    app.client.email_send(TO, "s", "b")
+    assert smtp.logins == [(ADDRESS, CANARY)]
+    assert app.client.email_list() == []
+    assert app.client.email_receive() == []
+    _secret_absent(app.log)
 
 
 def test_compose_forwards_imap_env_knobs(vault, monkeypatch):

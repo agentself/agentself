@@ -80,7 +80,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_send", identity_id, to, "error")
-            raise MailboxError("send failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         inbox = self._inbox(identity_id, credential, address)
         url = _send_url(inbox["inbox_id"])
@@ -102,7 +102,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_recv", identity_id, None, "error")
-            raise MailboxError("recv failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         try:
             with exclusive(self._root):
@@ -161,7 +161,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_list", identity_id, None, "error")
-            raise MailboxError("list failed")
+            raise MailboxError("missing credentials")
         credential = require_secret(credential)
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")

@@ -12,8 +12,11 @@ import pytest
 
 from agentself.backends.email.agentmail import AgentMailMailboxAccess
 from agentself.backends.email.contract import MailboxError
+from agentself.internal.custody.errors import ChannelFailure
 from agentself.internal.files import identity_home
 from agentself.internal.log import MemoryLog
+
+from tests.support import build_app, init_identity
 
 CANARY = "CANARY-AGENTMAIL-TOKEN-DO-NOT-LEAK"
 PRINCIPAL = "money-maker"
@@ -102,13 +105,13 @@ def test_no_token_zero_http(vault, monkeypatch):
     log = MemoryLog()
     http = Http()
     mb = _box(vault, log, http, domain="agentmail.to")
-    with pytest.raises(MailboxError, match="send failed") as send_err:
+    with pytest.raises(MailboxError, match="missing credentials") as send_err:
         mb.send(PRINCIPAL, "a@example.com", "s", "b")
-    with pytest.raises(MailboxError, match="recv failed") as recv_err:
+    with pytest.raises(MailboxError, match="missing credentials") as recv_err:
         mb.receive(PRINCIPAL)
-    with pytest.raises(MailboxError, match="list failed") as list_err:
+    with pytest.raises(MailboxError, match="missing credentials") as list_err:
         mb.list(PRINCIPAL)
-    with pytest.raises(MailboxError, match="send failed"):
+    with pytest.raises(MailboxError, match="missing credentials"):
         mb.send(PRINCIPAL, "a@example.com", "s", "b", credential="")
     assert http.posts == []
     assert http.gets == []
@@ -665,6 +668,69 @@ def test_alias_env_fills_empty_credential(vault, monkeypatch):
     assert http.gets
     assert http.posts
     _secret_absent(log)
+
+
+def test_alias_env_alone_sends_receives_and_lists_through_manager(vault, monkeypatch):
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", OURS)
+    monkeypatch.setenv("AGENTSELF_AGENTMAIL_API_KEY", CANARY)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
+    http = Http()
+    inbox_id = "inb_alias_mgr"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        200,
+        {"messages": []},
+    )
+    app = build_app(vault, email_backend="agentmail")
+    init_identity(app, monkeypatch)
+
+    class Factory:
+        def for_binding(self, binding: str) -> AgentMailMailboxAccess:
+            del binding
+            return _box(app.vault, app.log, http)
+
+    app.manager._mailboxes = Factory()
+    app.client.email_send("a@example.com", "s", "b")
+    assert app.client.email_list() == []
+    assert app.client.email_receive() == []
+    blob = app.log.rendered() + json.dumps(app.log.records)
+    assert CANARY not in blob
+    assert http.posts
+    assert http.gets
+
+
+def test_alias_env_rpc_is_not_mapped_to_no_token(vault, monkeypatch):
+    monkeypatch.setenv("AGENTSELF_EMAIL_ADDRESS", OURS)
+    monkeypatch.setenv("AGENTSELF_AGENTMAIL_API_KEY", CANARY)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
+    http = Http()
+    inbox_id = "inb_alias_rpc"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.get_raises(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        TimeoutError("timeout"),
+    )
+    app = build_app(vault, email_backend="agentmail")
+    init_identity(app, monkeypatch)
+
+    class Factory:
+        def for_binding(self, binding: str) -> AgentMailMailboxAccess:
+            del binding
+            return _box(app.vault, app.log, http)
+
+    app.manager._mailboxes = Factory()
+    with pytest.raises(ChannelFailure) as caught:
+        app.client.email_list()
+    assert caught.value.reason == "rpc"
 
 
 def test_connect_create_rpc_failed(vault):

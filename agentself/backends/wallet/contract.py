@@ -23,8 +23,6 @@ class CannotSend(WalletError):
 
 @dataclass(frozen=True)
 class WalletMaterial:
-    """Declared material. name is the store key. create() is adapter-owned."""
-
     name: str
 
 
