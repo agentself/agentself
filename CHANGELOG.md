@@ -6,6 +6,9 @@
 - POSIX `pass` GNUPGHOME short-links under `/tmp` are reused only when owned by the current user, so an attacker-owned `/tmp/as-gpg-*` symlink is not trusted.
 - Identity `config.json` / `registry.json` (and wallet pending JSON) ignore a UTF-8 BOM so Windows Notepad edits remain readable.
 - Identity ids and secret names reject Windows reserved device names (`CON`, `NUL`, `COM1`, …) so the same identity is portable.
+- On Windows, `age-keygen`, `gpg`, and `pass` are started with
+  `NoDefaultCurrentDirectoryInExePath=1`. `diagnose` and `init` do not treat a
+  current-directory binary as an installed host tool.
 
 ## 0.1.0a3 - 2026-08-23
 

@@ -5,7 +5,7 @@ import subprocess
 
 from agentself.host import ENV_AGE_KEY_FILE, ENV_IDENTITY_ID
 from agentself.internal.custody.errors import UnboundCaller
-from agentself.internal.files import resolve_tool
+from agentself.internal.files import run_resolved
 from agentself.internal.types import BoundCaller
 
 
@@ -23,12 +23,7 @@ def public_recipient(key_file: str) -> str:
     if not os.path.isfile(key_file) or os.path.basename(key_file).startswith("-"):
         raise UnboundCaller("not initialized")
     try:
-        proc = subprocess.run(
-            [resolve_tool("age-keygen"), "-y", key_file],
-            capture_output=True,
-            check=False,
-            timeout=10,
-        )
+        proc = run_resolved(["age-keygen", "-y", key_file], timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise UnboundCaller("not initialized") from exc
     recipient = proc.stdout.decode("utf-8").strip()

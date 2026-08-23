@@ -22,7 +22,7 @@ from agentself.internal.files import (
     ensure_private_dir,
     exclusive,
     identity_home,
-    resolve_tool,
+    run_resolved,
     shred_unlink,
 )
 from agentself.internal.format import (
@@ -210,12 +210,7 @@ def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
         shred_unlink(key)
     if not key.is_file():
         try:
-            proc = subprocess.run(
-                [resolve_tool("age-keygen"), "-o", str(key)],
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
+            proc = run_resolved(["age-keygen", "-o", str(key)], timeout=30)
         except FileNotFoundError:
             shred_unlink(key)
             raise FileNotFoundError("age not on PATH") from None
