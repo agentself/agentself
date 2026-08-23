@@ -102,6 +102,7 @@ class MailboxAccess(ABC):
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> list[dict[str, str]]:
         """May consume new mail."""
 

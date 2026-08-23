@@ -263,7 +263,10 @@ def test_json_secrets_and_missing(tmp_path):
         run_cli(["--json", "secret", "exists", "notes"], env), "secret_exists"
     )
     assert present == {"ok": True, "name": "notes", "exists": True}
-    got = assert_ok(run_cli(["--json", "secret", "get", "notes"], env), "secret_get")
+    got = assert_ok(
+        run_cli(["--json", "secret", "get", "notes", "--print"], env),
+        "secret_get",
+    )
     assert got == {"ok": True, "name": "notes", "value": "only I can open this"}
     updated = assert_ok(
         run_cli(
@@ -285,7 +288,8 @@ def test_json_secrets_and_missing(tmp_path):
     assert "wallet.key" in listed["protected"]
     assert "only I can open this" not in json.dumps(listed)
     missing = assert_err(
-        run_cli(["--json", "secret", "get", "ghost"], env), error="missing"
+        run_cli(["--json", "secret", "get", "ghost", "--meta"], env),
+        error="missing",
     )
     assert missing["next"] == "agentself secret list"
     clash = assert_err(

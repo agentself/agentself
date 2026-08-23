@@ -315,6 +315,7 @@ def test_receive_unseen_then_empty_list_still_shows(vault):
     assert mb.receive(PRINCIPAL, credential=CANARY, address=ADDRESS) == []
     still = mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert [item["id"] for item in still] == ["10", "11"]
+    assert [item["status"] for item in still] == ["seen", "seen"]
     again = mb.receive(PRINCIPAL, credential=CANARY, address=ADDRESS, message_id="10")
     assert len(again) == 1
     assert again[0]["id"] == "10"

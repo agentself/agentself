@@ -186,7 +186,7 @@ def test_cli_protects_declared_material_for_list_export_and_delete(
     assert refused["error"] == "refused"
     assert MATERIAL_NAME in refused["reason"]
 
-    assert main(["--json", "secret", "get", MATERIAL_NAME, "--unsafe"]) == 0
+    assert main(["--json", "secret", "get", MATERIAL_NAME, "--unsafe", "--print"]) == 0
     exported = json.loads(capsys.readouterr().out)
     assert exported["value"] == "synthetic-note-seed"
 

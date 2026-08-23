@@ -28,7 +28,9 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     payload = json.loads(refused.stdout)
     assert payload["error"] == "refused"
     assert "protected" in payload["reason"]
-    exported = run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env)
+    exported = run_cli(
+        ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+    )
     assert exported.returncode == 0
     hexkey = json.loads(exported.stdout)["value"]
     assert hexkey.startswith("0x")
@@ -57,7 +59,9 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     assert payload["error"] == "refused"
     assert "protected" in payload["reason"]
     still = json.loads(
-        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+        ).stdout
     )["value"]
     assert still == hexkey
     forced = run_cli(
@@ -74,7 +78,9 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     )
     assert forced.returncode == 0, forced.stdout + forced.stderr
     replaced = json.loads(
-        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+        ).stdout
     )["value"]
     assert replaced == new_key
 
@@ -115,6 +121,17 @@ def test_secret_meta_omits_value(tmp_path: Path) -> None:
     assert "value" not in meta
     assert meta["bytes"] == 5
     assert len(meta["sha256"]) == 64
+
+
+def test_secret_plaintext_requires_explicit_print(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    assert run_cli(["secret", "create", "demo.token", "alpha"], env).returncode == 0
+    refused = run_cli(["--json", "secret", "get", "demo.token"], env)
+    assert refused.returncode == 2
+    payload = json.loads(refused.stdout)
+    assert payload["reason"] == "choose --file, --meta, or --print"
+    printed = run_cli(["--json", "secret", "get", "demo.token", "--print"], env)
+    assert json.loads(printed.stdout)["value"] == "alpha"
 
 
 def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:

@@ -21,6 +21,13 @@
 - `secret get --file` writes `0o600` without chmod'ing the parent directory.
 - `secret update` of `wallet.key` (and other protected material) requires `--unsafe`.
 - `--json init` no longer prompts for an identity name on a TTY.
+- `email receive` is headers-only by default, exposes `new`/`seen` status, and
+  writes an explicitly selected body to a private file with `ID --file PATH`.
+- Plaintext secret output now requires `--print`; `--file` and `--meta` remain
+  safe defaults.
+- Secret `create` and `update` preserve exact UTF-8 file bytes, including a BOM
+  or trailing newline.
+- Email setup and wallet signing discovery are clearer in CLI and backend help.
 
 ## 0.1.0a3 - 2026-08-23
 

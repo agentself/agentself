@@ -26,7 +26,7 @@ def test_strip_one_trailing_newline_accepts_cr_lf_and_crlf() -> None:
     assert strip_one_trailing_newline("am_key\x00\r") == "am_key\x00"
 
 
-def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(
+def test_secret_file_round_trip_preserves_exact_utf8_bytes(
     tmp_path: Path,
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -44,8 +44,8 @@ def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(
             ["--json", "secret", "get", "demo.token", "--file", str(dest)], env
         ).stdout
     )
-    assert got["bytes"] == len("café token".encode())
-    assert dest.read_bytes() == "café token".encode()
+    assert got["bytes"] == len(source.read_bytes())
+    assert dest.read_bytes() == source.read_bytes()
     meta = json.loads(
         run_cli(["--json", "secret", "get", "demo.token", "--meta"], env).stdout
     )
@@ -90,7 +90,9 @@ def test_json_unicode_round_trip(tmp_path: Path) -> None:
     )
     assert created.returncode == 0, created.stderr
     assert json.loads(created.stdout)["ok"] is True
-    got = json.loads(run_cli(["--json", "secret", "get", "demo.token"], env).stdout)
+    got = json.loads(
+        run_cli(["--json", "secret", "get", "demo.token", "--print"], env).stdout
+    )
     assert got["value"] == "café"
 
 

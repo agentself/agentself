@@ -68,7 +68,7 @@ def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys)
     assert shown_out.out == f"{OURS}\n"
     names = run_cli(["secret", "list"], env)
     assert "email.address" in names.stdout.splitlines()
-    got = run_cli(["secret", "get", "email.address"], env)
+    got = run_cli(["secret", "get", "email.address", "--print"], env)
     assert got.stdout.strip() == OURS
     assert TOKEN not in got.stdout + got.stderr
     again = main(["email", "connect"])
@@ -110,7 +110,7 @@ def test_agentmail_connect_creates_when_empty(tmp_path, monkeypatch, capsys):
     assert "username" not in body
     assert "domain" not in body
     assert body["client_id"].startswith("agentself-")
-    got = run_cli(["secret", "get", "email.address"], env)
+    got = run_cli(["secret", "get", "email.address", "--print"], env)
     assert got.stdout.strip() == ISSUED
     assert "Authorization" in headers
     assert TOKEN not in captured.out + captured.err

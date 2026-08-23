@@ -100,12 +100,15 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_recv")
         try:
             with exclusive(self._root):
-                return self._recv_locked(identity_id, credential, address, message_id)
+                return self._recv_locked(
+                    identity_id, credential, address, message_id, include_body
+                )
         except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
 
@@ -115,6 +118,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         credential: str,
         address: str | None,
         message_id: str | None,
+        include_body: bool,
     ) -> builtins.list[dict[str, str]]:
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
@@ -133,13 +137,22 @@ class AgentMailMailboxAccess(MailboxAccess):
             if not wanted and mark.is_file():
                 continue
             parsed = _meta(item)
+            if not include_body:
+                atomic_write_text(mark, mid)
+                parsed["status"] = "seen"
+                messages.append(parsed)
+                if wanted:
+                    break
+                continue
             fetched = self._get_message(_message_url(inbox_id, mid), credential)
             if fetched is None:
                 parsed["body"] = str(item.get("preview") or "")
                 parsed["reason"] = "mailbox_error"
+                parsed["status"] = "seen" if mark.is_file() else "new"
             else:
                 parsed["body"] = _body_of(fetched)
                 atomic_write_text(mark, mid)
+                parsed["status"] = "seen"
             messages.append(parsed)
             if wanted:
                 break
@@ -158,7 +171,15 @@ class AgentMailMailboxAccess(MailboxAccess):
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         listed = self._list_messages(inbox_id, credential, "list failed")
-        items = [_meta(item) for item in listed]
+        seen = self._seen_dir(identity_id)
+        items = []
+        for item in listed:
+            parsed = _meta(item)
+            mid = parsed.get("id", "")
+            parsed["status"] = (
+                "seen" if mid and (seen / _safe_filename(mid)).is_file() else "new"
+            )
+            items.append(parsed)
         self._write_inbox_id(identity_id, inbox_id)
         self._log.record("mailbox_list", identity_id, None, "ok")
         return items
