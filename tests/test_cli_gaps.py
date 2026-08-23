@@ -119,6 +119,17 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert got_line.returncode == 0, got_line.stderr
     assert got_line.stdout == "already-terminated\n"
 
+    crlf_file = tmp_path / "crlf.txt"
+    crlf_file.write_bytes(b"windows-terminated\r\n")
+    created_crlf = run_cli(
+        ["secret", "create", "crlf", "--file", str(crlf_file)],
+        env,
+    )
+    assert created_crlf.returncode == 0, created_crlf.stderr
+    got_crlf = run_cli(["secret", "get", "crlf", "--print"], env)
+    assert got_crlf.returncode == 0, got_crlf.stderr
+    assert got_crlf.stdout == "windows-terminated\n"
+
 
 def test_set_value_and_file_fails_closed(tmp_path):
     vault = tmp_path / "vault"
