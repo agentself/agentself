@@ -160,6 +160,18 @@ def test_featured_parser_matches_golden_commands():
         assert shown == COMMANDS[group], (group, shown)
 
 
+def test_json_init_does_not_prompt_on_tty(tmp_path, monkeypatch, capsys):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    monkeypatch.setattr("builtins.input", lambda prompt="": "prompted-id")
+    data = _main_ok(monkeypatch, capsys, env, ["init"], "init")
+    assert data["id"] == "agent"
+
+
 def test_json_version(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")

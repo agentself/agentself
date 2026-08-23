@@ -261,7 +261,7 @@ def _parser() -> argparse.ArgumentParser:
             "Named secrets. create refuses if the name exists with a different value. "
             "The same value is unchanged. "
             "update requires it. delete removes a name. list prints names only. "
-            "wallet.key cannot be deleted and needs --unsafe to export."
+            "wallet.key cannot be deleted and needs --unsafe to export or replace."
         ),
         epilog=(
             "Examples:\n"
@@ -341,10 +341,18 @@ def _parser() -> argparse.ArgumentParser:
         "update",
         json_parent,
         help="Update a named secret. The name must exist",
-        description="Update a named secret. The name must exist. Same value rules as create.",
+        description=(
+            "Update a named secret. The name must exist. Same value rules as create. "
+            "wallet.key requires --unsafe."
+        ),
         epilog="Examples:\n  agentself secret update NAME VALUE",
     )
     _add_secret_write_args(update_p)
+    update_p.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow replacing a protected secret",
+    )
     _cmd(
         secret_sub,
         "list",

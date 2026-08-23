@@ -10,7 +10,14 @@ from agentself.backends.wallet.contract import WalletMaterial
 from agentself.cli.app import main
 from agentself.internal.custody.errors import CannotSend
 
-from tests.support import apply_cli_env, build_app, cli_env, init_identity, run_cli
+from tests.support import (
+    apply_cli_env,
+    build_app,
+    cli_env,
+    init_identity,
+    run_cli,
+    value_file,
+)
 from tests.synthetic_wallet import MATERIAL_NAME, SyntheticWalletAccess
 
 
@@ -187,3 +194,24 @@ def test_cli_protects_declared_material_for_list_export_and_delete(
     deleted = json.loads(capsys.readouterr().out)
     assert deleted["error"] == "refused"
     assert MATERIAL_NAME in deleted["reason"]
+
+    planted = value_file(tmp_path, "replaced-seed", "seed.txt")
+    assert main(["--json", "secret", "update", MATERIAL_NAME, "--file", planted]) == 2
+    updated = json.loads(capsys.readouterr().out)
+    assert updated["error"] == "refused"
+    assert MATERIAL_NAME in updated["reason"]
+    assert (
+        main(
+            [
+                "--json",
+                "secret",
+                "update",
+                MATERIAL_NAME,
+                "--unsafe",
+                "--file",
+                planted,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
