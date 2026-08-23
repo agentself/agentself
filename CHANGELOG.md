@@ -2,14 +2,7 @@
 
 ## Unreleased
 
-- Internal Python names match the public CLI (`Client`, `init`, `create`,
-  `get`, `update`, `wallet authorize`, `email receive`). Operations always
-  use the bound identity.
-- Public `--json` schema is `cli: 2`. Init and show no longer emit a top-level
-  `usdc` field; keep `address`. On-disk `format_version` is unchanged.
-- Wallet send uses the backend default asset when ASSET is omitted. Send
-  failures are typed (`no_gas`, `insufficient_asset`, `unsupported_asset`)
-  instead of vendor-specific strings in the CLI.
+Changes for the next release will be recorded here.
 
 ## 0.1.0a3
 

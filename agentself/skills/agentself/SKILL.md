@@ -25,9 +25,9 @@ agentself diagnose
 
 Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `email`, `wallet`, `backup`, `restore`, `install`.
 
-Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 2). Ignore unknown keys.
+Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 1). Ignore unknown keys.
 
-Start by checking `agentself --json --version`. This skill requires `cli: 2`. A different schema or an unexpected `package` / `executable` path means the installation is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
+Start by checking `agentself --json --version`. This skill requires `cli: 1`. A different schema or an unexpected `package` / `executable` path means the installation is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
 
 No command prints the current identity (`show`). `--json show` includes `recipient` (age pubkey) and email readiness. Unconfigured `email show` is ready false, exit 0.
 

@@ -70,7 +70,7 @@ from agentself.local import (
     resolve_setting,
 )
 
-CLI_SCHEMA_VERSION = 2
+CLI_SCHEMA_VERSION = 1
 _SEND_HUMAN = {
     "no_gas": "need gas",
     "insufficient_asset": "need funds",
