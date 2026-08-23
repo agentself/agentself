@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 
 class StoreError(Exception):
@@ -17,6 +18,12 @@ class SecretExists(StoreError):
 
 class StoreResourceError(StoreError):
     pass
+
+
+@dataclass(frozen=True)
+class HostTool:
+    name: str
+    installable: bool = False
 
 
 class StoreAccess(ABC):
@@ -39,3 +46,11 @@ class StoreAccess(ABC):
     @abstractmethod
     def delete(self, identity_id: str, name: str) -> None:
         """Must not delete a missing name."""
+
+    def prepare(self, identity_id: str) -> None:
+        """Optional host/store readiness. Default no-op."""
+
+        return None
+
+    def required_tools(self) -> tuple[HostTool, ...]:
+        return ()

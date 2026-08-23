@@ -11,20 +11,25 @@ from pathlib import Path
 
 import pytest
 
-import agentself.local as local
+import agentself.backends.store.passstore as passstore
+from agentself.backends.store.contract import StoreResourceError
+from agentself.backends.store.passstore import PassStoreAccess
 from agentself.internal.files import identity_home
 from agentself.internal.gpg import bindable_home
+from agentself.internal.log import MemoryLog
 from agentself.local import ensure_age_key
 
-from tests.support import apply_cli_env, cli_env, run_cli
+from tests.support import apply_cli_env, cli_env, plant_host_binaries, run_cli
+
+
+def _prepare_pass(vault: Path, identity_id: str = "agent") -> None:
+    PassStoreAccess(vault, MemoryLog()).prepare(identity_id)
 
 
 def test_init_store_pass_missing_tools(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    env["PATH"] = str(empty)
+    env["PATH"] = str(plant_host_binaries(tmp_path / "host-bin", "age-keygen", "age"))
     proc = run_cli(["init", "--store", "pass"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     blob = proc.stdout + proc.stderr
@@ -33,6 +38,7 @@ def test_init_store_pass_missing_tools(tmp_path):
     assert "setup-principal.sh" not in blob
     assert "pass" in proc.stderr
     assert "gpg" in proc.stderr
+    assert "install --tools" not in blob
     lines = [line for line in proc.stderr.splitlines() if line.strip()]
     assert lines[0].startswith("error:")
     assert "pass" in lines[0] or "gpg" in lines[0]
@@ -50,10 +56,11 @@ def test_leftover_gpg_batch_is_shredded(tmp_path, monkeypatch):
     store = pdir / "password-store"
     store.mkdir()
     (store / ".gpg-id").write_text("ok\n", encoding="utf-8")
-    monkeypatch.setattr(local, "_have_tool", lambda name: True)
-    monkeypatch.setattr(local, "_gpg_has_secret", lambda *a, **k: True)
-    monkeypatch.setattr(local, "_gpg_fingerprint", lambda *a, **k: "A" * 40)
-    ensure_age_key(vault, "agent", store="pass")
+    monkeypatch.setattr(passstore, "_have_tool", lambda name: True)
+    monkeypatch.setattr(passstore, "_gpg_has_secret", lambda *a, **k: True)
+    monkeypatch.setattr(passstore, "_gpg_fingerprint", lambda *a, **k: "A" * 40)
+    ensure_age_key(vault, "agent")
+    _prepare_pass(vault)
     assert not leftover.exists()
 
 
@@ -63,7 +70,8 @@ def test_leftover_gpg_batch_is_shredded(tmp_path, monkeypatch):
 )
 def test_pass_setup_creates_gnupg_and_password_store(tmp_path):
     vault = tmp_path / "vault"
-    key = ensure_age_key(vault, "agent", store="pass")
+    key = ensure_age_key(vault, "agent")
+    _prepare_pass(vault)
     pdir = identity_home(vault, "agent")
     assert key.is_file()
     assert key == pdir / "agent.agekey"
@@ -74,7 +82,8 @@ def test_pass_setup_creates_gnupg_and_password_store(tmp_path):
     assert "AGE-SECRET-KEY-" in blob
     gpg_id = (pdir / "password-store" / ".gpg-id").read_text(encoding="utf-8")
     assert "AGE-SECRET-KEY" not in gpg_id
-    again = ensure_age_key(vault, "agent", store="pass")
+    again = ensure_age_key(vault, "agent")
+    _prepare_pass(vault)
     assert again == key
     assert not (pdir / ".gpg-batch").exists()
 
@@ -110,7 +119,7 @@ def test_gpg_keygen_error_includes_redacted_stderr(tmp_path, monkeypatch):
     (pdir / "agent.agekey").write_text(
         "AGE-SECRET-KEY-TESTKEYGENERR\n", encoding="utf-8"
     )
-    monkeypatch.setattr(local, "_have_tool", lambda name: True)
+    monkeypatch.setattr(passstore, "_have_tool", lambda name: True)
 
     def fake_run(argv, *, env=None, timeout=30, failed=""):
         if "--generate-key" in argv:
@@ -126,9 +135,9 @@ def test_gpg_keygen_error_includes_redacted_stderr(tmp_path, monkeypatch):
             return subprocess.CompletedProcess(argv, 0, b"", b"")
         return subprocess.CompletedProcess(argv, 0, b"", b"")
 
-    monkeypatch.setattr(local, "_run_host", fake_run)
-    with pytest.raises(RuntimeError, match="socket name is too long") as caught:
-        ensure_age_key(vault, "agent", store="pass")
+    monkeypatch.setattr(passstore, "_run_host", fake_run)
+    with pytest.raises(StoreResourceError, match="socket name is too long") as caught:
+        _prepare_pass(vault)
     msg = str(caught.value)
     assert "gpg keygen failed" in msg
     assert "AGE-SECRET-KEY-LEAKME" not in msg
@@ -141,7 +150,7 @@ def test_host_failure_message_redacts_secret_values():
         b"",
         b"gpg: cannot use AGE-SECRET-KEY-LEAKME\n",
     )
-    msg = local._host_failure_message("gpg keygen failed", proc)
+    msg = passstore._host_failure_message("gpg keygen failed", proc)
     assert "AGE-SECRET-KEY-LEAKME" not in msg
     assert "AGE-SECRET-KEY-[redacted]" in msg
     assert msg.startswith("gpg keygen failed:")
@@ -221,7 +230,8 @@ def test_pass_setup_survives_long_identity_dir_path(tmp_path):
     vault = tmp_path / ("n" * 80) / "vault"
     extra = vault / "identities" / "agent" / "gnupg" / "S.gpg-agent.browser"
     assert len(os.fsencode(extra)) > 107
-    key = ensure_age_key(vault, "agent", store="pass")
+    key = ensure_age_key(vault, "agent")
+    _prepare_pass(vault)
     pdir = identity_home(vault, "agent")
     assert key.is_file()
     assert (pdir / "gnupg").is_dir()

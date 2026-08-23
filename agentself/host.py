@@ -49,6 +49,8 @@ class Bind:
     network: str = ""
     asset: str = ""
     options: tuple[dict[str, object], ...] = ()
+    tools: tuple[str, ...] = ()
+    installable_tools: tuple[str, ...] = ()
 
     def as_json(self) -> dict[str, object]:
         return {
@@ -164,6 +166,8 @@ CHANNELS: dict[str, Channel] = {
                 live=False,
                 verbs=_STORE_VERBS,
                 custody="age-files",
+                tools=("sops",),
+                installable_tools=("sops",),
             ),
             Bind(
                 "pass",
@@ -171,6 +175,7 @@ CHANNELS: dict[str, Channel] = {
                 live=False,
                 verbs=_STORE_VERBS,
                 custody="gpg-pass",
+                tools=("gpg", "pass"),
             ),
         ),
         note="Recorded on the identity at init. Not an env override.",

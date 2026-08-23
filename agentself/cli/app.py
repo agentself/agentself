@@ -22,6 +22,7 @@ from agentself.host import (
     ENV_LOG,
     UnknownBind,
     backends_payload,
+    bind_of,
     format_backends,
     unknown_bind,
 )
@@ -255,14 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             nxt="agentself backends email",
         )
     except HostToolMissing as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_INSTALL_TOOLS_NEXT,
-        )
+        return _fail_missing_tool(args, exc)
     except ChannelFailure as exc:
         reason = exc.reason
         return _fail(
@@ -482,19 +476,7 @@ def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
     store_name = CHANNELS["store"].default
     if is_init:
         store_name = getattr(args, "store", None) or store_name
-        if store_name == "pass":
-            missing = [name for name in ("gpg", "pass") if shutil.which(name) is None]
-            if missing:
-                reason = " and ".join(missing) + " not on PATH"
-                return _fail(
-                    args,
-                    1,
-                    f"error: {reason}\n",
-                    "error",
-                    reason,
-                    nxt=_INSTALL_TOOLS_NEXT,
-                )
-    if not is_init:
+    else:
         try:
             cfg = load_config(vault)
             if config_path(vault).is_file():
@@ -513,30 +495,58 @@ def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
             "age not on PATH",
             nxt=_INSTALL_TOOLS_NEXT,
         )
-    if store_name == "pass":
-        missing = [name for name in ("gpg", "pass") if shutil.which(name) is None]
-        if missing:
-            reason = " and ".join(missing) + " not on PATH"
-            return _fail(
-                args,
-                1,
-                f"error: {reason}\n",
-                "error",
-                reason,
-                nxt=_INSTALL_TOOLS_NEXT,
-            )
+    bind = bind_of("store", store_name)
+    tools = bind.tools if bind is not None else ()
+    missing = [name for name in tools if shutil.which(name) is None]
+    if not missing:
         return None
-    if shutil.which(store_name) is None:
-        reason = f"{store_name} not on PATH"
-        return _fail(
-            args,
-            1,
-            f"error: {reason}\n",
-            "error",
-            reason,
-            nxt=_INSTALL_TOOLS_NEXT,
-        )
-    return None
+    reason = " and ".join(missing) + " not on PATH"
+    return _fail(
+        args,
+        1,
+        f"error: {reason}\n",
+        "error",
+        reason,
+        nxt=_tools_next(missing, store_name),
+    )
+
+
+def _diagnose_tools(store_name: str) -> dict[str, bool]:
+    tools = {"age-keygen": True}
+    bind = bind_of("store", store_name)
+    if bind is not None:
+        for name in bind.tools:
+            tools[name] = True
+    return tools
+
+
+def _tools_next(missing: list[str], store_name: str | None = None) -> str:
+    from agentself.internal.host_tools import INSTALLABLE_TOOLS
+
+    installable = set(INSTALLABLE_TOOLS)
+    bind = bind_of("store", store_name) if store_name else None
+    if bind is not None:
+        installable.update(bind.installable_tools)
+    if missing and all(name in installable for name in missing):
+        return _INSTALL_TOOLS_NEXT
+    return _DIAGNOSE_NEXT
+
+
+def _fail_missing_tool(args, exc: HostToolMissing) -> int:
+    missing = [
+        part.strip()
+        for part in str(exc.tool).replace(" and ", ",").split(",")
+        if part.strip()
+    ]
+    store_name = getattr(args, "store", None) or CHANNELS["store"].default
+    return _fail(
+        args,
+        1,
+        f"error: {exc}\n",
+        "error",
+        str(exc),
+        nxt=_tools_next(missing, store_name),
+    )
 
 
 def _diagnose(vault: Path, args) -> int:
@@ -569,6 +579,7 @@ def _diagnose(vault: Path, args) -> int:
     if initialized:
         problems, ready = _diagnose_identity(vault, cfg, store_name)
     paths = _runtime_paths()
+    tools = _diagnose_tools(store_name)
     payload: dict[str, object] = {
         "ok": not problems,
         "initialized": initialized,
@@ -576,7 +587,7 @@ def _diagnose(vault: Path, args) -> int:
         "version": __version__,
         "python": python,
         "identity_dir": str(vault),
-        "tools": {"age-keygen": True, store_name: True},
+        "tools": tools,
         "wallet_backend": wallet_backend,
         "email_backend": email_backend,
         "store_backend": store_backend,
@@ -599,10 +610,9 @@ def _diagnose(vault: Path, args) -> int:
         f"package: {paths['package']}",
         f"executable: {paths['executable']}",
         f"identity_dir: {vault}",
-        "age-keygen: ok",
-        f"{store_name}: ok",
-        f"initialized: {'yes' if initialized else 'no'}",
     ]
+    lines.extend(f"{name}: ok" for name in tools)
+    lines.append(f"initialized: {'yes' if initialized else 'no'}")
     if initialized:
         if store_backend:
             lines.append(f"store_backend: {store_backend}")
@@ -750,7 +760,7 @@ def _init(vault: Path, args) -> int:
             )
             if blocked is not None:
                 return blocked
-        key = ensure_age_key(vault, identity_id, store)
+        key = ensure_age_key(vault, identity_id)
         cfg = load_config(vault)
         age_key_file = _age_key_rel(vault, identity_id, cfg)
         identity_fields = {
@@ -814,14 +824,7 @@ def _init(vault: Path, args) -> int:
     except ValueError:
         return _fail(args, 2, "refused\n", "refused")
     except HostToolMissing as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_INSTALL_TOOLS_NEXT,
-        )
+        return _fail_missing_tool(args, exc)
     except StoreFailure as exc:
         return _store_fail(args, exc)
     except FileNotFoundError:

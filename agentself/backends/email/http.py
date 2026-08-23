@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import os
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
-
-# Test/CI tripwire. Unset in production. Not a user knob; not listed on backends.
-_FORBID_LIVE = "AGENTSELF_FORBID_LIVE_AGENTMAIL"
-_LIVE_HOST = "api.agentmail.to"
 
 
 def request(
@@ -16,8 +11,9 @@ def request(
     payload: bytes | None = None,
     *,
     method: str | None = None,
+    forbid_hosts: tuple[str, ...] = (),
 ) -> tuple[int, bytes]:
-    refuse_live_agentmail(url)
+    refuse_live_hosts(url, forbid_hosts)
     req = urllib.request.Request(
         url,
         data=payload,
@@ -31,12 +27,9 @@ def request(
         return int(exc.code), exc.read() if exc.fp else b""
 
 
-def refuse_live_agentmail(url: str) -> None:
-    """Fail closed in the test suite. Production leaves the env unset."""
+def refuse_live_hosts(url: str, hosts: tuple[str, ...] = ()) -> None:
+    """Fail closed when a hostname is listed. Production passes an empty tuple."""
 
-    raw = os.environ.get(_FORBID_LIVE, "").strip().lower()
-    if raw in ("", "0", "false", "no", "off"):
-        return
-    host = (urlparse(url).hostname or "").lower()
-    if host == _LIVE_HOST:
-        raise AssertionError("live AgentMail HTTP is forbidden in tests")
+    host = urlparse(url).hostname
+    if host and host.lower() in {item.lower() for item in hosts}:
+        raise AssertionError("live HTTP is forbidden in tests")

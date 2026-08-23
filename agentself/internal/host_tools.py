@@ -18,6 +18,7 @@ from agentself.host import ENV_FETCH_TOOLS, ENV_TOOLS_DIR
 
 AGE_VERSION = "v1.3.1"
 SOPS_VERSION = "v3.13.3"
+INSTALLABLE_TOOLS = frozenset({"age", "age-keygen", "sops"})
 
 _AGE_BASE = f"https://github.com/FiloSottile/age/releases/download/{AGE_VERSION}/"
 _SOPS_BASE = f"https://github.com/getsops/sops/releases/download/{SOPS_VERSION}/"

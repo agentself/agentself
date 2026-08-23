@@ -17,8 +17,6 @@ from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import Identity
 
-ALLOWED_BINDINGS = frozenset({"sops", "pass"})
-
 
 class RegistryError(Exception):
     """registry.json exists but is unreadable. Fail closed."""
@@ -34,10 +32,21 @@ class RegistryFormatError(RegistryError):
 class FileIdentityAccess:
     """Not CRUD."""
 
-    def __init__(self, vault_root: Path, log: Log) -> None:
+    def __init__(
+        self,
+        vault_root: Path,
+        log: Log,
+        *,
+        allowed_bindings: frozenset[str] | None = None,
+    ) -> None:
         self._root = Path(vault_root)
         self._registry = self._root / "registry.json"
         self._log = log
+        self._allowed = (
+            frozenset(allowed_bindings)
+            if allowed_bindings is not None
+            else frozenset(("sops", "pass"))
+        )
 
     def find(self, identity_id: str) -> Identity | None:
         require_safe_token(identity_id, "identity id")
@@ -47,14 +56,14 @@ class FileIdentityAccess:
             self._log.record("find", identity_id, None, "miss")
             return None
         self._log.record("find", identity_id, None, "ok")
-        return _identity(raw)
+        return _identity(raw, self._allowed)
 
     def init(self, identity_id: str, recipient: str, store_binding: str) -> Identity:
         require_safe_token(identity_id, "identity id")
         if not recipient or not recipient.startswith("age1"):
             self._log.record("init", identity_id, None, "refused")
             raise ValueError("invalid recipient")
-        if store_binding not in ALLOWED_BINDINGS:
+        if store_binding not in self._allowed:
             self._log.record("init", identity_id, None, "refused")
             raise ValueError("invalid store binding")
         try:
@@ -62,7 +71,7 @@ class FileIdentityAccess:
                 records = self._load()
                 if identity_id in records:
                     self._log.record("init", identity_id, None, "exists")
-                    return _identity(records[identity_id])
+                    return _identity(records[identity_id], self._allowed)
                 identity = Identity(
                     id=identity_id,
                     recipient=recipient,
@@ -98,7 +107,7 @@ class FileIdentityAccess:
         for pid, raw in identities.items():
             if not isinstance(pid, str):
                 raise RegistryError("cannot read registry.json")
-            identity = _identity(raw)
+            identity = _identity(raw, self._allowed)
             if identity.id != pid:
                 raise RegistryError("cannot read registry.json")
             out[pid] = {
@@ -121,7 +130,7 @@ class FileIdentityAccess:
         atomic_write_text(self._registry, payload)
 
 
-def _identity(raw: object) -> Identity:
+def _identity(raw: object, allowed: frozenset[str]) -> Identity:
     if not isinstance(raw, dict):
         raise RegistryError("cannot read registry.json")
     pid = raw.get("id")
@@ -139,7 +148,7 @@ def _identity(raw: object) -> Identity:
         raise RegistryError("cannot read registry.json") from None
     if not _public_recipient(recipient):
         raise RegistryError("cannot read registry.json")
-    if store_binding not in ALLOWED_BINDINGS:
+    if store_binding not in allowed:
         raise RegistryError("cannot read registry.json")
     return Identity(
         id=pid,

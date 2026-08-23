@@ -13,7 +13,7 @@ from agentself.host import (
     ENV_IDENTITY_ID,
     ENV_MAIL_DOMAIN,
 )
-from agentself.internal.custody.errors import HostToolMissing, UnboundCaller
+from agentself.internal.custody.errors import UnboundCaller
 from agentself.internal.files import (
     IdentityBusy,
     atomic_write_text,
@@ -27,7 +27,6 @@ from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
 )
-from agentself.internal.gpg import gpg_fingerprint, pass_argv, pass_env
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
 
@@ -163,15 +162,13 @@ def bind_local(vault: Path) -> BoundCaller:
     return BoundCaller(identity_id, public_recipient(key_file))
 
 
-def ensure_age_key(vault: Path, identity_id: str, store: str = "sops") -> Path:
+def ensure_age_key(vault: Path, identity_id: str) -> Path:
     """Host keygen. Not a Manager call. Private key stays in the file."""
 
     require_safe_token(identity_id, "identity id")
     root = Path(vault)
     try:
         with exclusive(root):
-            if store == "pass":
-                return _ensure_pass_principal(root, identity_id)
             return _ensure_age_keygen(root, identity_id)
     except IdentityBusy as exc:
         raise IdentityStateError("identity directory busy") from exc
@@ -238,198 +235,6 @@ def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
     except OSError:
         pass
     return key
-
-
-def _ensure_pass_principal(vault: Path, identity_id: str) -> Path:
-    pdir = identity_home(Path(vault), identity_id)
-    batch = pdir / ".gpg-batch"
-    shred_unlink(batch)
-    try:
-        _require_pass_tools()
-        key = _ensure_age_keygen(vault, identity_id)
-        gnupg = ensure_private_dir(pdir / "gnupg")
-        store_dir = pdir / "password-store"
-        env = pass_env(gnupg, store_dir)
-        if not _gpg_has_secret(env):
-            _generate_principal_gpg(pdir, identity_id, env)
-        fingerprint = _gpg_fingerprint(env)
-        if not (store_dir / ".gpg-id").is_file():
-            _pass_init(env, store_dir, fingerprint)
-        return key
-    finally:
-        shred_unlink(batch)
-
-
-def _require_pass_tools() -> None:
-    missing = [name for name in ("gpg", "pass") if not _have_tool(name)]
-    if missing:
-        raise HostToolMissing(" and ".join(missing))
-
-
-def _have_tool(name: str) -> bool:
-    path = Path(resolve_tool(name))
-    if len(path.parts) < 2:
-        return False
-    try:
-        return path.is_file()
-    except OSError:
-        return False
-
-
-def _run_host(
-    argv: list[str],
-    *,
-    env: dict[str, str] | None = None,
-    timeout: int = 30,
-    failed: str = "keygen failed",
-) -> subprocess.CompletedProcess[bytes]:
-    cmd = [resolve_tool(argv[0]), *argv[1:]]
-    try:
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-            env=env,
-        )
-    except FileNotFoundError:
-        raise HostToolMissing(str(argv[0]) if argv else "tool") from None
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(failed) from None
-
-
-def _host_failure_message(prefix: str, proc: subprocess.CompletedProcess[bytes]) -> str:
-    """One line. Never a secret value."""
-
-    raw = (proc.stderr or b"") + b"\n" + (proc.stdout or b"")
-    text = raw.decode("utf-8", "replace")
-    detail = ""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        lower = stripped.lower()
-        if lower.startswith("gpg: generating") or lower in ("gpg: done",):
-            continue
-        if stripped.startswith("%"):
-            continue
-        for head in ("gpg-agent:", "gpg:"):
-            if stripped.startswith(head):
-                stripped = stripped[len(head) :].strip()
-                break
-        else:
-            stripped = _strip_gpg_agent_prefix(stripped)
-        detail = stripped
-    msg = f"{prefix}: {detail}" if detail else prefix
-    return redact_secrets(" ".join(msg.split()))
-
-
-def _strip_gpg_agent_prefix(line: str) -> str:
-    if line.startswith("gpg-agent[") and ":" in line:
-        return line.split(":", 1)[1].strip()
-    return line
-
-
-def _gpg_has_secret(env: dict[str, str]) -> bool:
-    proc = _run_host(
-        [
-            "gpg",
-            "--homedir",
-            env["GNUPGHOME"],
-            "--batch",
-            "--list-secret-keys",
-            "--with-colons",
-        ],
-        env=env,
-        failed="gpg keygen failed",
-    )
-    if proc.returncode != 0:
-        return False
-    try:
-        text = proc.stdout.decode("utf-8")
-    except UnicodeDecodeError:
-        return False
-    return any(line.startswith("sec:") for line in text.splitlines())
-
-
-def _generate_principal_gpg(pdir: Path, identity_id: str, env: dict[str, str]) -> None:
-    batch = pdir / ".gpg-batch"
-    body = "\n".join(
-        [
-            "%echo generating identity GPG key",
-            "%no-protection",
-            "Key-Type: EDDSA",
-            "Key-Curve: Ed25519",
-            "Subkey-Type: ECDH",
-            "Subkey-Curve: Curve25519",
-            f"Name-Real: agent-{identity_id}",
-            f"Name-Email: {identity_id}@agentself.local",
-            "Expire-Date: 0",
-            "%commit",
-            "%echo done",
-            "",
-        ]
-    )
-    try:
-        atomic_write_text(batch, body)
-        proc = _run_host(
-            [
-                "gpg",
-                "--homedir",
-                env["GNUPGHOME"],
-                "--batch",
-                "--pinentry-mode",
-                "loopback",
-                "--generate-key",
-                str(batch),
-            ],
-            env=env,
-            timeout=60,
-            failed="gpg keygen failed",
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(_host_failure_message("gpg keygen failed", proc))
-    finally:
-        shred_unlink(batch)
-
-
-def _gpg_fingerprint(env: dict[str, str]) -> str:
-    proc = _run_host(
-        [
-            "gpg",
-            "--homedir",
-            env["GNUPGHOME"],
-            "--batch",
-            "--list-secret-keys",
-            "--with-colons",
-        ],
-        env=env,
-        failed="failed to read GPG fingerprint",
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            _host_failure_message("failed to read GPG fingerprint", proc)
-        )
-    try:
-        text = proc.stdout.decode("utf-8")
-    except UnicodeDecodeError:
-        raise RuntimeError("failed to read GPG fingerprint") from None
-    fpr = gpg_fingerprint(text)
-    if fpr is None:
-        raise RuntimeError("failed to read GPG fingerprint")
-    return fpr
-
-
-def _pass_init(env: dict[str, str], store_dir: Path, fingerprint: str) -> None:
-    ensure_private_dir(store_dir)
-    proc = _run_host(
-        pass_argv(["pass", "init", fingerprint]),
-        env=env,
-        timeout=60,
-        failed="pass init failed",
-    )
-    if proc.returncode != 0 or not (store_dir / ".gpg-id").is_file():
-        raise RuntimeError(_host_failure_message("pass init failed", proc))
 
 
 def _read_config(vault: Path) -> dict[str, str]:

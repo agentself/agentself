@@ -20,6 +20,7 @@ from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.contract import WalletAccess
 from agentself.backends.wallet.factory import WalletAccessFactory
 from agentself.client import Client
+from agentself.host import CHANNELS
 from agentself.internal.custody.manager import CustodyManager
 from agentself.internal.files import identity_home
 from agentself.internal.log import MemoryLog
@@ -73,6 +74,13 @@ class InstrumentedStoreAccess:
     def __init__(self, inner: StoreAccess) -> None:
         self.inner = inner
         self.calls: list[tuple] = []
+
+    def prepare(self, identity_id: str) -> None:
+        self.calls.append(("prepare", identity_id, None))
+        return self.inner.prepare(identity_id)
+
+    def required_tools(self):
+        return self.inner.required_tools()
 
     def create(self, identity_id: str, name: str, value: str) -> None:
         self.calls.append(("create", identity_id, name))
@@ -209,6 +217,21 @@ class InstrumentedMailboxFactory:
         for inst in self.instances:
             out.extend(inst.calls)
         return out
+
+
+class DoubleStoreFactory:
+    """Product factory plus a memory test double. Double is not a catalog bind."""
+
+    def __init__(self, inner: StoreAccessFactory) -> None:
+        self.inner = inner
+        self._memory: dict[tuple[str, str], str] = {}
+
+    def for_binding(self, binding: str) -> StoreAccess:
+        if binding == "memory":
+            from tests.synthetic_store import MemoryStoreAccess
+
+            return MemoryStoreAccess(self._memory)
+        return self.inner.for_binding(binding)
 
 
 class DoubleWalletFactory:
@@ -396,7 +419,11 @@ def setup_identity(vault: Path, identity_id: str, store: str = "sops") -> Path:
 
     if store == "pass":
         _require_pass_host()
-    key = ensure_age_key(vault, identity_id, store=store)
+    key = ensure_age_key(vault, identity_id)
+    if store == "pass":
+        from agentself.backends.store.passstore import PassStoreAccess
+
+        PassStoreAccess(vault, MemoryLog()).prepare(identity_id)
     if not key.is_file():
         raise RuntimeError("setup-identity did not write agent.agekey")
     if os.name != "nt":
@@ -424,8 +451,13 @@ def build_app(
 ) -> App:
     """Instrumented app. Defaults use tests/ doubles, not the public catalog."""
     log = MemoryLog()
-    identities = InstrumentedIdentityAccess(FileIdentityAccess(vault, log))
-    stores = InstrumentedStoreFactory(StoreAccessFactory(vault, log))
+    allowed = frozenset((*CHANNELS["store"].names, "memory"))
+    identities = InstrumentedIdentityAccess(
+        FileIdentityAccess(vault, log, allowed_bindings=allowed)
+    )
+    stores = InstrumentedStoreFactory(
+        DoubleStoreFactory(StoreAccessFactory(vault, log))
+    )
     mailboxes = InstrumentedMailboxFactory(
         DoubleMailboxFactory(
             MailboxAccessFactory(vault, log, domain=mail_domain),
@@ -459,6 +491,7 @@ def build_app(
         wallets=wallets,
         email_backend=email_backend,
         wallet_backend=wallet_backend,
+        allowed_store_bindings=allowed,
     )
     client = Client(manager, log)
     return App(

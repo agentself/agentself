@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 from agentself.backends.store.contract import (
+    HostTool,
     SecretExists,
     SecretMissing,
     StoreAccess,
@@ -28,6 +29,9 @@ class SopsStoreAccess(StoreAccess):
     def __init__(self, vault_root: Path, log: Log) -> None:
         self._root = Path(vault_root)
         self._log = log
+
+    def required_tools(self) -> tuple[HostTool, ...]:
+        return (HostTool("sops", installable=True),)
 
     def create(self, identity_id: str, name: str, value: str) -> None:
         try:

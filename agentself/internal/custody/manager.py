@@ -67,7 +67,6 @@ from agentself.internal.setup import (
 )
 from agentself.internal.types import BoundCaller, Identity
 
-ALLOWED_BINDINGS = frozenset({"sops", "pass"})
 _EMAIL_VIEW_KEYS = ("address", "owned_address", "needs_domain")
 _WALLET_VIEW_KEYS = (
     "address",
@@ -125,6 +124,7 @@ class CustodyManager:
         *,
         email_backend: str | None = None,
         wallet_backend: str | None = None,
+        allowed_store_bindings: frozenset[str] | None = None,
     ) -> None:
         self._identities = identities
         self._stores = stores
@@ -133,6 +133,11 @@ class CustodyManager:
         self._wallets = wallets
         self._email_backend = email_backend or "agentmail"
         self._wallet_backend = wallet_backend or "base"
+        self._allowed_store_bindings = (
+            frozenset(allowed_store_bindings)
+            if allowed_store_bindings is not None
+            else frozenset(("sops", "pass"))
+        )
 
     def init(self, caller: BoundCaller, store_binding: str = "sops") -> Identity:
         try:
@@ -150,7 +155,7 @@ class CustodyManager:
                 raise Refused("refused")
             self._log.record("init", identity_id, None, "ok")
             return found
-        if store_binding not in ALLOWED_BINDINGS:
+        if store_binding not in self._allowed_store_bindings:
             self._log.record("init", identity_id, None, "refused")
             raise Refused("refused")
         try:
@@ -161,6 +166,17 @@ class CustodyManager:
             self._fail_store("init", identity_id, "registry.json", exc)
         try:
             store = self._stores.for_binding(identity.store_binding)
+        except (StoreError, FileNotFoundError) as exc:
+            self._fail_store("init", identity_id, None, exc)
+        try:
+            store.prepare(identity.id)
+        except (StoreError, FileNotFoundError) as exc:
+            self._log.record("init", identity_id, None, "store_error")
+            tool = _host_tool_from(exc)
+            if tool:
+                raise HostToolMissing(tool) from None
+            raise StoreFailure(str(exc).strip() or "store error") from None
+        try:
             store.list(identity.id)
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("init", identity_id, None, exc)

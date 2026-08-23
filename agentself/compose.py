@@ -49,7 +49,8 @@ def compose(
         vault_root = default_identity_dir()
     log = log or StreamLog()
     root = ensure_private_dir(Path(vault_root))
-    identities = FileIdentityAccess(root, log)
+    allowed = frozenset(CHANNELS["store"].names)
+    identities = FileIdentityAccess(root, log, allowed_bindings=allowed)
     stores = StoreAccessFactory(root, log)
     domain = (
         mail_domain
@@ -89,6 +90,7 @@ def compose(
         wallets=wallets,
         email_backend=_resolved_backend(root, "email", email_backend),
         wallet_backend=_resolved_backend(root, "wallet", wallet_backend),
+        allowed_store_bindings=allowed,
     )
     return Client(manager, log, bind=bind)
 

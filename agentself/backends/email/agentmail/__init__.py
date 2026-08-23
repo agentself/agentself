@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import os
 import urllib.error
 from collections.abc import Callable
 from pathlib import Path
@@ -35,6 +36,8 @@ from agentself.internal.names import require_safe_token
 
 _API = "https://api.agentmail.to"
 _INBOXES_URL = _API + "/v0/inboxes"
+_FORBID_LIVE = "AGENTSELF_FORBID_LIVE_AGENTMAIL"
+_LIVE_HOST = "api.agentmail.to"
 
 Poster = Callable[[str, dict[str, str], bytes], tuple[int, bytes]]
 Getter = Callable[[str, dict[str, str]], tuple[int, bytes]]
@@ -437,11 +440,20 @@ def _body_of(payload: dict[str, object]) -> str:
     return ""
 
 
+def _forbid_hosts() -> tuple[str, ...]:
+    raw = os.environ.get(_FORBID_LIVE, "").strip().lower()
+    if raw in ("", "0", "false", "no", "off"):
+        return ()
+    return (_LIVE_HOST,)
+
+
 def _default_poster(
     url: str, headers: dict[str, str], payload: bytes
 ) -> tuple[int, bytes]:
-    return http_request(url, headers, payload, method="POST")
+    return http_request(
+        url, headers, payload, method="POST", forbid_hosts=_forbid_hosts()
+    )
 
 
 def _default_getter(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
-    return http_request(url, headers, method="GET")
+    return http_request(url, headers, method="GET", forbid_hosts=_forbid_hosts())
