@@ -53,9 +53,10 @@ agentself wallet --help
 agentself email --help
 ```
 
-Secret file input preserves exact UTF-8 bytes, including a BOM or trailing
-newline. Retrieval is safe by default: use `secret get NAME --file PATH` or
-`--meta`; plaintext stdout requires `--print`.
+Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
+`wallet.key` must be a hex private key after that decode. Retrieval is safe
+by default: use `secret get NAME --file PATH` or `--meta`; plaintext stdout
+requires `--print`.
 
 `email receive` prints headers and `new`/`seen` status without bodies. Fetch a
 specific body into a private file with `email receive ID --file PATH`. Bodies

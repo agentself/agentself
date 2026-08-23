@@ -25,9 +25,9 @@ agentself diagnose
 
 Public commands: `init`, `show`, `backends`, `diagnose`, `secret`, `email`, `wallet`, `backup`, `restore`, `install`.
 
-Keep values out of logs. Store exact UTF-8 files with `secret create NAME
---file PATH`. Retrieve with `secret get NAME --file PATH` or `--meta`;
-plaintext stdout requires explicit `--print`.
+Keep values out of logs. Store a file with `secret create NAME --file PATH`.
+Retrieve with `secret get NAME --file PATH` or `--meta`; plaintext stdout
+requires explicit `--print`.
 
 `email list` and `email receive` expose message IDs and `new`/`seen` status.
 Receive output omits bodies by default. Fetch one safely with `email receive ID

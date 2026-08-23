@@ -202,8 +202,11 @@ def main(argv: list[str] | None = None) -> int:
             str(exc),
             nxt="agentself secret list",
         )
-    except Refused:
-        return _fail(args, 2, "refused\n", "refused")
+    except Refused as exc:
+        detail = str(exc).strip() or "refused"
+        if detail == "refused":
+            return _fail(args, 2, "refused\n", "refused")
+        return _fail(args, 2, f"refused: {detail}\n", "refused", detail)
     except CannotAuthorize:
         return _fail(
             args,
@@ -1214,7 +1217,7 @@ def _secret(client, args) -> int:
                 f"{args.name} is protected",
                 nxt="agentself secret update NAME --unsafe",
             )
-        client.update(args.name, value)
+        client.update(args.name, value, unsafe=bool(getattr(args, "unsafe", False)))
         if _as_json(args):
             return _emit_ok(args, {"name": args.name})
         return 0
@@ -1766,7 +1769,7 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
         return None, "value and --file"
     if path:
         try:
-            return load_value_file(path, strip_newline=False, strip_bom=False), None
+            return load_value_file(path, strip_newline=False), None
         except (OSError, UnicodeDecodeError):
             return None, "file"
     if argv_value is not None:

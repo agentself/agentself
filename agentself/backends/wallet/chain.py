@@ -25,6 +25,7 @@ from agentself.internal.files import (
 from agentself.internal.format import load_json_file
 from agentself.internal.log import Log
 from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
+from agentself.internal.text import UTF8_BOM
 
 USDC_DECIMALS = 6
 ETH_DECIMALS = 18
@@ -392,7 +393,7 @@ class ChainWalletAccess(WalletAccess):
 
 
 def _normalize_key(key_hex: str) -> str:
-    key = key_hex.strip()
+    key = key_hex.removeprefix(UTF8_BOM).strip()
     if not key:
         raise WalletError("missing key")
     return key

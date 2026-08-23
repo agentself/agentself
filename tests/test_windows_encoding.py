@@ -10,9 +10,21 @@ from pathlib import Path
 
 import pytest
 
+from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.text import strip_one_trailing_newline
 
 from tests.support import cli_env, run_cli, value_file
+
+
+def test_parse_secp256k1_hex_strips_bom_and_whitespace() -> None:
+    body = "ab" * 32
+    assert parse_secp256k1_hex("0x" + body) == "0x" + body
+    assert parse_secp256k1_hex("\ufeff0x" + body + "\r\n") == "0x" + body
+    assert parse_secp256k1_hex("0X" + body.upper()) == "0x" + body.upper()
+    assert parse_secp256k1_hex(body) == "0x" + body
+    assert parse_secp256k1_hex("not-a-key") is None
+    assert parse_secp256k1_hex("\ufeffnot-a-key") is None
+    assert parse_secp256k1_hex("0x" + "ab" * 31) is None
 
 
 def test_strip_one_trailing_newline_accepts_cr_lf_and_crlf() -> None:
@@ -26,7 +38,7 @@ def test_strip_one_trailing_newline_accepts_cr_lf_and_crlf() -> None:
     assert strip_one_trailing_newline("am_key\x00\r") == "am_key\x00"
 
 
-def test_secret_file_round_trip_preserves_exact_utf8_bytes(
+def test_secret_file_round_trip_strips_bom_and_keeps_trailing_newline(
     tmp_path: Path,
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -44,8 +56,9 @@ def test_secret_file_round_trip_preserves_exact_utf8_bytes(
             ["--json", "secret", "get", "demo.token", "--file", str(dest)], env
         ).stdout
     )
-    assert got["bytes"] == len(source.read_bytes())
-    assert dest.read_bytes() == source.read_bytes()
+    stored = payload.encode("utf-8")
+    assert got["bytes"] == len(stored)
+    assert dest.read_bytes() == stored
     meta = json.loads(
         run_cli(["--json", "secret", "get", "demo.token", "--meta"], env).stdout
     )

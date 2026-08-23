@@ -18,17 +18,20 @@
 - After a confirmed `wallet send`, a later send of the same destination and
   amount is a new payment. Crash and timeout retries before confirmation still
   reuse the pending transaction. Successful send output includes the
-  transaction hash.
+  transaction hash. `Client.wallet_send` returns `{"asset": ...}` and, when
+  the backend has one, `"hash"`. That dict is the Python contract.
 - `backup`/`restore` copy to a staging directory first, take the identity lock, refuse a destination that contains the live identity, skip plaintext `*.tmp` leftovers and sockets, and require a `config.json` source so `--force` cannot wipe an identity on a failed or empty copy.
 - `secret get --file` writes `0o600` without chmod'ing the parent directory.
 - `secret update` of `wallet.key` (and other protected material) requires `--unsafe`.
+  `Client.update` / manager `update` use the same rule and need `unsafe=True`.
 - `--json init` no longer prompts for an identity name on a TTY.
 - `email receive` is headers-only by default, exposes `new`/`seen` status, and
   writes an explicitly selected body to a private file with `ID --file PATH`.
 - Plaintext secret output now requires `--print`; `--file` and `--meta` remain
   safe defaults.
-- Secret `create` and `update` preserve exact UTF-8 file bytes, including a BOM
-  or trailing newline.
+- Secret `create` and `update` `--file` drop a leading UTF-8 BOM and keep a
+  trailing newline. `wallet.key` is refused unless the value is a hex private
+  key after that decode.
 - Email setup and wallet signing discovery are clearer in CLI and backend help.
 
 ## 0.1.0a3 - 2026-08-23

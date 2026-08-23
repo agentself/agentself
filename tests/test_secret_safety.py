@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.support import cli_env, run_cli, value_file
+from agentself.internal.custody.errors import ProtectedName, Refused
+
+from tests.support import cli_env, init_identity, run_cli, value_file
 
 
 def _init(tmp_path: Path) -> dict[str, str]:
@@ -151,3 +153,98 @@ def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
     assert json.loads(proc.stdout)["error"] == "refused"
     listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
     assert all(not item.startswith("internal.") for item in listed["names"])
+
+
+def test_client_update_wallet_key_requires_unsafe(app, monkeypatch) -> None:
+    init_identity(app, monkeypatch)
+    app.client.wallet_address()
+    current = app.client.get("wallet.key")
+    replacement = "0x" + "ab" * 32
+    with pytest.raises(ProtectedName):
+        app.client.update("wallet.key", replacement)
+    assert app.client.get("wallet.key") == current
+    store_updates = [
+        call
+        for call in app.stores.calls
+        if call[0] == "update" and call[2] == "wallet.key"
+    ]
+    assert store_updates == []
+    app.client.update("wallet.key", replacement, unsafe=True)
+    assert app.client.get("wallet.key") == replacement
+
+
+def test_client_update_wallet_key_refuses_non_hex(app, monkeypatch) -> None:
+    init_identity(app, monkeypatch)
+    app.client.wallet_address()
+    current = app.client.get("wallet.key")
+    with pytest.raises(Refused, match="wallet.key is not a key"):
+        app.client.update("wallet.key", "not-a-key", unsafe=True)
+    with pytest.raises(Refused, match="wallet.key is not a key"):
+        app.client.update("wallet.key", "\ufeffnot-a-key\n", unsafe=True)
+    assert app.client.get("wallet.key") == current
+
+
+def test_client_update_wallet_key_normalizes_bom(app, monkeypatch) -> None:
+    init_identity(app, monkeypatch)
+    app.client.wallet_address()
+    replacement = "0x" + "cd" * 32
+    app.client.update("wallet.key", "\ufeff" + replacement + "\r\n", unsafe=True)
+    assert app.client.get("wallet.key") == replacement
+
+
+def test_secret_file_wallet_key_strips_bom_and_refuses_garbage(
+    tmp_path: Path,
+) -> None:
+    env = _init(tmp_path)
+    original = json.loads(
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+        ).stdout
+    )["value"]
+    replacement = "0x" + "ab" * 32
+    source = tmp_path / "new-key.txt"
+    source.write_bytes(b"\xef\xbb\xbf" + replacement.encode("utf-8") + b"\r\n")
+    forced = run_cli(
+        [
+            "--json",
+            "secret",
+            "update",
+            "wallet.key",
+            "--unsafe",
+            "--file",
+            str(source),
+        ],
+        env,
+    )
+    assert forced.returncode == 0, forced.stdout + forced.stderr
+    stored = json.loads(
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+        ).stdout
+    )["value"]
+    assert stored == replacement
+    bad = tmp_path / "bad-key.txt"
+    bad.write_bytes(b"\xef\xbb\xbfnot-a-key\n")
+    refused = run_cli(
+        [
+            "--json",
+            "secret",
+            "update",
+            "wallet.key",
+            "--unsafe",
+            "--file",
+            str(bad),
+        ],
+        env,
+    )
+    assert refused.returncode == 2, refused.stdout + refused.stderr
+    payload = json.loads(refused.stdout)
+    assert payload["error"] == "refused"
+    assert payload["reason"] == "wallet.key is not a key"
+    still = json.loads(
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
+        ).stdout
+    )["value"]
+    assert still == replacement
+    assert still != original

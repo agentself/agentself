@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
+from agentself.cli import app as cli_app
 from agentself.cli.app import _copy_identity_dir
 from agentself.internal.files import LOCK_NAME, secrets_home
 from agentself.local import IdentityStateError
@@ -96,6 +98,46 @@ def test_copy_refuses_missing_config_without_touching_dest(tmp_path: Path) -> No
     with pytest.raises(IdentityStateError, match="identity directory is missing"):
         _copy_identity_dir(src, dest, force=True)
     assert (dest / "config.json").read_text(encoding="utf-8") == "keep"
+
+
+def test_copy_force_survives_dest_dir_rename_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    src, src_env, src_addr = _init(tmp_path / "src")
+    dest, dest_env, dest_addr = _init(tmp_path / "dest")
+    assert src_addr != dest_addr
+    dest_resolved = dest.resolve()
+    real_rename = os.rename
+    real_replace = cli_app._replace_tree_contents
+    replaced: list[bool] = []
+
+    def rename(src_path, dst_path):
+        try:
+            same = Path(src_path).resolve() == dest_resolved
+        except OSError:
+            same = False
+        if same:
+            raise OSError("directory in use")
+        return real_rename(src_path, dst_path)
+
+    def replace_tree(staging: Path, dest_path: Path) -> None:
+        replaced.append(True)
+        real_replace(staging, dest_path)
+
+    monkeypatch.setattr(os, "rename", rename)
+    monkeypatch.setattr(cli_app, "_replace_tree_contents", replace_tree)
+    _copy_identity_dir(src, dest, force=True)
+    assert replaced == [True]
+    shown = run_cli(["--json", "wallet", "address"], dest_env)
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["address"] == src_addr
+    src_shown = run_cli(["--json", "wallet", "address"], src_env)
+    assert json.loads(src_shown.stdout)["address"] == src_addr
+    assert (dest / "config.json").is_file()
+    assert not dest.with_name(dest.name + ".agentself-prev").exists()
+    assert not dest.with_name(dest.name + ".agentself-staging").exists()
+    leftover_addr = run_cli(["--json", "wallet", "address"], dest_env)
+    assert json.loads(leftover_addr.stdout)["address"] != dest_addr
 
 
 def test_copy_does_not_require_lock_file_in_source(tmp_path: Path) -> None:
