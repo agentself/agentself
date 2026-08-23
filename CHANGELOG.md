@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- On Windows, `age-keygen`, `gpg`, and `pass` are started with
+  `NoDefaultCurrentDirectoryInExePath=1`. `diagnose` and `init` do not treat a
+  current-directory binary as an installed host tool.
 
 ## 0.1.0a3 - 2026-08-23
 

@@ -514,6 +514,30 @@ def test_run_cmd_timeout_drops_stdout(monkeypatch):
     assert secret not in str(caught.value)
 
 
+def test_run_cmd_sets_windows_no_default_cwd_env(tmp_path, monkeypatch):
+    planted = tmp_path / ("sops.exe" if os.name == "nt" else "sops")
+    planted.write_text("not-the-real-sops", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    seen: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def fake_run(argv, **kwargs):
+        env = kwargs.get("env")
+        seen.append((list(argv), None if env is None else dict(env)))
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr("agentself.internal.files.subprocess.run", fake_run)
+    run_cmd(["sops", "--version"])
+    assert seen
+    argv, env = seen[0]
+    cmd0 = Path(argv[0])
+    if cmd0.is_absolute() or len(cmd0.parts) > 1:
+        assert cmd0.resolve() != planted.resolve()
+    if os.name == "nt":
+        assert env is not None
+        assert env.get("NoDefaultCurrentDirectoryInExePath") == "1"
+
+
 def test_require_secret_rejects_header_injection():
     with pytest.raises(MailboxError) as caught:
         require_secret("tok\r\nAuthorization: Bearer " + TOKEN_CANARY)

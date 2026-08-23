@@ -40,6 +40,7 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
+from agentself.internal.files import have_host_tool
 from agentself.internal.format import format_version_error
 from agentself.internal.log import NullLog, StreamLog
 from agentself.internal.names import require_safe_token
@@ -307,7 +308,7 @@ def _install_tools(args) -> int | None:
     missing = [
         label
         for cmd, label in (("age-keygen", "age"), ("sops", "sops"))
-        if shutil.which(cmd) is None
+        if not have_host_tool(cmd)
     ]
     if not missing:
         return None
@@ -452,7 +453,7 @@ def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
             store_name = _store_from_registry(vault, load_config(vault)) or store_name
         except IdentityStateError:
             pass
-    if shutil.which("age-keygen") is None:
+    if not have_host_tool("age-keygen"):
         return _fail(
             args,
             1,
@@ -463,7 +464,7 @@ def _missing_host_tool(is_init: bool, vault: Path, args) -> int | None:
         )
     bind = bind_of("store", store_name)
     tools = bind.tools if bind is not None else ()
-    missing = [name for name in tools if shutil.which(name) is None]
+    missing = [name for name in tools if not have_host_tool(name)]
     if not missing:
         return None
     reason = " and ".join(missing) + " not on PATH"
