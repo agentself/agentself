@@ -11,7 +11,7 @@ from agentself.backends.store.contract import (
 )
 from agentself.backends.store.run import run_cmd
 from agentself.internal.files import VaultBusy, exclusive, identity_home
-from agentself.internal.gpg import bindable_home
+from agentself.internal.gpg import bindable_home, pass_argv
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 
@@ -43,7 +43,7 @@ class PassStoreAccess(StoreAccess):
             self._log.record("store_reveal", principal_id, name, "missing")
             raise HoldNameMissing(name)
         env = self._env(principal_id)
-        proc = run_cmd(["pass", "show", "--", name], env=env)
+        proc = run_cmd(pass_argv(["pass", "show", "--", name]), env=env)
         if proc.returncode != 0:
             self._log.record("store_reveal", principal_id, name, "missing")
             raise HoldNameMissing(name)
@@ -87,7 +87,9 @@ class PassStoreAccess(StoreAccess):
                     self._log.record("store_delete", principal_id, name, "missing")
                     raise HoldNameMissing(name)
                 env = self._env(principal_id)
-                proc = run_cmd(["pass", "rm", "--force", "--", name], env=env)
+                proc = run_cmd(
+                    pass_argv(["pass", "rm", "--force", "--", name]), env=env
+                )
                 if proc.returncode != 0 or self._entry(principal_id, name).exists():
                     path = self._entry(principal_id, name)
                     try:
@@ -130,7 +132,9 @@ class PassStoreAccess(StoreAccess):
             raise StoreResourceError("pass hold missing")
         fingerprint = self._fingerprint(principal_id)
         store.mkdir(mode=0o700, parents=True, exist_ok=True)
-        proc = run_cmd(["pass", "init", "--", fingerprint], env=self._env(principal_id))
+        proc = run_cmd(
+            pass_argv(["pass", "init", "--", fingerprint]), env=self._env(principal_id)
+        )
         if proc.returncode != 0:
             raise StoreResourceError("pass hold missing")
 
@@ -157,7 +161,7 @@ class PassStoreAccess(StoreAccess):
         argv.extend(["--", name])
         payload = value if value.endswith("\n") else value + "\n"
         proc = run_cmd(
-            argv,
+            pass_argv(argv),
             env=self._env(principal_id),
             stdin=payload.encode("utf-8"),
         )

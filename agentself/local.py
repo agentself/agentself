@@ -27,7 +27,7 @@ from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
 )
-from agentself.internal.gpg import bindable_home
+from agentself.internal.gpg import bindable_home, pass_argv
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
 
@@ -441,7 +441,7 @@ def _gpg_fingerprint(env: dict[str, str], gnupg: Path) -> str:
 def _pass_init(env: dict[str, str], store_dir: Path, fingerprint: str) -> None:
     ensure_private_dir(store_dir)
     proc = _run_host(
-        ["pass", "init", fingerprint],
+        pass_argv(["pass", "init", fingerprint]),
         env=env,
         timeout=60,
         failed="pass init failed",

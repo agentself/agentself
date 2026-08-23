@@ -153,6 +153,11 @@ def test_init_store_pass(tmp_path):
     assert shown.returncode == 0, shown.stdout + shown.stderr
     data = json.loads(shown.stdout)
     assert data["ok"] is True
+    assert data.get("reason") != "wallet.key is missing"
+    assert "wallet.key is missing" not in shown.stdout + shown.stderr
+    ready = data.get("ready")
+    if isinstance(ready, dict) and "wallet" in ready:
+        assert ready["wallet"] is True
     assert data["ready"]["email"] is False
     assert "AGE-SECRET-KEY" not in shown.stdout + shown.stderr
 
