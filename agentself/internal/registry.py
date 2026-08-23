@@ -12,6 +12,7 @@ from agentself.internal.files import (
 from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
+    load_json_file,
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
@@ -115,7 +116,7 @@ class FileIdentityAccess:
         if not self._registry.exists():
             return {}
         try:
-            data = json.loads(self._registry.read_text(encoding="utf-8"))
+            data = load_json_file(self._registry)
         except (OSError, json.JSONDecodeError) as exc:
             raise RegistryError("cannot read registry.json") from exc
         if not isinstance(data, dict):

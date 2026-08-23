@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- Identity `config.json` / `registry.json` (and wallet pending JSON) ignore a UTF-8 BOM so Windows Notepad edits remain readable.
+- Identity ids and secret names reject Windows reserved device names (`CON`, `NUL`, `COM1`, …) so the same identity is portable.
 
 ## 0.1.0a3 - 2026-08-23
 
