@@ -254,12 +254,15 @@ class InstrumentedWalletAccess:
         self.calls: list[tuple] = []
 
     def required_material(self):
+        self.calls.append(("required_material",))
         return self.inner.required_material()
 
     def create_material(self):
+        self.calls.append(("create_material",))
         return self.inner.create_material()
 
     def bind_material(self, value: str) -> None:
+        self.calls.append(("bind_material", value))
         self.inner.bind_material(value)
 
     def address(self, identity_id):

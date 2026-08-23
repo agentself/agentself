@@ -1,18 +1,33 @@
 from __future__ import annotations
 
-from agentself.backends.wallet.contract import CannotSend, WalletAccess
+from agentself.backends.wallet.contract import (
+    CannotSend,
+    WalletAccess,
+    WalletMaterial,
+)
 from agentself.internal.names import require_safe_token
 
 _ASSET = "NOTE"
 _SCHEME = "ed25519"
 _ADDRESS = "note.1"
+MATERIAL_NAME = "note.seed"
+_MATERIAL = "synthetic-note-seed"
 
 
 class SyntheticWalletAccess(WalletAccess):
-    """Test double: no store material, no chain asset. Not a shipped bind."""
+    """Test double: declares non-EVM material and no chain asset."""
+
+    def __init__(self) -> None:
+        self.bound_material: str | None = None
 
     def required_material(self):
-        return None
+        return WalletMaterial(name=MATERIAL_NAME)
+
+    def create_material(self) -> str:
+        return _MATERIAL
+
+    def bind_material(self, value: str) -> None:
+        self.bound_material = value
 
     def address(self, identity_id: str) -> str:
         require_safe_token(identity_id, "identity id")

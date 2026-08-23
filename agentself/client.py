@@ -25,6 +25,8 @@ class CustodyManager(Protocol):
 
     def delete(self, caller: BoundCaller, name: str) -> None: ...
 
+    def protected_secret_names(self, caller: BoundCaller) -> builtins.list[str]: ...
+
     def email_send(
         self, caller: BoundCaller, to: str, subject: str, body: str
     ) -> None: ...
@@ -111,6 +113,10 @@ class Client:
     def delete(self, name: str) -> None:
         caller = self._require_caller()
         self._manager.delete(caller, name)
+
+    def protected_secret_names(self) -> builtins.list[str]:
+        caller = self._require_caller()
+        return self._manager.protected_secret_names(caller)
 
     def email_send(self, to: str, subject: str, body: str) -> None:
         caller = self._require_caller()

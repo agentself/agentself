@@ -282,7 +282,7 @@ class CustodyManager:
         if is_reserved_secret_name(name):
             self._log.record("delete", identity.id, name, "missing")
             raise MissingSecret("missing")
-        if name in PROTECTED_SECRET_NAMES:
+        if name in self._protected_secret_names(identity, "delete"):
             self._log.record("delete", identity.id, name, "refused")
             raise ProtectedName(name)
         store = self._store_for(identity, "delete", name)
@@ -294,6 +294,13 @@ class CustodyManager:
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store("delete", identity.id, name, exc)
         self._log.record("delete", identity.id, name, "ok")
+
+    def protected_secret_names(
+        self,
+        caller: BoundCaller,
+    ) -> builtins.list[str]:
+        identity = self._require_identity(caller, "protected_names", None)
+        return sorted(self._protected_secret_names(identity, "protected_names"))
 
     def email_connect(
         self,
@@ -829,6 +836,21 @@ class CustodyManager:
             value = created
         wallet.bind_material(value)
         return wallet
+
+    def _protected_secret_names(
+        self, identity: Identity, operation: str
+    ) -> frozenset[str]:
+        names = set(PROTECTED_SECRET_NAMES)
+        wallet = self._wallet_for(identity, operation)
+        need = wallet.required_material()
+        if need is not None:
+            try:
+                require_safe_token(need.name, "wallet material name")
+            except ValueError:
+                self._log.record(operation, identity.id, need.name, "refused")
+                raise Refused("refused") from None
+            names.add(need.name)
+        return frozenset(names)
 
     def _optional_secret_value(
         self, identity: Identity, name: str, operation: str

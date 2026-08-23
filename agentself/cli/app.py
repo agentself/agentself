@@ -42,10 +42,7 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.format import format_version_error
 from agentself.internal.log import NullLog, StreamLog
-from agentself.internal.names import (
-    PROTECTED_SECRET_NAMES,
-    require_safe_token,
-)
+from agentself.internal.names import require_safe_token
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
@@ -1270,11 +1267,12 @@ def _secret(client, args) -> int:
         return 0
     if verb == "list":
         names = client.list()
-        protected = [name for name in names if name in PROTECTED_SECRET_NAMES]
+        protected_names = frozenset(client.protected_secret_names())
+        protected = [name for name in names if name in protected_names]
         if _as_json(args):
             return _emit_ok(args, {"names": names, "protected": protected})
         for name in names:
-            suffix = " (protected)" if name in PROTECTED_SECRET_NAMES else ""
+            suffix = " (protected)" if name in protected_names else ""
             sys.stdout.write(name + suffix + "\n")
         return 0
     if verb == "delete":
@@ -1288,7 +1286,8 @@ def _secret(client, args) -> int:
 
 def _secret_get(client, args) -> int:
     name = args.name
-    if name in PROTECTED_SECRET_NAMES and not bool(getattr(args, "unsafe", False)):
+    protected_names = frozenset(client.protected_secret_names())
+    if name in protected_names and not bool(getattr(args, "unsafe", False)):
         return _fail(
             args,
             2,
@@ -1301,7 +1300,7 @@ def _secret_get(client, args) -> int:
     meta = value_meta(value)
     path = (getattr(args, "to_file", None) or "").strip()
     if getattr(args, "meta", False):
-        payload = {"name": name, **meta, "protected": name in PROTECTED_SECRET_NAMES}
+        payload = {"name": name, **meta, "protected": name in protected_names}
         if _as_json(args):
             return _emit_ok(args, payload)
         sys.stdout.write(f"name: {name}\n")
