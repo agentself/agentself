@@ -1,0 +1,17 @@
+{
+  "top": [
+    "init",
+    "show",
+    "backends",
+    "diagnose",
+    "secret",
+    "email",
+    "wallet",
+    "backup",
+    "restore",
+    "install"
+  ],
+  "secret": ["create", "get", "update", "list", "delete", "exists"],
+  "email": ["connect", "show", "send", "receive", "list"],
+  "wallet": ["show", "address", "balance", "authorize", "verify", "send"]
+}

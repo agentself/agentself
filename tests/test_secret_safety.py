@@ -1,0 +1,78 @@
+"""Protected wallet.key, --meta without values, and reserved secret names."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from tests.support import cli_env, run_cli, value_file
+
+
+def _init(tmp_path: Path) -> dict[str, str]:
+    env = cli_env(tmp_path / "vault")
+    proc = run_cli(["--json", "init"], env)
+    assert proc.returncode == 0, proc.stderr
+    return env
+
+
+def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
+    assert "wallet.key" in listed["names"]
+    assert "wallet.key" in listed["protected"]
+    refused = run_cli(["--json", "secret", "get", "wallet.key"], env)
+    assert refused.returncode == 2
+    payload = json.loads(refused.stdout)
+    assert payload["error"] == "refused"
+    assert "protected" in payload["reason"]
+    exported = run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env)
+    assert exported.returncode == 0
+    hexkey = json.loads(exported.stdout)["value"]
+    assert hexkey.startswith("0x")
+    dest = tmp_path / "wallet.key"
+    wrote = run_cli(
+        ["secret", "get", "wallet.key", "--unsafe", "--file", str(dest)], env
+    )
+    assert wrote.returncode == 0, wrote.stderr
+    assert dest.read_text(encoding="utf-8").startswith("0x")
+
+
+def test_secret_meta_omits_value(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    created = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "demo.token",
+            "--file",
+            value_file(tmp_path, "alpha"),
+        ],
+        env,
+    )
+    assert created.returncode == 0, created.stderr
+    meta = json.loads(
+        run_cli(["--json", "secret", "get", "demo.token", "--meta"], env).stdout
+    )
+    assert "value" not in meta
+    assert meta["bytes"] == 5
+    assert len(meta["sha256"]) == 64
+
+
+def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    proc = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "internal.setup.demo",
+            "--file",
+            value_file(tmp_path, "x"),
+        ],
+        env,
+    )
+    assert proc.returncode == 2
+    assert json.loads(proc.stdout)["error"] == "refused"
+    listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
+    assert all(not item.startswith("internal.") for item in listed["names"])

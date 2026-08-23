@@ -1,0 +1,10 @@
+{
+  "format_version": "1",
+  "principals": {
+    "agent": {
+      "id": "agent",
+      "recipient": "age1example",
+      "store_binding": "sops"
+    }
+  }
+}

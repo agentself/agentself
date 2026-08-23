@@ -1,0 +1,6 @@
+{
+  "age_key_file": "identities/agent/agent.agekey",
+  "format_version": 2,
+  "future_field": "future-canary-keep",
+  "identity_id": "agent"
+}

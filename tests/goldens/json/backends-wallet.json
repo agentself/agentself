@@ -1,0 +1,60 @@
+{
+  "ok": true,
+  "channel": {
+    "name": "wallet",
+    "env": "AGENTSELF_WALLET_BACKEND",
+    "flag": "--wallet",
+    "config": "wallet_backend",
+    "default": "base",
+    "note": "RPC override: AGENTSELF_ETH_RPC_URL",
+    "backends": [
+      {
+        "name": "base",
+        "summary": "USDC destination on Base",
+        "live": true,
+        "verbs": [
+          "show",
+          "address",
+          "balance",
+          "authorize",
+          "send",
+          "verify"
+        ],
+        "custody": "eoa-key",
+        "network": "base",
+        "asset": "USDC",
+        "options": []
+      },
+      {
+        "name": "ethereum",
+        "summary": "USDC destination on Ethereum",
+        "live": true,
+        "verbs": [
+          "show",
+          "address",
+          "balance",
+          "authorize",
+          "send",
+          "verify"
+        ],
+        "custody": "eoa-key",
+        "network": "ethereum",
+        "asset": "USDC",
+        "options": [
+          {
+            "name": "rpc_url",
+            "type": "string",
+            "required": false,
+            "sensitive": false,
+            "default": null,
+            "choices": [],
+            "source": "AGENTSELF_ETH_RPC_URL",
+            "help": "JSON-RPC URL override",
+            "prompt": "rpc_url",
+            "action": null
+          }
+        ]
+      }
+    ]
+  }
+}
