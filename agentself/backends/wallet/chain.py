@@ -22,6 +22,7 @@ from agentself.internal.files import (
     exclusive,
     identity_home,
 )
+from agentself.internal.format import load_json_file
 from agentself.internal.log import Log
 from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
 
@@ -287,7 +288,7 @@ class ChainWalletAccess(WalletAccess):
         if path is None or not path.is_file():
             return None
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = load_json_file(path)
         except (OSError, json.JSONDecodeError) as exc:
             raise WalletError("rpc failed") from exc
         if not isinstance(data, dict):

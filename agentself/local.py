@@ -28,6 +28,7 @@ from agentself.internal.files import (
 from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
+    load_json_file,
 )
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
@@ -74,7 +75,7 @@ def require_supported_formats(vault: Path) -> None:
     if not path.is_file():
         return
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_json_file(path)
     except (OSError, json.JSONDecodeError):
         return
     if not isinstance(data, dict):
@@ -236,7 +237,7 @@ def _read_config(vault: Path) -> dict[str, str]:
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_json_file(path)
     except (OSError, json.JSONDecodeError) as exc:
         raise IdentityStateError("cannot read config.json") from exc
     if not isinstance(data, dict):

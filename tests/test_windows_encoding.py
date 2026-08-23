@@ -53,6 +53,27 @@ def test_secret_file_round_trip_strips_bom_and_one_trailing_newline(
     assert "value" not in meta
 
 
+def test_init_refuses_windows_reserved_identity_names(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    for name in ("CON", "nul", "COM1", "agent."):
+        proc = run_cli(["--json", "init", "--id", name], env)
+        assert proc.returncode == 2, (name, proc.stdout + proc.stderr)
+        data = json.loads(proc.stdout)
+        assert data["ok"] is False
+        assert data["error"] == "refused"
+
+
+def test_secret_create_refuses_windows_reserved_names(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+    proc = run_cli(
+        ["--json", "secret", "create", "NUL", "--file", value_file(tmp_path, "x")],
+        env,
+    )
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout)["error"] == "refused"
+
+
 def test_json_unicode_round_trip(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0

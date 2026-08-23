@@ -40,7 +40,7 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
-from agentself.internal.format import format_version_error
+from agentself.internal.format import format_version_error, load_json_file
 from agentself.internal.log import NullLog, StreamLog
 from agentself.internal.names import require_safe_token
 from agentself.internal.setup import (
@@ -411,7 +411,7 @@ def _registry_store_binding(vault: Path, identity_id: str) -> str | None:
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_json_file(path)
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
