@@ -65,6 +65,7 @@ class ChainWalletAccess(WalletAccess):
         self.usdc = to_checksum_address(self.usdc)
         self._key_hex = (key_hex or "").strip() or None
         self._root = Path(vault_root) if vault_root is not None else None
+        self._payment_hash = ""
 
     def required_material(self) -> WalletMaterial | None:
         return WalletMaterial(name=WALLET_KEY_NAME)
@@ -130,6 +131,9 @@ class ChainWalletAccess(WalletAccess):
             raise WalletError("rpc failed") from exc
         return wanted
 
+    def payment_ref(self) -> str:
+        return self._payment_hash
+
     def describe(self, identity_id: str) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
         return {
@@ -186,7 +190,14 @@ class ChainWalletAccess(WalletAccess):
             ) from None
         pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, dest, units, addr, self.chain_id):
+            tx_hash = str(pending.get("hash") or "")
+            if self._tx_known(tx_hash):
+                self._remember_hash(tx_hash)
+                self._clear_pending(identity_id)
+                self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
+                return
             self._finish_pending(identity_id, pending)
+            self._remember_hash(tx_hash)
             return
         data = (
             "0x"
@@ -237,6 +248,8 @@ class ChainWalletAccess(WalletAccess):
     def _finish_pending(self, identity_id: str, pending: dict[str, object]) -> None:
         tx_hash = str(pending.get("hash") or "")
         if self._tx_known(tx_hash):
+            self._remember_hash(tx_hash)
+            self._clear_pending(identity_id)
             self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
             return
         raw = str(pending.get("raw") or "")
@@ -256,15 +269,19 @@ class ChainWalletAccess(WalletAccess):
             result = self._rpc_request("eth_sendRawTransaction", [raw])
         except WalletError:
             if self._tx_known(tx_hash):
+                self._remember_hash(tx_hash)
                 self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
                 return
             raise
+        self._remember_hash(tx_hash)
         if signed is not None:
             self._log.record(
                 "wallet_send", identity_id, None, _send_result(result, signed)
             )
-            return
-        self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
+        else:
+            self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
+        if self._tx_known(tx_hash):
+            self._clear_pending(identity_id)
 
     def _tx_known(self, tx_hash: str) -> bool:
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
@@ -305,6 +322,28 @@ class ChainWalletAccess(WalletAccess):
             atomic_write_text(path, payload)
         except OSError as exc:
             raise WalletError("rpc failed") from exc
+
+    def _clear_pending(self, identity_id: str) -> None:
+        path = self._pending_path(identity_id)
+        if path is None:
+            return
+        try:
+            if path.is_symlink():
+                path.unlink()
+                return
+            if path.is_file():
+                path.unlink()
+        except OSError as exc:
+            raise WalletError("rpc failed") from exc
+
+    def _remember_hash(self, tx_hash: str) -> None:
+        text = (tx_hash or "").strip()
+        if text.startswith("0x") and len(text) == 66:
+            body = text[2:]
+            if all(ch in "0123456789abcdefABCDEF" for ch in body):
+                self._payment_hash = text
+                return
+        self._payment_hash = ""
 
     def _derived_address(self) -> str:
         return to_checksum_address(self._account().address)
