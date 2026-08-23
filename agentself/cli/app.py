@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from agentself import __version__
@@ -1450,7 +1451,7 @@ def _wallet(client, args) -> int:
         sent = client.wallet_send(args.to, args.amount, args.asset or "")
         payload = {
             "to": args.to,
-            "amount": args.amount,
+            "amount": _canonical_amount(args.amount),
             "asset": sent["asset"],
         }
         if sent.get("hash"):
@@ -1461,6 +1462,14 @@ def _wallet(client, args) -> int:
             sys.stdout.write(payload["hash"] + "\n")
         return 0
     return 1
+
+
+def _canonical_amount(value: str) -> str:
+    try:
+        text = format(Decimal(str(value).strip()), "f")
+    except (InvalidOperation, ValueError):
+        return str(value)
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _backup_restore(vault: Path, args) -> int:
