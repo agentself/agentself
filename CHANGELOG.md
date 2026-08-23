@@ -9,6 +9,9 @@
 - On Windows, `age-keygen`, `gpg`, and `pass` are started with
   `NoDefaultCurrentDirectoryInExePath=1`. `diagnose` and `init` do not treat a
   current-directory binary as an installed host tool.
+- Tag publish runs the test workflow for that commit and publishes the
+  already-tested `dist/`. It does not rebuild an untested wheel. Trusted
+  Publishing (OIDC) is unchanged.
 
 ## 0.1.0a3 - 2026-08-23
 
