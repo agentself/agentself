@@ -6,7 +6,7 @@ Changes for the next release will be recorded here.
 
 ## 0.1.0a3
 
-First serious public alpha.
+First public alpha.
 
 - The CLI is provider-neutral: discover available backends and setup inputs
   with `agentself backends` while keeping the command tree stable.

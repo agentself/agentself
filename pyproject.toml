@@ -5,7 +5,7 @@ description = "Local identity for an agent: wallet, secrets, and optional email"
 requires-python = ">=3.11"
 readme = "README.md"
 license = "MIT"
-authors = [{ name = "Michael Bilenko" }]
+authors = [{ name = "AgentSelf" }]
 keywords = [
     "agent",
     "identity",
