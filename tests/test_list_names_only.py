@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import uuid
 
-from tests.support import setup_principal
+from tests.support import setup_identity
 
 
 def test_list_returns_names_never_values(app, monkeypatch):
-    key = setup_principal(app.vault, "P", store="sops")
+    key = setup_identity(app.vault, "P", store="sops")
     app.keys["P"] = key
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
+    app.client.init("sops")
     canary = f"LISTCANARY-{uuid.uuid4()}"
-    app.gateway.seal("alpha", canary)
-    app.gateway.seal("beta", canary + "-two")
-    names = app.gateway.list()
+    app.client.create("alpha", canary)
+    app.client.create("beta", canary + "-two")
+    names = app.client.list()
     assert names == ["alpha", "beta"]
     joined = " ".join(names)
     assert canary not in joined

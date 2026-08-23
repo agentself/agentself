@@ -19,7 +19,7 @@ from agentself.backends.email.contract import (
     require_secret,
     setup_needed,
 )
-from agentself.internal.files import VaultBusy, exclusive
+from agentself.internal.files import IdentityBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 from agentself.internal.setup import (
@@ -95,17 +95,17 @@ class ImapMailboxAccess(MailboxAccess):
 
     def send(
         self,
-        principal_id: str,
+        identity_id: str,
         to: str,
         subject: str,
         body: str,
         credential: str | None = None,
         address: str | None = None,
     ) -> None:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         require_addr(to)
         if not credential:
-            self._log.record("mailbox_send", principal_id, to, "error")
+            self._log.record("mailbox_send", identity_id, to, "error")
             raise MailboxError("send failed")
         credential = require_secret(credential)
         from_addr = self._inbox(address)
@@ -119,19 +119,19 @@ class ImapMailboxAccess(MailboxAccess):
             raise MailboxError("rpc failed") from exc
         finally:
             _close(box.quit)
-        self._log.record("mailbox_send", principal_id, to, "ok")
+        self._log.record("mailbox_send", identity_id, to, "ok")
 
-    def recv(
+    def receive(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         if not credential:
-            self._log.record("mailbox_recv", principal_id, None, "error")
+            self._log.record("mailbox_recv", identity_id, None, "error")
             raise MailboxError("recv failed")
         credential = require_secret(credential)
         inbox = self._inbox(address)
@@ -157,21 +157,21 @@ class ImapMailboxAccess(MailboxAccess):
                     raise MailboxError("rpc failed") from exc
                 finally:
                     _close(box.logout)
-        except VaultBusy as exc:
+        except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
-        self._log.record("mailbox_recv", principal_id, None, "ok")
+        self._log.record("mailbox_recv", identity_id, None, "ok")
         return messages
 
     def list(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         if not credential:
-            self._log.record("mailbox_list", principal_id, None, "error")
+            self._log.record("mailbox_list", identity_id, None, "error")
             raise MailboxError("list failed")
         credential = require_secret(credential)
         inbox = self._inbox(address)
@@ -193,17 +193,17 @@ class ImapMailboxAccess(MailboxAccess):
             raise MailboxError("rpc failed") from exc
         finally:
             _close(box.logout)
-        self._log.record("mailbox_list", principal_id, None, "ok")
+        self._log.record("mailbox_list", identity_id, None, "ok")
         return items
 
     def describe(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
         if wanted:
             return mailbox_view(self._inbox(wanted), owned_address=True)
@@ -211,21 +211,21 @@ class ImapMailboxAccess(MailboxAccess):
 
     def connect(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = credential or extra.get("credential") or ""
         if not wanted:
-            self._log.record("mailbox_connect", principal_id, None, "error")
+            self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(address_option(required=True, help=HELP_IMAP_ADDRESS))
         if not token:
-            self._log.record("mailbox_connect", principal_id, None, "error")
+            self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
                 credential_option(
                     required=True,
@@ -237,7 +237,7 @@ class ImapMailboxAccess(MailboxAccess):
         inbox = self._inbox(wanted)
         box = self._imap_login(inbox, token)
         _close(box.logout)
-        self._log.record("mailbox_connect", principal_id, None, "ok")
+        self._log.record("mailbox_connect", identity_id, None, "ok")
         return mailbox_view(inbox, owned_address=True)
 
     def _inbox(self, address: str | None) -> str:

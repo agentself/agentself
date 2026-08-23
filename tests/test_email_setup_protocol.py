@@ -18,7 +18,7 @@ from agentself.backends.email.contract import (
 )
 from agentself.cli.app import _prompt_setup_option, main
 from agentself.cli.parser import _parser
-from agentself.client import Gateway
+from agentself.client import Client
 from agentself.internal.custody.manager import (
     CustodyManager,
     _channel_from_mailbox,
@@ -37,38 +37,38 @@ CREDENTIAL = "app-password-do-not-leak"
 
 
 class ScriptedMailbox(MailboxAccess):
-    """Test double. A new backend needs this contract, not parser or Gateway changes."""
+    """Test double. A new backend needs this contract, not parser or Client changes."""
 
     def __init__(self, connect_fn) -> None:
         self._connect = connect_fn
         self.calls: list[tuple[str, str | None, str | None]] = []
 
-    def send(self, principal_id, to, subject, body, credential=None, address=None):
-        del principal_id, to, subject, body
+    def send(self, identity_id, to, subject, body, credential=None, address=None):
+        del identity_id, to, subject, body
         self._require_runtime(credential, address)
         self.calls.append(("send", credential, address))
 
-    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
-        del principal_id, message_id
+    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
+        del identity_id, message_id
         self._require_runtime(credential, address)
-        self.calls.append(("recv", credential, address))
+        self.calls.append(("receive", credential, address))
         return [{"id": "message-1", "subject": "hello"}]
 
-    def list(self, principal_id, *, credential=None, address=None):
-        del principal_id
+    def list(self, identity_id, *, credential=None, address=None):
+        del identity_id
         self._require_runtime(credential, address)
         self.calls.append(("list", credential, address))
         return [{"id": "message-1", "subject": "hello"}]
 
-    def describe(self, principal_id, *, credential=None, address=None):
-        del principal_id
+    def describe(self, identity_id, *, credential=None, address=None):
+        del identity_id
         self.calls.append(("describe", credential, address))
         if credential and address:
             return mailbox_view(address, owned_address=True)
         return mailbox_view()
 
-    def connect(self, principal_id, *, credential=None, address=None, answers=None):
-        del principal_id
+    def connect(self, identity_id, *, credential=None, address=None, answers=None):
+        del identity_id
         extra = dict(answers or {})
         return self._connect(credential, address, extra)
 
@@ -166,7 +166,7 @@ def test_new_backend_uses_existing_connect_without_parser_changes(
     assert [call[0] for call in mailbox.calls[-4:]] == [
         "describe",
         "send",
-        "recv",
+        "receive",
         "list",
     ]
     assert all(call[1:] == (CREDENTIAL, ADDRESS) for call in mailbox.calls[-4:])
@@ -631,16 +631,14 @@ def test_json_continue_control_chars_are_not_rpc(
 
 def test_generic_setup_keeps_public_surfaces_provider_neutral() -> None:
     assert list(inspect.signature(_parser).parameters) == []
-    assert list(inspect.signature(Gateway.email_connect).parameters) == [
+    assert list(inspect.signature(Client.email_connect).parameters) == [
         "self",
-        "hold_owner",
         "answers",
         "state",
     ]
     assert list(inspect.signature(CustodyManager.email_connect).parameters) == [
         "self",
         "caller",
-        "hold_owner",
         "answers",
         "state",
     ]
@@ -673,7 +671,7 @@ def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert unknown["status"] == "failed"
 
 
-def test_env_connects_without_copying_into_vault(
+def test_env_connects_without_copying_into_identity_dir(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -729,7 +727,7 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     assert [call[0] for call in mailbox.calls[-4:]] == [
         "describe",
         "send",
-        "recv",
+        "receive",
         "list",
     ]
     assert all(call[1:] == (CREDENTIAL, ADDRESS) for call in mailbox.calls[-4:])

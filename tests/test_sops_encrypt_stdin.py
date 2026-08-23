@@ -24,11 +24,11 @@ def test_sops_store_source_has_no_dev_stdin():
     assert "/dev/stdin" not in source
 
 
-def test_seal_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
+def test_create_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    principal_id = "P"
-    key = identity_home(vault, principal_id) / "agent.agekey"
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
     key.parent.mkdir(parents=True)
     key.write_bytes(b"dummy-age-key\n")
     secret = "plain-secret-value-must-not-remain"
@@ -58,9 +58,9 @@ def test_seal_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
     )
     log = MemoryLog()
     store = SopsStoreAccess(vault, log)
-    store.seal(principal_id, "token", secret)
+    store.create(identity_id, "token", secret)
 
-    sealed = secrets_home(vault, principal_id) / "token.sops"
+    sealed = secrets_home(vault, identity_id) / "token.sops"
     assert sealed.is_file()
     assert sealed.read_bytes() == CIPHERTEXT
     assert seen_tmp
@@ -77,11 +77,11 @@ def test_seal_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
     assert "AGE-SECRET-KEY" not in sink
 
 
-def test_seal_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypatch):
+def test_create_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    principal_id = "P"
-    key = identity_home(vault, principal_id) / "agent.agekey"
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
     key.parent.mkdir(parents=True)
     key.write_bytes(b"dummy-age-key\n")
     secret = "plain-secret-must-not-appear-in-error"
@@ -107,8 +107,8 @@ def test_seal_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypat
         fake_run_cmd,
     )
     store = SopsStoreAccess(vault, MemoryLog())
-    with pytest.raises(StoreResourceError, match="^seal failed$") as excinfo:
-        store.seal(principal_id, "token", secret)
+    with pytest.raises(StoreResourceError, match="^create failed$") as excinfo:
+        store.create(identity_id, "token", secret)
     message = str(excinfo.value)
     assert secret not in message
     assert FAKE_RECIPIENT not in message
@@ -117,5 +117,5 @@ def test_seal_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypat
     assert seen_tmp
     for path in seen_tmp:
         assert not path.exists()
-    hold = secrets_home(vault, principal_id)
+    hold = secrets_home(vault, identity_id)
     assert list(hold.iterdir()) == []

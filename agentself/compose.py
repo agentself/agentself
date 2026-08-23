@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.factory import WalletAccessFactory
-from agentself.client import Gateway
+from agentself.client import Client
 from agentself.host import (
     CHANNELS,
     ENV_ETH_RPC_URL,
@@ -25,9 +25,9 @@ from agentself.host import (
 from agentself.internal.custody.manager import CustodyManager
 from agentself.internal.files import ensure_private_dir
 from agentself.internal.log import StreamLog
-from agentself.internal.registry import FilePrincipalAccess
+from agentself.internal.registry import FileIdentityAccess
 from agentself.internal.types import BoundCaller
-from agentself.local import default_vault, resolve_setting
+from agentself.local import default_identity_dir, resolve_setting
 
 if TYPE_CHECKING:
     from agentself.backends.wallet.rpc import RpcClient
@@ -44,12 +44,12 @@ def compose(
     rpc: RpcClient | None = None,
     eth_rpc_url: str | None = None,
     rpc_opener: Any = None,
-) -> Gateway:
+) -> Client:
     if vault_root is None:
-        vault_root = default_vault()
+        vault_root = default_identity_dir()
     log = log or StreamLog()
     root = ensure_private_dir(Path(vault_root))
-    principals = FilePrincipalAccess(root, log)
+    identities = FileIdentityAccess(root, log)
     stores = StoreAccessFactory(root, log)
     domain = (
         mail_domain
@@ -79,7 +79,7 @@ def compose(
         rpc_opener=rpc_opener,
     )
     manager = CustodyManager(
-        principals,
+        identities,
         stores,
         log,
         mailboxes=mailboxes,
@@ -87,7 +87,7 @@ def compose(
         email_backend=_resolved_backend(root, "email", email_backend),
         wallet_backend=_resolved_backend(root, "wallet", wallet_backend),
     )
-    return Gateway(manager, log, bind=bind)
+    return Client(manager, log, bind=bind)
 
 
 def _resolved_backend(root: Path, channel: str, explicit: str | None) -> str:

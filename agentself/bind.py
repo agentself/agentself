@@ -12,18 +12,18 @@ from agentself.internal.types import BoundCaller
 def bind_from_env() -> BoundCaller:
     """Private key is never a request body."""
 
-    principal_id = os.environ.get(ENV_IDENTITY_ID, "").strip()
+    identity_id = os.environ.get(ENV_IDENTITY_ID, "").strip()
     key_file = os.environ.get(ENV_AGE_KEY_FILE, "").strip()
-    if not principal_id or not key_file:
-        raise UnboundCaller("unbound caller")
-    return BoundCaller(principal_id, public_recipient(key_file))
+    if not identity_id or not key_file:
+        raise UnboundCaller("not initialized")
+    return BoundCaller(identity_id, public_recipient(key_file))
 
 
 def public_recipient(key_file: str) -> str:
     if not os.path.isfile(key_file):
-        raise UnboundCaller("unbound caller")
+        raise UnboundCaller("not initialized")
     if os.path.basename(key_file).startswith("-"):
-        raise UnboundCaller("unbound caller")
+        raise UnboundCaller("not initialized")
     try:
         proc = subprocess.run(
             [resolve_tool("age-keygen"), "-y", key_file],
@@ -32,8 +32,8 @@ def public_recipient(key_file: str) -> str:
             timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise UnboundCaller("unbound caller") from exc
+        raise UnboundCaller("not initialized") from exc
     recipient = proc.stdout.decode("utf-8").strip()
     if proc.returncode != 0 or not recipient.startswith("age1"):
-        raise UnboundCaller("unbound caller")
+        raise UnboundCaller("not initialized")
     return recipient

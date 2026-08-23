@@ -5,19 +5,19 @@ from __future__ import annotations
 import json
 import uuid
 
-from tests.support import setup_principal
+from tests.support import setup_identity
 
 
 def test_logs_never_contain_canary_value(app, monkeypatch):
-    key = setup_principal(app.vault, "P", store="sops")
+    key = setup_identity(app.vault, "P", store="sops")
     app.keys["P"] = key
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
+    app.client.init("sops")
     canary = f"CANARY-{uuid.uuid4()}-SECRET"
-    app.gateway.seal("token", canary)
-    app.gateway.reveal("token")
-    app.gateway.replace("token", canary + "-rotated")
-    app.gateway.list()
+    app.client.create("token", canary)
+    app.client.get("token")
+    app.client.update("token", canary + "-rotated")
+    app.client.list()
 
     sink = app.log.rendered()
     assert canary not in sink
@@ -26,11 +26,9 @@ def test_logs_never_contain_canary_value(app, monkeypatch):
         assert "value" not in rec
         blob = json.dumps(rec)
         assert canary not in blob
-        assert set(rec.keys()) == {"operation", "principal_id", "name", "result"}
+        assert set(rec.keys()) == {"operation", "identity_id", "name", "result"}
 
     assert any(
-        r["operation"] == "seal" and r["name"] == "token" for r in app.log.records
+        r["operation"] == "create" and r["name"] == "token" for r in app.log.records
     )
-    assert any(
-        r["operation"] == "reveal" and r["result"] == "ok" for r in app.log.records
-    )
+    assert any(r["operation"] == "get" and r["result"] == "ok" for r in app.log.records)

@@ -9,7 +9,7 @@ from agentself import __version__
 from tests.support import cli_env, run_cli
 
 
-def test_backends_mailbox_lists_send_holds(tmp_path):
+def test_backends_mailbox_lists_send_secrets(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["backends", "email"], env)
     assert proc.returncode == 0, proc.stderr
@@ -32,7 +32,7 @@ def test_backends_wallet_lists_ethereum_rpc(tmp_path):
     assert "ethereum" in proc.stdout
 
 
-def test_doctor_json_fresh_vault(tmp_path):
+def test_diagnose_json_fresh_identity_dir(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     proc = run_cli(["--json", "diagnose"], env)

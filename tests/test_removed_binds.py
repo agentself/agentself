@@ -46,7 +46,7 @@ def test_sms_flag_and_command_are_unknown(tmp_path):
     assert "invalid choice: 'sms'" in backends.stderr
 
 
-def test_recorded_vault_removed_binds_fail_closed(tmp_path):
+def test_recorded_identity_removed_binds_fail_closed(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     started = run_cli(["init"], env)

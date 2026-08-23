@@ -16,7 +16,7 @@ from agentself.backends.wallet.contract import (
 from agentself.backends.wallet.rpc import HttpJsonRpc, RpcClient, _dedup_urls
 from agentself.internal.eoa import hex_0x
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write_text,
     exclusive,
     identity_home,
@@ -70,23 +70,23 @@ class ChainWalletAccess(WalletAccess):
 
         self._key_hex = _normalize_key(key_hex)
 
-    def address(self, principal_id: str) -> str:
-        require_safe_token(principal_id, "principal id")
+    def address(self, identity_id: str) -> str:
+        require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
-        self._log.record("wallet_address", principal_id, None, "ok")
+        self._log.record("wallet_address", identity_id, None, "ok")
         return addr
 
-    def sign(self, principal_id: str, message: str) -> str:
-        require_safe_token(principal_id, "principal id")
+    def authorize(self, identity_id: str, message: str) -> str:
+        require_safe_token(identity_id, "identity id")
         signed = _account_from_key(self._require_key()).sign_message(
             encode_defunct(text=message)
         )
         sig = hex_0x(signed.signature.hex())
-        self._log.record("wallet_sign", principal_id, None, "ok")
+        self._log.record("wallet_authorize", identity_id, None, "ok")
         return sig
 
-    def balance(self, principal_id: str) -> dict[str, str]:
-        require_safe_token(principal_id, "principal id")
+    def balance(self, identity_id: str) -> dict[str, str]:
+        require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
         data = "0x" + BALANCE_OF_SELECTOR.hex() + _pad_address(addr)
         result = self._rpc_request(
@@ -95,7 +95,7 @@ class ChainWalletAccess(WalletAccess):
         raw = _hex_int(result)
         amount = _format_usdc(raw)
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
-        self._log.record("wallet_balance", principal_id, None, "ok")
+        self._log.record("wallet_balance", identity_id, None, "ok")
         return {
             "asset": USDC_ASSET,
             "chain": self.chain_name,
@@ -108,23 +108,23 @@ class ChainWalletAccess(WalletAccess):
             "gas_amount": _format_eth(wei),
         }
 
-    def send(self, principal_id: str, to: str, amount: str, asset: str) -> None:
-        require_safe_token(principal_id, "principal id")
+    def send(self, identity_id: str, to: str, amount: str, asset: str) -> None:
+        require_safe_token(identity_id, "identity id")
         self._require_key()
         if (asset or "").strip() != USDC_ASSET:
-            self._log.record("wallet_send", principal_id, None, "cannot_send")
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise CannotSend(NEED_USDC)
         if self._root is None:
-            self._send_once(principal_id, to, amount, asset)
+            self._send_once(identity_id, to, amount, asset)
             return
         try:
             with exclusive(self._root):
-                self._send_once(principal_id, to, amount, asset)
-        except VaultBusy as exc:
+                self._send_once(identity_id, to, amount, asset)
+        except IdentityBusy as exc:
             raise WalletError("rpc failed") from exc
 
-    def describe(self, principal_id: str) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+    def describe(self, identity_id: str) -> dict[str, object]:
+        require_safe_token(identity_id, "identity id")
         return {
             "address": self._derived_address(),
             "chain": self.chain_name,
@@ -135,9 +135,9 @@ class ChainWalletAccess(WalletAccess):
         }
 
     def verify(
-        self, principal_id: str, message: str, authorization: str
+        self, identity_id: str, message: str, authorization: str
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         expected = self._derived_address()
         try:
             recovered = Account.recover_message(
@@ -147,21 +147,19 @@ class ChainWalletAccess(WalletAccess):
             valid = to_checksum_address(recovered) == to_checksum_address(expected)
         except Exception:
             valid = False
-        self._log.record(
-            "wallet_verify", principal_id, None, "ok" if valid else "error"
-        )
+        self._log.record("wallet_verify", identity_id, None, "ok" if valid else "error")
         return {"valid": valid, "address": expected, "scheme": "eip191"}
 
-    def _send_once(self, principal_id: str, to: str, amount: str, asset: str) -> None:
+    def _send_once(self, identity_id: str, to: str, amount: str, asset: str) -> None:
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         if wei == 0:
-            self._log.record("wallet_send", principal_id, None, "no_eth")
-            raise CannotSend("EOA has no ETH")
+            self._log.record("wallet_send", identity_id, None, "no_eth")
+            raise CannotSend("need ETH for gas")
         try:
             units = _usdc_units(amount)
         except CannotSend:
-            self._log.record("wallet_send", principal_id, None, "cannot_send")
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise
         held = _hex_int(
             self._rpc_request(
@@ -176,16 +174,16 @@ class ChainWalletAccess(WalletAccess):
             )
         )
         if held < units:
-            self._log.record("wallet_send", principal_id, None, "cannot_send")
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise CannotSend(NEED_USDC)
         try:
             dest = to_checksum_address(to)
         except (ValueError, TypeError):
-            self._log.record("wallet_send", principal_id, None, "cannot_send")
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise CannotSend(NEED_USDC) from None
-        pending = self._load_pending(principal_id)
+        pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, dest, units, addr, self.chain_id):
-            self._finish_pending(principal_id, pending)
+            self._finish_pending(identity_id, pending)
             return
         data = (
             "0x"
@@ -230,22 +228,22 @@ class ChainWalletAccess(WalletAccess):
             "hash": tx_hash,
             "raw": raw_hex,
         }
-        self._save_pending(principal_id, record)
-        self._broadcast(principal_id, record, signed)
+        self._save_pending(identity_id, record)
+        self._broadcast(identity_id, record, signed)
 
-    def _finish_pending(self, principal_id: str, pending: dict[str, object]) -> None:
+    def _finish_pending(self, identity_id: str, pending: dict[str, object]) -> None:
         tx_hash = str(pending.get("hash") or "")
         if self._tx_known(tx_hash):
-            self._log.record("wallet_send", principal_id, None, _ok_hash(tx_hash))
+            self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
             return
         raw = str(pending.get("raw") or "")
         if not raw.startswith("0x"):
             raise WalletError("rpc failed")
-        self._broadcast(principal_id, pending, None)
+        self._broadcast(identity_id, pending, None)
 
     def _broadcast(
         self,
-        principal_id: str,
+        identity_id: str,
         pending: dict[str, object],
         signed: object | None,
     ) -> None:
@@ -255,15 +253,15 @@ class ChainWalletAccess(WalletAccess):
             result = self._rpc_request("eth_sendRawTransaction", [raw])
         except WalletError:
             if self._tx_known(tx_hash):
-                self._log.record("wallet_send", principal_id, None, _ok_hash(tx_hash))
+                self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
                 return
             raise
         if signed is not None:
             self._log.record(
-                "wallet_send", principal_id, None, _send_result(result, signed)
+                "wallet_send", identity_id, None, _send_result(result, signed)
             )
             return
-        self._log.record("wallet_send", principal_id, None, _ok_hash(tx_hash))
+        self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
 
     def _tx_known(self, tx_hash: str) -> bool:
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
@@ -277,13 +275,13 @@ class ChainWalletAccess(WalletAccess):
         got = str(found.get("hash") or "")
         return got.lower() == tx_hash.lower()
 
-    def _pending_path(self, principal_id: str) -> Path | None:
+    def _pending_path(self, identity_id: str) -> Path | None:
         if self._root is None:
             return None
-        return identity_home(self._root, principal_id) / "wallet" / "pending-send.json"
+        return identity_home(self._root, identity_id) / "wallet" / "pending-send.json"
 
-    def _load_pending(self, principal_id: str) -> dict[str, object] | None:
-        path = self._pending_path(principal_id)
+    def _load_pending(self, identity_id: str) -> dict[str, object] | None:
+        path = self._pending_path(identity_id)
         if path is None or not path.is_file():
             return None
         try:
@@ -294,8 +292,8 @@ class ChainWalletAccess(WalletAccess):
             raise WalletError("rpc failed")
         return data
 
-    def _save_pending(self, principal_id: str, record: dict[str, object]) -> None:
-        path = self._pending_path(principal_id)
+    def _save_pending(self, identity_id: str, record: dict[str, object]) -> None:
+        path = self._pending_path(identity_id)
         if path is None:
             return
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

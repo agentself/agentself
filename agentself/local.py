@@ -15,7 +15,7 @@ from agentself.host import (
 )
 from agentself.internal.custody.errors import HostToolMissing, UnboundCaller
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write_text,
     ensure_private_dir,
     exclusive,
@@ -33,23 +33,23 @@ from agentself.internal.types import BoundCaller
 
 DEFAULT_IDENTITY = "agent"
 CONFIG_NAME = "config.json"
-DEFAULT_VAULT_NAME = ".agentself"
+DEFAULT_DIR_NAME = ".agentself"
 _SECRET = re.compile(r"AGE-SECRET-KEY-[A-Za-z0-9-]+")
 _HEXKEY = re.compile(r"(?i)(?<![0-9a-f])0x[0-9a-f]{64}(?![0-9a-f])")
 
 
-class VaultStateError(Exception):
+class IdentityStateError(Exception):
     """config.json exists but is not a usable identity file. Fail closed."""
 
     def __init__(self, message: str = "cannot read config.json") -> None:
         super().__init__(message)
 
 
-def default_vault() -> Path:
+def default_identity_dir() -> Path:
     override = os.environ.get(ENV_IDENTITY_DIR, "").strip()
     if override:
         return Path(override)
-    return Path.home() / DEFAULT_VAULT_NAME
+    return Path.home() / DEFAULT_DIR_NAME
 
 
 def config_path(vault: Path) -> Path:
@@ -66,8 +66,8 @@ def save_config(vault: Path, data: dict[str, str]) -> None:
         with exclusive(root):
             _read_config(root)
             _write_config(root, data)
-    except VaultBusy as exc:
-        raise VaultStateError("vault busy") from exc
+    except IdentityBusy as exc:
+        raise IdentityStateError("identity directory busy") from exc
 
 
 def require_supported_formats(vault: Path) -> None:
@@ -86,7 +86,7 @@ def require_supported_formats(vault: Path) -> None:
         return
     err = format_version_error("registry.json", data)
     if err:
-        raise VaultStateError(err)
+        raise IdentityStateError(err)
 
 
 def merge_config(vault: Path, updates: dict[str, str]) -> dict[str, str]:
@@ -97,8 +97,8 @@ def merge_config(vault: Path, updates: dict[str, str]) -> dict[str, str]:
             cfg.update({key: value for key, value in updates.items() if value})
             _write_config(root, cfg)
             return cfg
-    except VaultBusy as exc:
-        raise VaultStateError("vault busy") from exc
+    except IdentityBusy as exc:
+        raise IdentityStateError("identity directory busy") from exc
 
 
 def resolve_setting(
@@ -151,30 +151,30 @@ def bind_local(vault: Path) -> BoundCaller:
     except UnboundCaller:
         pass
     cfg = load_config(vault)
-    principal_id = (
+    identity_id = (
         os.environ.get(ENV_IDENTITY_ID, "").strip()
         or cfg.get("identity_id", "").strip()
     )
     key_file = os.environ.get(ENV_AGE_KEY_FILE, "").strip() or resolve_age_key_file(
         vault, cfg.get("age_key_file", "")
     )
-    if not principal_id or not key_file:
-        raise UnboundCaller("unbound caller")
-    return BoundCaller(principal_id, public_recipient(key_file))
+    if not identity_id or not key_file:
+        raise UnboundCaller("not initialized")
+    return BoundCaller(identity_id, public_recipient(key_file))
 
 
-def ensure_age_key(vault: Path, principal_id: str, store: str = "sops") -> Path:
+def ensure_age_key(vault: Path, identity_id: str, store: str = "sops") -> Path:
     """Host keygen. Not a Manager call. Private key stays in the file."""
 
-    require_safe_token(principal_id, "principal id")
+    require_safe_token(identity_id, "identity id")
     root = Path(vault)
     try:
         with exclusive(root):
             if store == "pass":
-                return _ensure_pass_principal(root, principal_id)
-            return _ensure_age_keygen(root, principal_id)
-    except VaultBusy as exc:
-        raise VaultStateError("vault busy") from exc
+                return _ensure_pass_principal(root, identity_id)
+            return _ensure_age_keygen(root, identity_id)
+    except IdentityBusy as exc:
+        raise IdentityStateError("identity directory busy") from exc
 
 
 def redact_secrets(text: str) -> str:
@@ -208,12 +208,12 @@ def format_status(view: dict[str, object], vault: Path) -> str:
     )
 
 
-def _ensure_age_keygen(vault: Path, principal_id: str) -> Path:
+def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
     root = Path(vault)
-    pdir = ensure_private_dir(identity_home(root, principal_id))
+    pdir = ensure_private_dir(identity_home(root, identity_id))
     key = pdir / "agent.agekey"
     if key.is_symlink():
-        raise VaultStateError("age key file is not usable")
+        raise IdentityStateError("age key file is not usable")
     if key.is_file() and key.stat().st_size == 0:
         shred_unlink(key)
     if not key.is_file():
@@ -240,18 +240,18 @@ def _ensure_age_keygen(vault: Path, principal_id: str) -> Path:
     return key
 
 
-def _ensure_pass_principal(vault: Path, principal_id: str) -> Path:
-    pdir = identity_home(Path(vault), principal_id)
+def _ensure_pass_principal(vault: Path, identity_id: str) -> Path:
+    pdir = identity_home(Path(vault), identity_id)
     batch = pdir / ".gpg-batch"
     shred_unlink(batch)
     try:
         _require_pass_tools()
-        key = _ensure_age_keygen(vault, principal_id)
+        key = _ensure_age_keygen(vault, identity_id)
         gnupg = ensure_private_dir(pdir / "gnupg")
         store_dir = pdir / "password-store"
         env = _pass_env(gnupg, store_dir)
         if not _gpg_has_secret(env, gnupg):
-            _generate_principal_gpg(pdir, principal_id, env, gnupg)
+            _generate_principal_gpg(pdir, identity_id, env, gnupg)
         fingerprint = _gpg_fingerprint(env, gnupg)
         if not (store_dir / ".gpg-id").is_file():
             _pass_init(env, store_dir, fingerprint)
@@ -368,19 +368,19 @@ def _gpg_has_secret(env: dict[str, str], gnupg: Path) -> bool:
 
 
 def _generate_principal_gpg(
-    pdir: Path, principal_id: str, env: dict[str, str], gnupg: Path
+    pdir: Path, identity_id: str, env: dict[str, str], gnupg: Path
 ) -> None:
     batch = pdir / ".gpg-batch"
     body = "\n".join(
         [
-            "%echo generating principal GPG key",
+            "%echo generating identity GPG key",
             "%no-protection",
             "Key-Type: EDDSA",
             "Key-Curve: Ed25519",
             "Subkey-Type: ECDH",
             "Subkey-Curve: Curve25519",
-            f"Name-Real: agent-{principal_id}",
-            f"Name-Email: {principal_id}@agentself.local",
+            f"Name-Real: agent-{identity_id}",
+            f"Name-Email: {identity_id}@agentself.local",
             "Expire-Date: 0",
             "%commit",
             "%echo done",
@@ -457,12 +457,12 @@ def _read_config(vault: Path) -> dict[str, str]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise VaultStateError("cannot read config.json") from exc
+        raise IdentityStateError("cannot read config.json") from exc
     if not isinstance(data, dict):
-        raise VaultStateError("cannot read config.json")
+        raise IdentityStateError("cannot read config.json")
     err = format_version_error("config.json", data)
     if err:
-        raise VaultStateError(err)
+        raise IdentityStateError(err)
     out: dict[str, str] = {}
     for key, value in data.items():
         if key == "format_version":

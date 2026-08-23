@@ -18,7 +18,7 @@ from agentself.backends.email.contract import (
 )
 from agentself.backends.email.http import request as http_request
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write_text,
     ensure_private_dir,
     exclusive,
@@ -47,7 +47,7 @@ Getter = Callable[[str, dict[str, str]], tuple[int, bytes]]
 
 
 class AgentMailMailboxAccess(MailboxAccess):
-    """Inbox from address hold or GET /v0/inboxes, never principal@domain."""
+    """Inbox from address secret or GET /v0/inboxes, never identity@domain."""
 
     def __init__(
         self,
@@ -66,57 +66,57 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def send(
         self,
-        principal_id: str,
+        identity_id: str,
         to: str,
         subject: str,
         body: str,
         credential: str | None = None,
         address: str | None = None,
     ) -> None:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         require_addr(to)
         if not credential:
-            self._log.record("mailbox_send", principal_id, to, "error")
+            self._log.record("mailbox_send", identity_id, to, "error")
             raise MailboxError("send failed")
         credential = require_secret(credential)
-        inbox = self._inbox(principal_id, credential, address)
+        inbox = self._inbox(identity_id, credential, address)
         url = _send_url(inbox["inbox_id"])
         payload = json.dumps({"to": to, "subject": subject, "text": body}).encode(
             "utf-8"
         )
         self._post(url, credential, payload, "send failed")
-        self._log.record("mailbox_send", principal_id, to, "ok")
+        self._log.record("mailbox_send", identity_id, to, "ok")
 
-    def recv(
+    def receive(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         if not credential:
-            self._log.record("mailbox_recv", principal_id, None, "error")
+            self._log.record("mailbox_recv", identity_id, None, "error")
             raise MailboxError("recv failed")
         credential = require_secret(credential)
         try:
             with exclusive(self._root):
-                return self._recv_locked(principal_id, credential, address, message_id)
-        except VaultBusy as exc:
+                return self._recv_locked(identity_id, credential, address, message_id)
+        except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
 
     def _recv_locked(
         self,
-        principal_id: str,
+        identity_id: str,
         credential: str,
         address: str | None,
         message_id: str | None,
     ) -> builtins.list[dict[str, str]]:
-        inbox = self._inbox(principal_id, credential, address)
+        inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         listed = self._list_messages(inbox_id, credential, "recv failed")
-        seen = self._seen_dir(principal_id)
+        seen = self._seen_dir(identity_id)
         ensure_private_dir(seen)
         wanted = (message_id or "").strip()
         messages: list[dict[str, str]] = []
@@ -143,42 +143,42 @@ class AgentMailMailboxAccess(MailboxAccess):
             messages.append(parsed)
             if wanted:
                 break
-        self._log.record("mailbox_recv", principal_id, None, "ok")
+        self._log.record("mailbox_recv", identity_id, None, "ok")
         return messages
 
     def list(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         if not credential:
-            self._log.record("mailbox_list", principal_id, None, "error")
+            self._log.record("mailbox_list", identity_id, None, "error")
             raise MailboxError("list failed")
         credential = require_secret(credential)
-        inbox = self._inbox(principal_id, credential, address)
+        inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         listed = self._list_messages(inbox_id, credential, "list failed")
         items = [_meta(item) for item in listed]
-        self._write_inbox_id(principal_id, inbox_id)
-        self._log.record("mailbox_list", principal_id, None, "ok")
+        self._write_inbox_id(identity_id, inbox_id)
+        self._log.record("mailbox_list", identity_id, None, "ok")
         return items
 
     def describe(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
         if not credential:
             return mailbox_view()
         credential = require_secret(credential)
-        inbox = self._inbox(principal_id, credential, wanted or None)
+        inbox = self._inbox(identity_id, credential, wanted or None)
         email = str(inbox.get("email") or "").strip()
         if not email:
             raise MailboxError("no inbox")
@@ -186,18 +186,18 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def connect(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
         answers: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = credential or extra.get("credential") or ""
         if not token:
-            self._log.record("mailbox_connect", principal_id, None, "error")
+            self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
                 credential_option(
                     source=SOURCE_AGENTMAIL_CREDENTIAL,
@@ -220,10 +220,10 @@ class AgentMailMailboxAccess(MailboxAccess):
                 None,
             )
             if inbox is None:
-                self._log.record("mailbox_connect", principal_id, None, "error")
+                self._log.record("mailbox_connect", identity_id, None, "error")
                 raise MailboxError("no inbox")
         elif len(live) > 1:
-            self._log.record("mailbox_connect", principal_id, None, "error")
+            self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
                 address_option(
                     required=True,
@@ -239,14 +239,14 @@ class AgentMailMailboxAccess(MailboxAccess):
         elif len(live) == 1:
             inbox = live[0]
         else:
-            inbox = self._create_inbox(principal_id, credential)
+            inbox = self._create_inbox(identity_id, credential)
         email = str(inbox.get("email") or "").strip()
         inbox_id = inbox.get("inbox_id")
         if not email or not inbox_id:
-            self._log.record("mailbox_connect", principal_id, None, "error")
+            self._log.record("mailbox_connect", identity_id, None, "error")
             raise MailboxError("no inbox")
-        self._write_inbox_id(principal_id, inbox_id)
-        self._log.record("mailbox_connect", principal_id, None, "ok")
+        self._write_inbox_id(identity_id, inbox_id)
+        self._log.record("mailbox_connect", identity_id, None, "ok")
         return mailbox_view(email, owned_address=True)
 
     def _listed_inboxes(self, token: str) -> builtins.list[object]:
@@ -257,8 +257,8 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError("no inbox")
         return inboxes
 
-    def _create_inbox(self, principal_id: str, token: str) -> dict[str, object]:
-        payload = json.dumps({"client_id": "agentself-" + principal_id}).encode("utf-8")
+    def _create_inbox(self, identity_id: str, token: str) -> dict[str, object]:
+        payload = json.dumps({"client_id": "agentself-" + identity_id}).encode("utf-8")
         body = self._post(_inboxes_url(), token, payload, "no inbox")
         created = _object(body, "no inbox")
         email = str(created.get("email") or "").strip()
@@ -267,7 +267,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         raise MailboxError("no inbox")
 
     def _inbox(
-        self, principal_id: str, token: str, address: str | None
+        self, identity_id: str, token: str, address: str | None
     ) -> dict[str, object]:
         inboxes = self._listed_inboxes(token)
         wanted = (address or "").strip()
@@ -343,16 +343,16 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError(_http_error(status))
         return resp
 
-    def _write_inbox_id(self, principal_id: str, inbox_id: object) -> None:
-        folder = ensure_private_dir(self._agentmail_dir(principal_id))
+    def _write_inbox_id(self, identity_id: str, inbox_id: object) -> None:
+        folder = ensure_private_dir(self._agentmail_dir(identity_id))
         path = folder / "inbox_id"
         atomic_write_text(path, str(inbox_id))
 
-    def _agentmail_dir(self, principal_id: str) -> Path:
-        return identity_home(self._root, principal_id) / "agentmail"
+    def _agentmail_dir(self, identity_id: str) -> Path:
+        return identity_home(self._root, identity_id) / "agentmail"
 
-    def _seen_dir(self, principal_id: str) -> Path:
-        return self._agentmail_dir(principal_id) / "seen"
+    def _seen_dir(self, identity_id: str) -> Path:
+        return self._agentmail_dir(identity_id) / "seen"
 
 
 def _http_error(status: int) -> str:

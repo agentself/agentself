@@ -81,7 +81,7 @@ class MailboxAccess(ABC):
     @abstractmethod
     def send(
         self,
-        principal_id: str,
+        identity_id: str,
         to: str,
         subject: str,
         body: str,
@@ -90,9 +90,9 @@ class MailboxAccess(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def recv(
+    def receive(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
@@ -103,7 +103,7 @@ class MailboxAccess(ABC):
     @abstractmethod
     def list(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
@@ -113,7 +113,7 @@ class MailboxAccess(ABC):
     @abstractmethod
     def describe(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
@@ -121,7 +121,7 @@ class MailboxAccess(ABC):
 
     def connect(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
@@ -135,7 +135,7 @@ class MailboxAccess(ABC):
         """
 
         del answers
-        return self.describe(principal_id, credential=credential, address=address)
+        return self.describe(identity_id, credential=credential, address=address)
 
 
 def connect_status(payload: object) -> str:

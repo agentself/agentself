@@ -1,4 +1,4 @@
-"""Pass principal setup is Python; a wheel must not need scripts/setup-principal.sh."""
+"""Pass identity setup is Python; a wheel must not need scripts/setup-principal.sh."""
 
 from __future__ import annotations
 
@@ -177,7 +177,7 @@ def test_gpg_keygen_error_includes_redacted_stderr(tmp_path, monkeypatch):
                 argv,
                 2,
                 b"",
-                b"gpg: generating principal GPG key\n"
+                b"gpg: generating identity GPG key\n"
                 b"gpg: AGE-SECRET-KEY-LEAKME\n"
                 b"gpg-agent[1]: socket name is too long\n",
             )
@@ -276,7 +276,7 @@ def test_bindable_home_returns_gnupg_when_link_fails(tmp_path, monkeypatch):
     shutil.which("gpg") is None or shutil.which("pass") is None,
     reason="pass store requires gpg and pass on PATH",
 )
-def test_pass_setup_survives_long_vault_path(tmp_path):
+def test_pass_setup_survives_long_identity_dir_path(tmp_path):
     vault = tmp_path / ("n" * 80) / "vault"
     extra = vault / "identities" / "agent" / "gnupg" / "S.gpg-agent.browser"
     assert len(os.fsencode(extra)) > 107

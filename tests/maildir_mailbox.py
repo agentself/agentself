@@ -11,7 +11,7 @@ from agentself.backends.email.contract import (
     require_addr,
 )
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write_text,
     exclusive,
     identity_home,
@@ -30,53 +30,53 @@ class MaildirMailboxAccess(MailboxAccess):
 
     def send(
         self,
-        principal_id: str,
+        identity_id: str,
         to: str,
         subject: str,
         body: str,
         credential: str | None = None,
         address: str | None = None,
     ) -> None:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         require_addr(to)
-        outbox = self._outbox(principal_id)
+        outbox = self._outbox(identity_id)
         outbox.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = outbox / _unique_name()
-        atomic_write_text(path, _format_message(principal_id, to, subject, body))
-        self._log.record("mailbox_send", principal_id, to, "ok")
+        atomic_write_text(path, _format_message(identity_id, to, subject, body))
+        self._log.record("mailbox_send", identity_id, to, "ok")
 
-    def recv(
+    def receive(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
     ) -> list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         try:
             with exclusive(self._root):
-                new_dir, cur_dir = self._ensure_maildir(principal_id)
+                new_dir, cur_dir = self._ensure_maildir(identity_id)
                 wanted = (message_id or "").strip()
                 if wanted:
                     messages = _take_by_id(new_dir, cur_dir, wanted)
-                    self._log.record("mailbox_recv", principal_id, None, "ok")
+                    self._log.record("mailbox_recv", identity_id, None, "ok")
                     return messages
                 messages = _consume_new(new_dir, cur_dir)
-                self._log.record("mailbox_recv", principal_id, None, "ok")
+                self._log.record("mailbox_recv", identity_id, None, "ok")
                 return messages
-        except VaultBusy as exc:
+        except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
 
     def list(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> list[dict[str, str]]:
-        require_safe_token(principal_id, "principal id")
-        new_dir, cur_dir = self._ensure_maildir(principal_id)
+        require_safe_token(identity_id, "identity id")
+        new_dir, cur_dir = self._ensure_maildir(identity_id)
         items: list[dict[str, str]] = []
         for folder in (new_dir, cur_dir):
             for path in sorted(p for p in folder.iterdir() if p.is_file()):
@@ -89,30 +89,30 @@ class MaildirMailboxAccess(MailboxAccess):
                         "subject": parsed.get("subject", ""),
                     }
                 )
-        self._log.record("mailbox_list", principal_id, None, "ok")
+        self._log.record("mailbox_list", identity_id, None, "ok")
         return items
 
     def describe(
         self,
-        principal_id: str,
+        identity_id: str,
         *,
         credential: str | None = None,
         address: str | None = None,
     ) -> dict[str, object]:
-        require_safe_token(principal_id, "principal id")
+        require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
         if wanted:
             return mailbox_view(wanted, owned_address=True)
         return mailbox_view(needs_domain=True)
 
-    def _base(self, principal_id: str) -> Path:
-        return identity_home(self._root, principal_id)
+    def _base(self, identity_id: str) -> Path:
+        return identity_home(self._root, identity_id)
 
-    def _outbox(self, principal_id: str) -> Path:
-        return self._base(principal_id) / "outbox"
+    def _outbox(self, identity_id: str) -> Path:
+        return self._base(identity_id) / "outbox"
 
-    def _ensure_maildir(self, principal_id: str) -> tuple[Path, Path]:
-        mail = self._base(principal_id) / "maildir"
+    def _ensure_maildir(self, identity_id: str) -> tuple[Path, Path]:
+        mail = self._base(identity_id) / "maildir"
         new_dir = mail / "new"
         cur_dir = mail / "cur"
         tmp_dir = mail / "tmp"
@@ -161,9 +161,9 @@ def _unique_name() -> str:
     return f"{int(time.time())}.{secrets.token_hex(8)}"
 
 
-def _format_message(principal_id: str, to: str, subject: str, body: str) -> str:
+def _format_message(identity_id: str, to: str, subject: str, body: str) -> str:
     subj = (subject or "").replace("\n", " ").replace("\r", " ")
-    return f"From: {principal_id}\nTo: {to}\nSubject: {subj}\n\n{body}"
+    return f"From: {identity_id}\nTo: {to}\nSubject: {subj}\n\n{body}"
 
 
 def _parse_message(path: Path) -> dict[str, str]:

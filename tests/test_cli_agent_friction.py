@@ -33,14 +33,14 @@ def test_unbound_wallet_address_points_to_init(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["wallet", "address"], env)
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "unbound caller" in proc.stderr
+    assert "not initialized" in proc.stderr
     assert "next: agentself init" in proc.stderr
     js = run_cli(["--json", "wallet", "address"], env)
     assert js.returncode == 2, js.stdout + js.stderr
     data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
     assert data["error"] == "refused"
-    assert data["reason"] == "unbound caller"
+    assert data["reason"] == "not initialized"
     assert data["next"] == "agentself init"
 
 

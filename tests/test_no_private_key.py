@@ -1,17 +1,17 @@
-"""Gateway / Manager never return a private key."""
+"""Client / Manager never return a private key."""
 
 from __future__ import annotations
 
 import json
 
-from tests.support import cli_env, run_cli, setup_principal
+from tests.support import cli_env, run_cli, setup_identity
 
 
-def test_enroll_view_has_recipient_only(app, monkeypatch):
-    key = setup_principal(app.vault, "P", store="sops")
+def test_init_view_has_recipient_only(app, monkeypatch):
+    key = setup_identity(app.vault, "P", store="sops")
     app.keys["P"] = key
     app.bind(monkeypatch, "P")
-    view = app.gateway.enroll("sops")
+    view = app.client.init("sops")
     dumped = json.dumps(view)
     assert view["id"] == "P"
     assert view["recipient"].startswith("age1")
@@ -39,13 +39,13 @@ def test_cli_start_stdout_has_recipient_not_private_key(tmp_path):
     assert "AGE-SECRET-KEY" not in view["recipient"]
 
 
-def test_manager_enroll_principal_has_no_private_key(app, monkeypatch):
-    key = setup_principal(app.vault, "P", store="sops")
+def test_manager_init_identity_has_no_private_key(app, monkeypatch):
+    key = setup_identity(app.vault, "P", store="sops")
     app.keys["P"] = key
     app.bind(monkeypatch, "P")
     from agentself.bind import bind_from_env
 
-    principal = app.manager.enroll(bind_from_env(), "sops")
-    assert not hasattr(principal, "private_key")
-    assert "AGE-SECRET-KEY" not in principal.recipient
-    assert "AGE-SECRET-KEY" not in json.dumps(principal.public_view())
+    identity = app.manager.init(bind_from_env(), "sops")
+    assert not hasattr(identity, "private_key")
+    assert "AGE-SECRET-KEY" not in identity.recipient
+    assert "AGE-SECRET-KEY" not in json.dumps(identity.public_view())

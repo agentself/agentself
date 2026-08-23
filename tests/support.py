@@ -19,12 +19,12 @@ from agentself.backends.store.contract import StoreAccess
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.contract import WalletAccess
 from agentself.backends.wallet.factory import WalletAccessFactory
-from agentself.client import Gateway
+from agentself.client import Client
 from agentself.internal.custody.manager import CustodyManager
 from agentself.internal.files import identity_home
 from agentself.internal.log import MemoryLog
-from agentself.internal.registry import FilePrincipalAccess
-from agentself.internal.types import Principal
+from agentself.internal.registry import FileIdentityAccess
+from agentself.internal.types import Identity
 from agentself.local import ensure_age_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -55,20 +55,18 @@ def symlink_or_skip(link: Path, target: Path | str) -> None:
         pytest.skip(f"symlinks not available: {exc}")
 
 
-class InstrumentedPrincipalAccess:
-    def __init__(self, inner: FilePrincipalAccess) -> None:
+class InstrumentedIdentityAccess:
+    def __init__(self, inner: FileIdentityAccess) -> None:
         self.inner = inner
         self.calls: list[tuple] = []
 
-    def find(self, principal_id: str) -> Principal | None:
-        self.calls.append(("find", principal_id))
-        return self.inner.find(principal_id)
+    def find(self, identity_id: str) -> Identity | None:
+        self.calls.append(("find", identity_id))
+        return self.inner.find(identity_id)
 
-    def enroll(
-        self, principal_id: str, recipient: str, store_binding: str
-    ) -> Principal:
-        self.calls.append(("enroll", principal_id, store_binding))
-        return self.inner.enroll(principal_id, recipient, store_binding)
+    def init(self, identity_id: str, recipient: str, store_binding: str) -> Identity:
+        self.calls.append(("init", identity_id, store_binding))
+        return self.inner.init(identity_id, recipient, store_binding)
 
 
 class InstrumentedStoreAccess:
@@ -76,25 +74,25 @@ class InstrumentedStoreAccess:
         self.inner = inner
         self.calls: list[tuple] = []
 
-    def seal(self, principal_id: str, name: str, value: str) -> None:
-        self.calls.append(("seal", principal_id, name))
-        return self.inner.seal(principal_id, name, value)
+    def create(self, identity_id: str, name: str, value: str) -> None:
+        self.calls.append(("create", identity_id, name))
+        return self.inner.create(identity_id, name, value)
 
-    def reveal(self, principal_id: str, name: str) -> str:
-        self.calls.append(("reveal", principal_id, name))
-        return self.inner.reveal(principal_id, name)
+    def get(self, identity_id: str, name: str) -> str:
+        self.calls.append(("get", identity_id, name))
+        return self.inner.get(identity_id, name)
 
-    def replace(self, principal_id: str, name: str, value: str) -> None:
-        self.calls.append(("replace", principal_id, name))
-        return self.inner.replace(principal_id, name, value)
+    def update(self, identity_id: str, name: str, value: str) -> None:
+        self.calls.append(("update", identity_id, name))
+        return self.inner.update(identity_id, name, value)
 
-    def list(self, principal_id: str) -> list[str]:
-        self.calls.append(("list", principal_id, None))
-        return self.inner.list(principal_id)
+    def list(self, identity_id: str) -> list[str]:
+        self.calls.append(("list", identity_id, None))
+        return self.inner.list(identity_id)
 
-    def delete(self, principal_id: str, name: str) -> None:
-        self.calls.append(("delete", principal_id, name))
-        return self.inner.delete(principal_id, name)
+    def delete(self, identity_id: str, name: str) -> None:
+        self.calls.append(("delete", identity_id, name))
+        return self.inner.delete(identity_id, name)
 
 
 class InstrumentedStoreFactory:
@@ -122,10 +120,10 @@ class InstrumentedMailboxAccess:
         self.inner = inner
         self.calls: list[tuple] = []
 
-    def send(self, principal_id, to, subject, body, credential=None, address=None):
-        self.calls.append(("send", principal_id))
+    def send(self, identity_id, to, subject, body, credential=None, address=None):
+        self.calls.append(("send", identity_id))
         return self.inner.send(
-            principal_id,
+            identity_id,
             to,
             subject,
             body,
@@ -133,27 +131,27 @@ class InstrumentedMailboxAccess:
             address=address,
         )
 
-    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
-        self.calls.append(("recv", principal_id))
-        return self.inner.recv(
-            principal_id,
+    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
+        self.calls.append(("receive", identity_id))
+        return self.inner.receive(
+            identity_id,
             credential=credential,
             address=address,
             message_id=message_id,
         )
 
-    def list(self, principal_id, *, credential=None, address=None):
-        self.calls.append(("list", principal_id))
-        return self.inner.list(principal_id, credential=credential, address=address)
+    def list(self, identity_id, *, credential=None, address=None):
+        self.calls.append(("list", identity_id))
+        return self.inner.list(identity_id, credential=credential, address=address)
 
-    def describe(self, principal_id, *, credential=None, address=None):
-        self.calls.append(("describe", principal_id))
-        return self.inner.describe(principal_id, credential=credential, address=address)
+    def describe(self, identity_id, *, credential=None, address=None):
+        self.calls.append(("describe", identity_id))
+        return self.inner.describe(identity_id, credential=credential, address=address)
 
-    def connect(self, principal_id, *, credential=None, address=None, answers=None):
-        self.calls.append(("connect", principal_id))
+    def connect(self, identity_id, *, credential=None, address=None, answers=None):
+        self.calls.append(("connect", identity_id))
         return self.inner.connect(
-            principal_id,
+            identity_id,
             credential=credential,
             address=address,
             answers=answers,
@@ -211,29 +209,29 @@ class InstrumentedWalletAccess:
         if binder is not None:
             binder(key_hex)
 
-    def address(self, principal_id):
+    def address(self, identity_id):
         self.calls.append(("address",))
-        return self.inner.address(principal_id)
+        return self.inner.address(identity_id)
 
-    def sign(self, principal_id, message):
-        self.calls.append(("sign",))
-        return self.inner.sign(principal_id, message)
+    def authorize(self, identity_id, message):
+        self.calls.append(("authorize",))
+        return self.inner.authorize(identity_id, message)
 
-    def verify(self, principal_id, message, authorization):
+    def verify(self, identity_id, message, authorization):
         self.calls.append(("verify",))
-        return self.inner.verify(principal_id, message, authorization)
+        return self.inner.verify(identity_id, message, authorization)
 
-    def balance(self, principal_id):
+    def balance(self, identity_id):
         self.calls.append(("balance",))
-        return self.inner.balance(principal_id)
+        return self.inner.balance(identity_id)
 
-    def send(self, principal_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset):
         self.calls.append(("send",))
-        return self.inner.send(principal_id, to, amount, asset)
+        return self.inner.send(identity_id, to, amount, asset)
 
-    def describe(self, principal_id):
+    def describe(self, identity_id):
         self.calls.append(("describe",))
-        return self.inner.describe(principal_id)
+        return self.inner.describe(identity_id)
 
 
 class InstrumentedWalletFactory:
@@ -348,29 +346,29 @@ class FakeRpcOpener:
 class App:
     vault: Path
     log: MemoryLog
-    principals: InstrumentedPrincipalAccess
+    identities: InstrumentedIdentityAccess
     stores: InstrumentedStoreFactory
     mailboxes: InstrumentedMailboxFactory
     wallets: InstrumentedWalletFactory
     manager: CustodyManager
-    gateway: Gateway
+    client: Client
     rpc: MockRpc | None
     keys: dict[str, Path] = field(default_factory=dict)
 
-    def bind(self, monkeypatch, principal_id: str) -> None:
-        monkeypatch.setenv("AGENTSELF_IDENTITY_ID", principal_id)
-        monkeypatch.setenv("AGE_KEY_FILE", str(self.keys[principal_id]))
+    def bind(self, monkeypatch, identity_id: str) -> None:
+        monkeypatch.setenv("AGENTSELF_IDENTITY_ID", identity_id)
+        monkeypatch.setenv("AGE_KEY_FILE", str(self.keys[identity_id]))
         monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(self.vault))
 
 
-def setup_principal(vault: Path, principal_id: str, store: str = "sops") -> Path:
+def setup_identity(vault: Path, identity_id: str, store: str = "sops") -> Path:
     """Host keygen for tests. Shares ensure_age_key; does not exec a .sh file."""
 
     if store == "pass":
         _require_pass_host()
-    key = ensure_age_key(vault, principal_id, store=store)
+    key = ensure_age_key(vault, identity_id, store=store)
     if not key.is_file():
-        raise RuntimeError("setup-principal did not write agent.agekey")
+        raise RuntimeError("setup-identity did not write agent.agekey")
     if os.name != "nt":
         mode = key.stat().st_mode & 0o777
         if mode != 0o600:
@@ -396,7 +394,7 @@ def build_app(
 ) -> App:
     """Instrumented app. Defaults use tests/ doubles, not the public catalog."""
     log = MemoryLog()
-    principals = InstrumentedPrincipalAccess(FilePrincipalAccess(vault, log))
+    identities = InstrumentedIdentityAccess(FileIdentityAccess(vault, log))
     stores = InstrumentedStoreFactory(StoreAccessFactory(vault, log))
     mailboxes = InstrumentedMailboxFactory(
         DoubleMailboxFactory(
@@ -422,7 +420,7 @@ def build_app(
         )
     )
     manager = CustodyManager(
-        principals,
+        identities,
         stores,
         log,
         mailboxes=mailboxes,
@@ -430,33 +428,33 @@ def build_app(
         email_backend=email_backend,
         wallet_backend=wallet_backend,
     )
-    gateway = Gateway(manager, log)
+    client = Client(manager, log)
     return App(
         vault=vault,
         log=log,
-        principals=principals,
+        identities=identities,
         stores=stores,
         mailboxes=mailboxes,
         wallets=wallets,
         manager=manager,
-        gateway=gateway,
+        client=client,
         rpc=injected,
     )
 
 
 def plant_email(
     vault: Path,
-    principal_id: str,
+    identity_id: str,
     *,
     from_addr: str,
     subject: str,
     body: str,
     to: str = "",
 ) -> Path:
-    new_dir = identity_home(vault, principal_id) / "maildir" / "new"
+    new_dir = identity_home(vault, identity_id) / "maildir" / "new"
     new_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = new_dir / f"planted.{secrets.token_hex(4)}"
-    dest = to or f"{principal_id}@local"
+    dest = to or f"{identity_id}@local"
     path.write_text(
         f"From: {from_addr}\nTo: {dest}\nSubject: {subject}\n\n{body}\n",
         encoding="utf-8",
@@ -508,12 +506,10 @@ def run_cli(
     )
 
 
-def enroll_principal(
-    app: App, monkeypatch, principal_id: str = "P", store: str = "sops"
-):
-    app.keys[principal_id] = setup_principal(app.vault, principal_id, store=store)
-    app.bind(monkeypatch, principal_id)
-    app.gateway.enroll(store)
+def init_identity(app: App, monkeypatch, identity_id: str = "P", store: str = "sops"):
+    app.keys[identity_id] = setup_identity(app.vault, identity_id, store=store)
+    app.bind(monkeypatch, identity_id)
+    app.client.init(store)
 
 
 def apply_cli_env(monkeypatch, env: dict[str, str]) -> None:

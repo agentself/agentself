@@ -5,12 +5,12 @@ from dataclasses import dataclass
 class BoundCaller:
     """Never a private key."""
 
-    principal_id: str
+    identity_id: str
     recipient: str
 
 
 @dataclass(frozen=True)
-class Principal:
+class Identity:
     """Never a private key."""
 
     id: str

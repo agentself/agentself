@@ -3,7 +3,7 @@ class CustodyError(Exception):
 
 
 class UnboundCaller(CustodyError):
-    """Gateway could not name a principal. No ResourceAccess calls."""
+    """Client could not name an identity. No ResourceAccess calls."""
 
 
 class Refused(CustodyError):
@@ -18,11 +18,11 @@ class ProtectedName(Refused):
         super().__init__(f"{name} is protected")
 
 
-class UnknownPrincipal(CustodyError):
-    """PrincipalAccess.Find missed. No StoreAccess."""
+class UnknownIdentity(CustodyError):
+    """Identity lookup missed. No StoreAccess."""
 
 
-class MissingHoldName(CustodyError):
+class MissingSecret(CustodyError):
     pass
 
 
@@ -55,12 +55,12 @@ class EmailSendNotReady(ChannelFailure):
 
 
 class NoGas(CustodyError):
-    """USDC send needs ETH for gas. Fail closed when the EOA has no ETH."""
+    """USDC send needs ETH for gas. Fail closed when the wallet has no ETH."""
 
 
-class CannotSign(CustodyError):
+class CannotAuthorize(CustodyError):
     def __init__(self) -> None:
-        super().__init__("backend cannot sign")
+        super().__init__("backend cannot authorize")
 
 
 class CannotSend(CustodyError):

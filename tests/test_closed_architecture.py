@@ -1,4 +1,4 @@
-"""Closed call graph: Gateway does not import backends; backends do not import each other or the manager.
+"""Closed call graph: Client does not import backends; backends do not import each other or the manager.
 
 IDesign stays as rules, not folder names. Folders follow rclone: one directory per shipped backend.
 """
@@ -88,7 +88,7 @@ def _py_files(root: Path) -> list[Path]:
     )
 
 
-def test_gateway_client_does_not_import_backends():
+def test_client_does_not_import_backends():
     names = _imported_modules(PKG / "client.py")
     for pkg in RA_MODULES:
         assert not _mentions(names, pkg), f"client imported {pkg}: {names}"
@@ -117,7 +117,7 @@ def test_backends_do_not_import_each_other_or_manager():
                 )
 
 
-def test_seal_reveal_cli_does_not_take_store_flag():
+def test_secret_cli_does_not_take_store_flag():
     from agentself.cli.parser import _parser
     from agentself.host import CHANNELS
 
@@ -173,7 +173,7 @@ def test_contracts_and_factories_have_no_vendor_types():
         assert not _mentions(names, *VENDOR_ROOTS), f"{path} imported vendor {names}"
 
 
-def test_gateway_client_and_cli_do_not_import_backends_or_sdks():
+def test_client_and_cli_do_not_import_backends_or_sdks():
     files = [PKG / "client.py", PKG / "__main__.py", *_py_files(CLI)]
     for rel in files:
         names = _imported_modules(rel)

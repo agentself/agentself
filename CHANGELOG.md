@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-Changes for the next release will be recorded here.
+- Internal Python names match the public CLI (`Client`, `init`, `create`,
+  `get`, `update`, `wallet authorize`, `email receive`). Operations always
+  use the bound identity.
 
 ## 0.1.0a3
 

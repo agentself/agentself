@@ -7,4 +7,4 @@ class NoEthForGas(CannotSend):
     """This backend's send failure, not the contract."""
 
     def __init__(self) -> None:
-        super().__init__("EOA has no ETH")
+        super().__init__("need ETH for gas")

@@ -19,20 +19,20 @@ from agentself.backends.store.sops import SopsStoreAccess
 from agentself.backends.wallet.contract import WalletError
 from agentself.internal.custody.errors import ChannelFailure, Refused
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write,
     exclusive,
     identity_home,
     secrets_home,
 )
 from agentself.internal.log import MemoryLog
-from agentself.local import VaultStateError, load_config
+from agentself.local import IdentityStateError, load_config
 
 from tests.support import (
     MockRpc,
     build_app,
     cli_env,
-    enroll_principal,
+    init_identity,
     plant_email,
     run_cli,
     value_file,
@@ -108,7 +108,7 @@ def test_exclusive_is_reentrant_and_serializes_threads(tmp_path):
     assert seen in ([1, 1, 2, 2], [2, 2, 1, 1])
 
 
-def test_exclusive_timeout_is_vault_busy(tmp_path):
+def test_exclusive_timeout_is_identity_dir_busy(tmp_path):
     started = threading.Event()
     release = threading.Event()
 
@@ -120,7 +120,7 @@ def test_exclusive_timeout_is_vault_busy(tmp_path):
     thread = threading.Thread(target=holder)
     thread.start()
     assert started.wait(1)
-    with pytest.raises(VaultBusy):
+    with pytest.raises(IdentityBusy):
         with exclusive(tmp_path, timeout=0.2):
             pass
     release.set()
@@ -162,18 +162,18 @@ def test_concurrent_init_one_identity(tmp_path):
 
 
 def test_secret_create_same_value_is_idempotent(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
-    app.gateway.seal("token", "same")
-    app.gateway.seal("token", "same")
-    assert app.gateway.reveal("token") == "same"
+    init_identity(app, monkeypatch)
+    app.client.create("token", "same")
+    app.client.create("token", "same")
+    assert app.client.get("token") == "same"
 
 
 def test_secret_create_different_value_still_refuses(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
-    app.gateway.seal("token", "first")
+    init_identity(app, monkeypatch)
+    app.client.create("token", "first")
     with pytest.raises(Refused):
-        app.gateway.seal("token", "other")
-    assert app.gateway.reveal("token") == "first"
+        app.client.create("token", "other")
+    assert app.client.get("token") == "first"
 
 
 def test_cli_secret_create_retry_same_value(tmp_path):
@@ -222,21 +222,21 @@ def test_cli_secret_create_retry_same_value(tmp_path):
 
 
 def test_empty_sops_file_is_interrupted_write(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     hold = secrets_home(app.vault, "P")
     hold.mkdir(parents=True, exist_ok=True)
     leftover = hold / "notes.sops"
     leftover.write_bytes(b"")
-    app.gateway.seal("notes", "recovered")
-    assert app.gateway.reveal("notes") == "recovered"
+    app.client.create("notes", "recovered")
+    assert app.client.get("notes") == "recovered"
     assert leftover.stat().st_size > 0
 
 
-def test_seal_write_failure_does_not_leave_partial_ciphertext(tmp_path, monkeypatch):
+def test_create_write_failure_does_not_leave_partial_ciphertext(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    principal_id = "P"
-    key = identity_home(vault, principal_id) / "agent.agekey"
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
     key.parent.mkdir(parents=True)
     key.write_bytes(b"dummy-age-key\n")
     ciphertext = b"complete-sops-bytes"
@@ -259,9 +259,9 @@ def test_seal_write_failure_does_not_leave_partial_ciphertext(tmp_path, monkeypa
         lambda src, dst: (_ for _ in ()).throw(OSError("crash")),
     )
     store = SopsStoreAccess(vault, MemoryLog())
-    with pytest.raises(StoreResourceError, match="^seal failed$"):
-        store.seal(principal_id, "token", "plain-secret")
-    dest = secrets_home(vault, principal_id) / "token.sops"
+    with pytest.raises(StoreResourceError, match="^create failed$"):
+        store.create(identity_id, "token", "plain-secret")
+    dest = secrets_home(vault, identity_id) / "token.sops"
     assert not dest.exists()
 
 
@@ -270,7 +270,7 @@ def test_corrupt_config_fails_closed(tmp_path):
     env = cli_env(vault)
     assert run_cli(["init"], env).returncode == 0
     (vault / "config.json").write_text("{not-json", encoding="utf-8")
-    with pytest.raises(VaultStateError, match="cannot read config.json"):
+    with pytest.raises(IdentityStateError, match="cannot read config.json"):
         load_config(vault)
     show = run_cli(["show"], env)
     assert show.returncode == 1, show.stderr
@@ -300,12 +300,12 @@ def test_corrupt_registry_fails_closed(tmp_path):
 
 
 def test_concurrent_secret_create_same_name(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     errors: list[str] = []
 
     def writer(value: str) -> None:
         try:
-            app.gateway.seal("race", value)
+            app.client.create("race", value)
         except Refused:
             errors.append(value)
 
@@ -317,28 +317,28 @@ def test_concurrent_secret_create_same_name(app, monkeypatch):
         thread.start()
     for thread in threads:
         thread.join()
-    held = app.gateway.reveal("race")
+    held = app.client.get("race")
     assert held in ("one", "two")
     assert len(errors) == 1
     assert errors[0] != held
 
 
-def test_email_recv_second_call_empty(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
+def test_email_receive_second_call_empty(app, monkeypatch):
+    init_identity(app, monkeypatch)
     plant_email(app.vault, "P", from_addr="a@example.com", subject="once", body="body")
-    first = app.gateway.email_recv()
+    first = app.client.email_receive()
     assert len(first) == 1
     assert first[0]["subject"] == "once"
-    assert app.gateway.email_recv() == []
-    listed = app.gateway.email_list()
+    assert app.client.email_receive() == []
+    listed = app.client.email_list()
     assert any(item["subject"] == "once" for item in listed)
-    again = app.gateway.email_recv(message_id=first[0]["id"])
+    again = app.client.email_receive(message_id=first[0]["id"])
     assert len(again) == 1
     assert again[0]["subject"] == "once"
 
 
-def test_email_recv_crash_before_move_redelivers(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
+def test_email_receive_crash_before_move_redelivers(app, monkeypatch):
+    init_identity(app, monkeypatch)
     planted = plant_email(
         app.vault, "P", from_addr="a@example.com", subject="hanging", body="x"
     )
@@ -353,17 +353,17 @@ def test_email_recv_crash_before_move_redelivers(app, monkeypatch):
 
     monkeypatch.setattr(Path, "replace", boom)
     with pytest.raises(OSError):
-        app.gateway.email_recv()
+        app.client.email_receive()
     assert planted.is_file()
     monkeypatch.setattr(Path, "replace", original)
-    got = app.gateway.email_recv()
+    got = app.client.email_receive()
     assert len(got) == 1
     assert got[0]["subject"] == "hanging"
-    assert app.gateway.email_recv() == []
+    assert app.client.email_receive() == []
 
 
-def test_concurrent_email_recv_each_message_once(app, monkeypatch):
-    enroll_principal(app, monkeypatch)
+def test_concurrent_email_receive_each_message_once(app, monkeypatch):
+    init_identity(app, monkeypatch)
     for i in range(4):
         plant_email(
             app.vault,
@@ -375,7 +375,7 @@ def test_concurrent_email_recv_each_message_once(app, monkeypatch):
     bags: list[list[dict[str, str]]] = []
 
     def worker() -> None:
-        bags.append(app.gateway.email_recv())
+        bags.append(app.client.email_receive())
 
     threads = [threading.Thread(target=worker) for _ in range(2)]
     for thread in threads:
@@ -385,15 +385,15 @@ def test_concurrent_email_recv_each_message_once(app, monkeypatch):
     ids = [msg["id"] for bag in bags for msg in bag]
     assert len(ids) == 4
     assert len(set(ids)) == 4
-    assert app.gateway.email_recv() == []
+    assert app.client.email_receive() == []
 
 
 def test_wallet_send_retry_after_timeout_resubmits_same_raw(vault, monkeypatch):
     rpc = FailSendOnce(eth_wei=10**18, usdc_raw=2_000_000)
     app = build_app(vault, rpc=rpc)
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     with pytest.raises(ChannelFailure) as caught:
-        app.gateway.wallet_send(_TO, "1")
+        app.client.wallet_send(_TO, "1")
     assert caught.value.reason == "rpc"
     assert rpc.broadcast is False
     first_sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
@@ -404,7 +404,7 @@ def test_wallet_send_retry_after_timeout_resubmits_same_raw(vault, monkeypatch):
     raw = record["raw"]
     assert raw.startswith("0x")
     assert "AGE-SECRET-KEY" not in pending.read_text(encoding="utf-8")
-    app.gateway.wallet_send(_TO, "1")
+    app.client.wallet_send(_TO, "1")
     sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
     assert len(sends) == 2
     assert rpc.sent_raw == [raw]
@@ -416,14 +416,14 @@ def test_wallet_send_timeout_after_accept_is_success_not_a_second_tx(
 ):
     rpc = FailAfterAccept(eth_wei=10**18, usdc_raw=2_000_000)
     app = build_app(vault, rpc=rpc)
-    enroll_principal(app, monkeypatch)
-    app.gateway.wallet_send(_TO, "1")
+    init_identity(app, monkeypatch)
+    app.client.wallet_send(_TO, "1")
     first_sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
     assert len(first_sends) == 1
-    app.gateway.wallet_send(_TO, "1")
+    app.client.wallet_send(_TO, "1")
     sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
     assert len(sends) == 1
-    key = app.gateway.reveal("wallet.key")
+    key = app.client.get("wallet.key")
     sink = app.log.rendered()
     assert key not in sink
     assert key.lower().removeprefix("0x") not in sink.lower()
@@ -432,10 +432,10 @@ def test_wallet_send_timeout_after_accept_is_success_not_a_second_tx(
 def test_wallet_send_different_destination_is_a_new_payment(vault, monkeypatch):
     rpc = MockRpc(eth_wei=10**18, usdc_raw=5_000_000)
     app = build_app(vault, rpc=rpc)
-    enroll_principal(app, monkeypatch)
-    app.gateway.wallet_send(_TO, "1")
+    init_identity(app, monkeypatch)
+    app.client.wallet_send(_TO, "1")
     other = "0x" + "22" * 20
-    app.gateway.wallet_send(other, "1")
+    app.client.wallet_send(other, "1")
     sends = [c for c in rpc.calls if c[0] == "eth_sendRawTransaction"]
     assert len(sends) == 2
     assert len(rpc.sent_raw) == 2
@@ -450,15 +450,15 @@ def test_wallet_send_rpc_failure_before_broadcast_has_no_pending_ack(
             raise WalletError("rpc failed")
 
     app = build_app(vault, rpc=BoomRpc())
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     with pytest.raises(ChannelFailure) as caught:
-        app.gateway.wallet_send(_TO, "1")
+        app.client.wallet_send(_TO, "1")
     assert caught.value.reason == "rpc"
     pending = identity_home(vault, "P") / "wallet" / "pending-send.json"
     assert not pending.is_file()
 
 
-def test_imap_recv_marks_after_fetch_and_survives_mark_failure(vault):
+def test_imap_receive_marks_after_fetch_and_survives_mark_failure(vault):
     from tests.test_imap_mailbox import (
         ADDRESS,
         CANARY,
@@ -483,6 +483,6 @@ def test_imap_recv_marks_after_fetch_and_survives_mark_failure(vault):
     imap.mark_seen = boom_mark  # type: ignore[method-assign]
     smtp = FakeSmtp()
     mb = _box(vault, log, imap, smtp)
-    got = mb.recv(PRINCIPAL, credential=CANARY, address=ADDRESS)
+    got = mb.receive(PRINCIPAL, credential=CANARY, address=ADDRESS)
     assert [m["subject"] for m in got] == ["a", "b"]
     assert CANARY not in log.rendered()

@@ -15,11 +15,11 @@ _LOCAL = threading.local()
 LOCK_NAME = "vault.lock"
 
 
-class VaultBusy(Exception):
+class IdentityBusy(Exception):
     """Another process or thread holds the vault lock past the wait."""
 
     def __init__(self) -> None:
-        super().__init__("vault busy")
+        super().__init__("identity directory busy")
 
 
 def resolve_tool(name: str) -> str:
@@ -57,16 +57,16 @@ def resolve_tool(name: str) -> str:
     return raw
 
 
-def identity_home(root: Path, principal_id: str) -> Path:
+def identity_home(root: Path, identity_id: str) -> Path:
     """Per-identity directory under identities/."""
 
-    return Path(root) / "identities" / principal_id
+    return Path(root) / "identities" / identity_id
 
 
-def secrets_home(root: Path, principal_id: str) -> Path:
+def secrets_home(root: Path, identity_id: str) -> Path:
     """Named-secret directory under identities/<id>/secrets/."""
 
-    return identity_home(root, principal_id) / "secrets"
+    return identity_home(root, identity_id) / "secrets"
 
 
 def ensure_private_dir(path: Path) -> Path:
@@ -175,7 +175,7 @@ def exclusive(root: Path, *, timeout: float = 30.0) -> Iterator[None]:
     deadline = time.monotonic() + max(0.0, timeout)
     remaining = deadline - time.monotonic()
     if remaining <= 0 or not tlock.acquire(timeout=remaining):
-        raise VaultBusy()
+        raise IdentityBusy()
     fd: int | None = None
     try:
         remaining = deadline - time.monotonic()
@@ -201,7 +201,7 @@ def _thread_lock(key: str) -> threading.RLock:
 def _lock_file(path: Path, timeout: float) -> int:
     ensure_private_dir(path.parent)
     if path.is_symlink():
-        raise VaultBusy()
+        raise IdentityBusy()
     flags = os.O_RDWR | os.O_CREAT
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     if nofollow:
@@ -220,7 +220,7 @@ def _lock_file(path: Path, timeout: float) -> int:
                     pass
                 return fd
             if time.monotonic() >= deadline:
-                raise VaultBusy()
+                raise IdentityBusy()
             time.sleep(0.05)
     except Exception:
         os.close(fd)

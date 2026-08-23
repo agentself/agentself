@@ -14,10 +14,10 @@ from agentself.internal.format import (
 )
 from agentself.internal.log import MemoryLog
 from agentself.internal.registry import (
-    FilePrincipalAccess,
+    FileIdentityAccess,
     RegistryError,
 )
-from agentself.local import VaultStateError, load_config, merge_config, save_config
+from agentself.local import IdentityStateError, load_config, merge_config, save_config
 
 from tests.support import cli_env, run_cli
 
@@ -63,7 +63,7 @@ def test_unversioned_config_fails_closed_and_is_not_rewritten(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_unversioned.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version is missing") as caught:
+    with pytest.raises(IdentityStateError, match="format_version is missing") as caught:
         load_config(vault)
     assert str(caught.value) == MISSING_CONFIG_MSG
     assert path.read_bytes() == original
@@ -82,7 +82,7 @@ def test_future_config_fails_closed_and_is_not_rewritten(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_future.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version 2 is newer") as caught:
+    with pytest.raises(IdentityStateError, match="format_version 2 is newer") as caught:
         load_config(vault)
     assert str(caught.value) == FUTURE_CONFIG_MSG
     assert path.read_bytes() == original
@@ -92,7 +92,7 @@ def test_string_config_version_fails_closed(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_string_version.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version is not an integer"):
+    with pytest.raises(IdentityStateError, match="format_version is not an integer"):
         load_config(vault)
     assert path.read_bytes() == original
 
@@ -101,7 +101,7 @@ def test_malformed_config_still_fails_closed(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_malformed.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="^cannot read config.json$"):
+    with pytest.raises(IdentityStateError, match="^cannot read config.json$"):
         load_config(vault)
     assert path.read_bytes() == original
 
@@ -110,7 +110,7 @@ def test_merge_config_does_not_rewrite_unversioned(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_unversioned.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version is missing"):
+    with pytest.raises(IdentityStateError, match="format_version is missing"):
         merge_config(vault, {"mail_domain": "example.com"})
     assert path.read_bytes() == original
 
@@ -119,7 +119,7 @@ def test_merge_config_does_not_wipe_future_config(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_future.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version 2 is newer"):
+    with pytest.raises(IdentityStateError, match="format_version 2 is newer"):
         merge_config(vault, {"mail_domain": "example.com"})
     assert path.read_bytes() == original
 
@@ -136,7 +136,7 @@ def test_save_config_does_not_wipe_future_config(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_future.json", "config.json")
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version 2 is newer"):
+    with pytest.raises(IdentityStateError, match="format_version 2 is newer"):
         save_config(vault, {"identity_id": "other"})
     assert path.read_bytes() == original
 
@@ -229,7 +229,7 @@ def test_unversioned_registry_fails_closed_and_is_not_rewritten(tmp_path):
     path = _plant(vault, "registry_unversioned.json", "registry.json")
     original = path.read_bytes()
     with pytest.raises(RegistryError, match="format_version is missing") as caught:
-        FilePrincipalAccess(vault, MemoryLog()).find("agent")
+        FileIdentityAccess(vault, MemoryLog()).find("agent")
     assert str(caught.value) == MISSING_REGISTRY_MSG
     assert path.read_bytes() == original
 
@@ -237,24 +237,24 @@ def test_unversioned_registry_fails_closed_and_is_not_rewritten(tmp_path):
 def test_v1_registry_is_the_current_saved_contract(tmp_path):
     vault = tmp_path / "vault"
     _plant(vault, "registry_v1.json", "registry.json")
-    principal = FilePrincipalAccess(vault, MemoryLog()).find("agent")
-    assert principal is not None
-    assert principal.id == "agent"
-    assert principal.recipient == "age1example"
-    assert principal.store_binding == "sops"
+    identity = FileIdentityAccess(vault, MemoryLog()).find("agent")
+    assert identity is not None
+    assert identity.id == "agent"
+    assert identity.recipient == "age1example"
+    assert identity.store_binding == "sops"
 
 
 def test_future_registry_fails_closed_and_is_not_rewritten(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "registry_future.json", "registry.json")
     original = path.read_bytes()
-    access = FilePrincipalAccess(vault, MemoryLog())
+    access = FileIdentityAccess(vault, MemoryLog())
     with pytest.raises(RegistryError, match="format_version 2 is newer") as caught:
         access.find("agent")
     assert str(caught.value) == FUTURE_REGISTRY_MSG
     assert path.read_bytes() == original
     with pytest.raises(RegistryError, match="format_version 2 is newer"):
-        access.enroll("agent", "age1example", "sops")
+        access.init("agent", "age1example", "sops")
     assert path.read_bytes() == original
 
 
@@ -263,7 +263,7 @@ def test_string_registry_version_fails_closed(tmp_path):
     path = _plant(vault, "registry_string_version.json", "registry.json")
     original = path.read_bytes()
     with pytest.raises(RegistryError, match="format_version is not an integer"):
-        FilePrincipalAccess(vault, MemoryLog()).find("agent")
+        FileIdentityAccess(vault, MemoryLog()).find("agent")
     assert path.read_bytes() == original
 
 
@@ -272,18 +272,16 @@ def test_malformed_registry_still_fails_closed(tmp_path):
     path = _plant(vault, "registry_malformed.json", "registry.json")
     original = path.read_bytes()
     with pytest.raises(RegistryError, match="^cannot read registry.json$"):
-        FilePrincipalAccess(vault, MemoryLog()).find("agent")
+        FileIdentityAccess(vault, MemoryLog()).find("agent")
     assert path.read_bytes() == original
 
 
-def test_enroll_on_unversioned_registry_does_not_rewrite(tmp_path):
+def test_init_on_unversioned_registry_does_not_rewrite(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "registry_unversioned.json", "registry.json")
     original = path.read_bytes()
     with pytest.raises(RegistryError, match="format_version is missing"):
-        FilePrincipalAccess(vault, MemoryLog()).enroll(
-            "other", "age1exampleother", "sops"
-        )
+        FileIdentityAccess(vault, MemoryLog()).init("other", "age1exampleother", "sops")
     assert path.read_bytes() == original
 
 
@@ -339,6 +337,6 @@ def test_config_format_version_rejects_true_float_null_zero(tmp_path, raw):
         encoding="utf-8",
     )
     original = path.read_bytes()
-    with pytest.raises(VaultStateError, match="format_version"):
+    with pytest.raises(IdentityStateError, match="format_version"):
         load_config(vault)
     assert path.read_bytes() == original

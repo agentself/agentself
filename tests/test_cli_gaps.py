@@ -23,7 +23,7 @@ from tests.support import (
     cli_env,
     compose_with_rpc,
     run_cli,
-    setup_principal,
+    setup_identity,
     value_file,
 )
 
@@ -74,8 +74,8 @@ def test_start_env_binding_persists_then_compose_without_env(tmp_path, monkeypat
         later.pop(key, None)
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))
-    gateway = compose(vault, bind=lambda: bind_local(vault))
-    view = gateway.identity()
+    client = compose(vault, bind=lambda: bind_local(vault))
+    view = client.identity()
     assert view["email_backend"] == "imap"
     ident = run_cli(["--json", "show"], later)
     assert ident.returncode == 0, ident.stderr
@@ -98,7 +98,7 @@ def test_env_overrides_config_bindings(tmp_path):
     assert data["email_backend"] == "agentmail"
 
 
-def test_maildir_describe_does_not_invent_principal_at_domain(vault):
+def test_maildir_describe_does_not_invent_identity_at_domain(vault):
     mb = MaildirMailboxAccess(vault, MemoryLog(), domain="example.com")
     desc = mb.describe("P")
     assert desc["owned_address"] is False
@@ -208,21 +208,21 @@ def test_wallet_balance_rpc_failure_has_reason(vault, monkeypatch):
             raise WalletError("rpc failed")
 
     app = build_app(vault, rpc=BoomRpc())
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
+    app.client.init("sops")
     with pytest.raises(ChannelFailure) as caught:
-        app.gateway.wallet_balance()
+        app.client.wallet_balance()
     assert caught.value.reason == "rpc"
 
 
 def test_wallet_balance_zero_usdc_is_success(vault, monkeypatch):
     rpc = MockRpc(eth_wei=0, usdc_raw=0)
     app = build_app(vault, rpc=rpc)
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
-    bal = app.gateway.wallet_balance()
+    app.client.init("sops")
+    bal = app.client.wallet_balance()
     assert bal["amount"] == "0"
     assert bal["gas_asset"] == "ETH"
     assert bal["gas_raw"] == "0"
@@ -257,29 +257,29 @@ class _FailMailbox:
         self._fail = fail
         self._need_token = need_token
 
-    def send(self, principal_id, to, subject, body, credential=None, address=None):
+    def send(self, identity_id, to, subject, body, credential=None, address=None):
         if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
+    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
         if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def list(self, principal_id, *, credential=None, address=None):
+    def list(self, identity_id, *, credential=None, address=None):
         if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
 
-    def describe(self, principal_id, *, credential=None, address=None):
+    def describe(self, identity_id, *, credential=None, address=None):
         return {
             "address": None,
             "owned_address": False,
             "needs_domain": True,
         }
 
-    def connect(self, principal_id, *, credential=None, address=None, answers=None):
+    def connect(self, identity_id, *, credential=None, address=None, answers=None):
         if self._need_token and not credential:
             raise MailboxError("missing credentials")
         raise MailboxError(self._fail)
@@ -293,52 +293,52 @@ class _FailFactory:
         return self._mailbox
 
 
-def test_email_recv_list_no_token_sets_reason(vault, monkeypatch):
+def test_email_receive_list_no_token_sets_reason(vault, monkeypatch):
     app = build_app(vault)
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
+    app.client.init("sops")
     app.manager._mailboxes = _FailFactory(_FailMailbox("recv failed", need_token=True))
     with pytest.raises(ChannelFailure) as recvd:
-        app.gateway.email_recv()
+        app.client.email_receive()
     assert recvd.value.reason == "no_token"
     assert "hold" not in str(recvd.value).lower()
     with pytest.raises(ChannelFailure) as listed:
-        app.gateway.email_list()
+        app.client.email_list()
     assert listed.value.reason == "no_token"
 
 
-def test_email_recv_list_rpc_sets_reason(vault, monkeypatch):
+def test_email_receive_list_rpc_sets_reason(vault, monkeypatch):
     app = build_app(vault)
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
-    app.gateway.seal("email.credential", "hold-value")
+    app.client.init("sops")
+    app.client.create("email.credential", "hold-value")
     app.manager._mailboxes = _FailFactory(_FailMailbox("rpc failed"))
     with pytest.raises(ChannelFailure) as recvd:
-        app.gateway.email_recv()
+        app.client.email_receive()
     assert recvd.value.reason == "rpc"
     assert "hold-value" not in str(recvd.value)
     with pytest.raises(ChannelFailure) as listed:
-        app.gateway.email_list()
+        app.client.email_list()
     assert listed.value.reason == "rpc"
     assert "hold-value" not in str(listed.value)
 
 
-def test_email_recv_other_mailbox_error_reason(vault, monkeypatch):
+def test_email_receive_other_mailbox_error_reason(vault, monkeypatch):
     app = build_app(vault)
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
-    app.gateway.seal("email.credential", "hold-value")
+    app.client.init("sops")
+    app.client.create("email.credential", "hold-value")
     app.manager._mailboxes = _FailFactory(_FailMailbox("no inbox"))
     with pytest.raises(ChannelFailure) as recvd:
-        app.gateway.email_recv()
+        app.client.email_receive()
     assert recvd.value.reason == "mailbox_error"
     assert "hold-value" not in str(recvd.value)
 
 
-def test_cli_json_email_recv_list_without_token_has_reason(tmp_path):
+def test_cli_json_email_receive_list_without_token_has_reason(tmp_path):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     start = run_cli(["init", "--email", "agentmail"], env)
@@ -357,7 +357,7 @@ def test_cli_json_email_recv_list_without_token_has_reason(tmp_path):
         assert human.stderr == "error: no_token\nnext: agentself backends email\n"
 
 
-def test_cli_json_email_recv_list_injected_rpc(tmp_path, monkeypatch, capsys):
+def test_cli_json_email_receive_list_injected_rpc(tmp_path, monkeypatch, capsys):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     start = run_cli(["init"], env)
@@ -421,7 +421,7 @@ def test_cli_wallet_send_no_eth_names_eth(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert captured.err == "refused: EOA has no ETH\n"
+    assert captured.err == "refused: need ETH for gas\n"
 
 
 def test_cli_wallet_send_no_usdc_names_usdc(tmp_path, monkeypatch, capsys):
@@ -449,7 +449,7 @@ def test_cli_wallet_send_wrong_asset_names_usdc(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
     assert "USDC" in captured.err
-    assert "EOA has no ETH" not in captured.err
+    assert "need ETH for gas" not in captured.err
 
 
 def test_cli_wallet_send_broadcasts_with_mock(tmp_path, monkeypatch, capsys):
@@ -486,22 +486,22 @@ def test_cli_wallet_send_rpc_is_error_rpc(tmp_path, monkeypatch, capsys):
 class _MissingKeyWallet:
     needs_material = False
 
-    def send(self, principal_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset):
         raise WalletError("missing key")
 
-    def address(self, principal_id):
+    def address(self, identity_id):
         raise WalletError("missing key")
 
-    def sign(self, principal_id, message):
+    def authorize(self, identity_id, message):
         raise WalletError("missing key")
 
-    def verify(self, principal_id, message, authorization):
+    def verify(self, identity_id, message, authorization):
         raise WalletError("missing key")
 
-    def balance(self, principal_id):
+    def balance(self, identity_id):
         raise WalletError("missing key")
 
-    def describe(self, principal_id):
+    def describe(self, identity_id):
         raise WalletError("missing key")
 
 
@@ -541,7 +541,7 @@ def test_cli_json_wallet_balance_includes_gas(tmp_path, monkeypatch, capsys):
     assert "e" not in str(data["gas_amount"]).lower()
 
 
-def test_cli_json_email_recv_mixed_is_ok(tmp_path, monkeypatch, capsys):
+def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
     from urllib.parse import quote
 
     from agentself.backends.email.agentmail import AgentMailMailboxAccess
@@ -636,7 +636,7 @@ def test_cli_json_email_recv_mixed_is_ok(tmp_path, monkeypatch, capsys):
     assert "hold-value" not in captured.err
 
 
-def test_cli_json_email_recv_one_id_is_ok(tmp_path, monkeypatch, capsys):
+def test_cli_json_email_receive_one_id_is_ok(tmp_path, monkeypatch, capsys):
     from urllib.parse import quote
 
     from agentself.backends.email.agentmail import AgentMailMailboxAccess
@@ -720,7 +720,7 @@ def test_cli_json_email_recv_one_id_is_ok(tmp_path, monkeypatch, capsys):
     assert "hold-value" not in captured.err
 
 
-def test_cli_wallet_authorize_and_silent_sign_alias(tmp_path, monkeypatch, capsys):
+def test_cli_wallet_authorize_rejects_sign(tmp_path, monkeypatch, capsys):
     vault = tmp_path / "vault"
     env = cli_env(vault)
     start = run_cli(["init"], env)

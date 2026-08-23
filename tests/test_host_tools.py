@@ -47,7 +47,7 @@ def _digest_map(
     return data
 
 
-def test_tools_dir_default_is_not_vault(tmp_path, monkeypatch):
+def test_tools_dir_default_is_not_identity_dir(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setenv("AGENTSELF_IDENTITY_DIR", str(vault))

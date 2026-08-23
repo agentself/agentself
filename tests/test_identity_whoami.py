@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from tests.support import build_app, cli_env, run_cli, setup_principal
+from tests.support import build_app, cli_env, run_cli, setup_identity
 
 
 def test_identity_without_domain_and_no_phone_number(app, monkeypatch):
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
-    view = app.gateway.identity()
+    app.client.init("sops")
+    view = app.client.identity()
     assert view["id"] == "P"
     assert str(view["recipient"]).startswith("age1")
     email = view["email"]
@@ -25,10 +25,10 @@ def test_identity_without_domain_and_no_phone_number(app, monkeypatch):
 
 def test_identity_maildir_with_domain_does_not_invent_address(vault, monkeypatch):
     app = build_app(vault, mail_domain="example.com")
-    app.keys["P"] = setup_principal(app.vault, "P", store="sops")
+    app.keys["P"] = setup_identity(app.vault, "P", store="sops")
     app.bind(monkeypatch, "P")
-    app.gateway.enroll("sops")
-    view = app.gateway.identity()
+    app.client.init("sops")
+    view = app.client.identity()
     email = view["email"]
     assert email["owned_address"] is False
     assert email["address"] is None

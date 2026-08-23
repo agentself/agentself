@@ -6,7 +6,7 @@ WALLET_KEY_NAME = "wallet.key"
 EMAIL_CREDENTIAL_NAME = "email.credential"
 EMAIL_ADDRESS_NAME = "email.address"
 INTERNAL_PREFIX = "internal."
-PROTECTED_HOLD_NAMES = frozenset({WALLET_KEY_NAME})
+PROTECTED_SECRET_NAMES = frozenset({WALLET_KEY_NAME})
 
 
 def require_safe_token(value: str, label: str) -> str:

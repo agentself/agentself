@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from agentself.internal.files import (
-    VaultBusy,
+    IdentityBusy,
     atomic_write_text,
     ensure_private_dir,
     exclusive,
@@ -15,7 +15,7 @@ from agentself.internal.format import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.types import Principal
+from agentself.internal.types import Identity
 
 ALLOWED_BINDINGS = frozenset({"sops", "pass"})
 
@@ -31,7 +31,7 @@ class RegistryFormatError(RegistryError):
     """Unsupported format_version. Fail closed. Do not rewrite."""
 
 
-class FilePrincipalAccess:
+class FileIdentityAccess:
     """Not CRUD."""
 
     def __init__(self, vault_root: Path, log: Log) -> None:
@@ -39,47 +39,45 @@ class FilePrincipalAccess:
         self._registry = self._root / "registry.json"
         self._log = log
 
-    def find(self, principal_id: str) -> Principal | None:
-        require_safe_token(principal_id, "principal id")
+    def find(self, identity_id: str) -> Identity | None:
+        require_safe_token(identity_id, "identity id")
         records = self._load()
-        raw = records.get(principal_id)
+        raw = records.get(identity_id)
         if raw is None:
-            self._log.record("find", principal_id, None, "miss")
+            self._log.record("find", identity_id, None, "miss")
             return None
-        self._log.record("find", principal_id, None, "ok")
-        return _principal(raw)
+        self._log.record("find", identity_id, None, "ok")
+        return _identity(raw)
 
-    def enroll(
-        self, principal_id: str, recipient: str, store_binding: str
-    ) -> Principal:
-        require_safe_token(principal_id, "principal id")
+    def init(self, identity_id: str, recipient: str, store_binding: str) -> Identity:
+        require_safe_token(identity_id, "identity id")
         if not recipient or not recipient.startswith("age1"):
-            self._log.record("enroll", principal_id, None, "refused")
+            self._log.record("init", identity_id, None, "refused")
             raise ValueError("invalid recipient")
         if store_binding not in ALLOWED_BINDINGS:
-            self._log.record("enroll", principal_id, None, "refused")
+            self._log.record("init", identity_id, None, "refused")
             raise ValueError("invalid store binding")
         try:
             with exclusive(self._root):
                 records = self._load()
-                if principal_id in records:
-                    self._log.record("enroll", principal_id, None, "exists")
-                    return _principal(records[principal_id])
-                principal = Principal(
-                    id=principal_id,
+                if identity_id in records:
+                    self._log.record("init", identity_id, None, "exists")
+                    return _identity(records[identity_id])
+                identity = Identity(
+                    id=identity_id,
                     recipient=recipient,
                     store_binding=store_binding,
                 )
-                records[principal_id] = {
-                    "id": principal.id,
-                    "recipient": principal.recipient,
-                    "store_binding": principal.store_binding,
+                records[identity_id] = {
+                    "id": identity.id,
+                    "recipient": identity.recipient,
+                    "store_binding": identity.store_binding,
                 }
                 self._save(records)
-                self._log.record("enroll", principal_id, None, "ok")
-                return principal
-        except VaultBusy as exc:
-            raise RegistryError("vault busy") from exc
+                self._log.record("init", identity_id, None, "ok")
+                return identity
+        except IdentityBusy as exc:
+            raise RegistryError("identity directory busy") from exc
 
     def _load(self) -> dict[str, dict[str, str]]:
         if not self._registry.exists():
@@ -100,13 +98,13 @@ class FilePrincipalAccess:
         for pid, raw in identities.items():
             if not isinstance(pid, str):
                 raise RegistryError("cannot read registry.json")
-            principal = _principal(raw)
-            if principal.id != pid:
+            identity = _identity(raw)
+            if identity.id != pid:
                 raise RegistryError("cannot read registry.json")
             out[pid] = {
-                "id": principal.id,
-                "recipient": principal.recipient,
-                "store_binding": principal.store_binding,
+                "id": identity.id,
+                "recipient": identity.recipient,
+                "store_binding": identity.store_binding,
             }
         return out
 
@@ -123,7 +121,7 @@ class FilePrincipalAccess:
         atomic_write_text(self._registry, payload)
 
 
-def _principal(raw: object) -> Principal:
+def _identity(raw: object) -> Identity:
     if not isinstance(raw, dict):
         raise RegistryError("cannot read registry.json")
     pid = raw.get("id")
@@ -136,14 +134,14 @@ def _principal(raw: object) -> Principal:
     ):
         raise RegistryError("cannot read registry.json")
     try:
-        require_safe_token(pid, "principal id")
+        require_safe_token(pid, "identity id")
     except ValueError:
         raise RegistryError("cannot read registry.json") from None
     if not _public_recipient(recipient):
         raise RegistryError("cannot read registry.json")
     if store_binding not in ALLOWED_BINDINGS:
         raise RegistryError("cannot read registry.json")
-    return Principal(
+    return Identity(
         id=pid,
         recipient=recipient,
         store_binding=store_binding,

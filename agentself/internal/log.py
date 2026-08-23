@@ -9,7 +9,7 @@ class Log(Protocol):
     def record(
         self,
         operation: str,
-        principal_id: str | None,
+        identity_id: str | None,
         name: str | None,
         result: str,
     ) -> None: ...
@@ -24,14 +24,14 @@ class MemoryLog:
     def record(
         self,
         operation: str,
-        principal_id: str | None,
+        identity_id: str | None,
         name: str | None,
         result: str,
     ) -> None:
         self.records.append(
             {
                 "operation": operation,
-                "principal_id": principal_id,
+                "identity_id": identity_id,
                 "name": name,
                 "result": result,
             }
@@ -47,7 +47,7 @@ class NullLog:
     def record(
         self,
         operation: str,
-        principal_id: str | None,
+        identity_id: str | None,
         name: str | None,
         result: str,
     ) -> None:
@@ -61,14 +61,14 @@ class StreamLog:
     def record(
         self,
         operation: str,
-        principal_id: str | None,
+        identity_id: str | None,
         name: str | None,
         result: str,
     ) -> None:
         line = json.dumps(
             {
                 "operation": operation,
-                "principal_id": principal_id,
+                "identity_id": identity_id,
                 "name": name,
                 "result": result,
             },

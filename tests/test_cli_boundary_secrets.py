@@ -30,13 +30,13 @@ from agentself.internal.files import (
     shred_unlink,
 )
 from agentself.internal.log import MemoryLog
-from agentself.internal.registry import FilePrincipalAccess, RegistryError
-from agentself.local import VaultStateError, ensure_age_key, resolve_age_key_file
+from agentself.internal.registry import FileIdentityAccess, RegistryError
+from agentself.local import IdentityStateError, ensure_age_key, resolve_age_key_file
 
 from tests.support import (
     build_app,
     cli_env,
-    enroll_principal,
+    init_identity,
     run_cli,
     symlink_or_skip,
     value_file,
@@ -49,10 +49,10 @@ PLAIN_CANARY = "plain-secret-CANARY-must-not-escape"
 
 
 class _LeakMailbox:
-    def send(self, principal_id, to, subject, body, credential=None, address=None):
+    def send(self, identity_id, to, subject, body, credential=None, address=None):
         raise MailboxError(f"send failed token={credential}")
 
-    def recv(self, principal_id, *, credential=None, address=None, message_id=None):
+    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
         return [
             {
                 "id": "1",
@@ -65,10 +65,10 @@ class _LeakMailbox:
             }
         ]
 
-    def list(self, principal_id, *, credential=None, address=None):
-        return self.recv(principal_id, credential=credential, address=address)
+    def list(self, identity_id, *, credential=None, address=None):
+        return self.receive(identity_id, credential=credential, address=address)
 
-    def describe(self, principal_id, *, credential=None, address=None):
+    def describe(self, identity_id, *, credential=None, address=None):
         return {
             "address": "inbox@example.com",
             "owned_address": True,
@@ -77,8 +77,8 @@ class _LeakMailbox:
             "private_key": AGE_CANARY,
         }
 
-    def connect(self, principal_id, *, credential=None, address=None):
-        return self.describe(principal_id, credential=credential, address=address)
+    def connect(self, identity_id, *, credential=None, address=None):
+        return self.describe(identity_id, credential=credential, address=address)
 
 
 class _LeakMailboxFactory:
@@ -89,13 +89,13 @@ class _LeakMailboxFactory:
 class _LeakWallet:
     needs_material = False
 
-    def address(self, principal_id):
+    def address(self, identity_id):
         return "0x" + "11" * 20
 
-    def sign(self, principal_id, message):
+    def authorize(self, identity_id, message):
         raise WalletCannotSend(f"need USDC; key={WALLET_CANARY}")
 
-    def balance(self, principal_id):
+    def balance(self, identity_id):
         return {
             "asset": "USDC",
             "amount": "0",
@@ -104,10 +104,10 @@ class _LeakWallet:
             "credential": TOKEN_CANARY,
         }
 
-    def send(self, principal_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset):
         raise WalletCannotSend(f"need USDC; key={WALLET_CANARY}")
 
-    def describe(self, principal_id):
+    def describe(self, identity_id):
         return {
             "address": "0x" + "11" * 20,
             "asset": "USDC",
@@ -263,11 +263,11 @@ def test_incomplete_registry_record_fails_closed_no_traceback(tmp_path):
     assert err["ok"] is False
 
 
-def test_principal_access_drops_extra_keys_and_rejects_secret_recipient(tmp_path):
+def test_identity_access_drops_extra_keys_and_rejects_secret_recipient(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()
     log = MemoryLog()
-    access = FilePrincipalAccess(vault, log)
+    access = FileIdentityAccess(vault, log)
     registry = vault / "registry.json"
     registry.write_text(
         json.dumps(
@@ -294,10 +294,10 @@ def test_principal_access_drops_extra_keys_and_rejects_secret_recipient(tmp_path
 
 def test_identity_and_mail_strip_backend_secrets(vault, monkeypatch):
     app = build_app(vault)
-    enroll_principal(app, monkeypatch)
-    app.gateway.seal("email.credential", TOKEN_CANARY)
+    init_identity(app, monkeypatch)
+    app.client.create("email.credential", TOKEN_CANARY)
     app.manager._mailboxes = _LeakMailboxFactory()
-    view = app.gateway.identity()
+    view = app.client.identity()
     dumped = json.dumps(view)
     assert TOKEN_CANARY not in dumped
     assert AGE_CANARY not in dumped
@@ -305,7 +305,7 @@ def test_identity_and_mail_strip_backend_secrets(vault, monkeypatch):
     assert "private_key" not in dumped
     assert view["email"]["address"] == "inbox@example.com"
 
-    messages = app.gateway.email_recv()
+    messages = app.client.email_receive()
     blob = json.dumps(messages)
     assert TOKEN_CANARY not in blob
     assert WALLET_CANARY not in blob
@@ -315,21 +315,21 @@ def test_identity_and_mail_strip_backend_secrets(vault, monkeypatch):
 
 def test_wallet_views_and_cannot_send_do_not_passthrough_key(vault, monkeypatch):
     app = build_app(vault)
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     app.manager._wallets = _LeakWalletFactory()
-    view = app.gateway.identity()
+    view = app.client.identity()
     dumped = json.dumps(view)
     assert WALLET_CANARY not in dumped
     assert TOKEN_CANARY not in dumped
     assert "private_key" not in dumped
 
-    bal = app.gateway.wallet_balance()
+    bal = app.client.wallet_balance()
     assert WALLET_CANARY not in json.dumps(bal)
     assert "private_key" not in bal
     assert bal["asset"] == "USDC"
 
     with pytest.raises(CannotSend) as caught:
-        app.gateway.wallet_send("0x" + "11" * 20, "1")
+        app.client.wallet_send("0x" + "11" * 20, "1")
     assert WALLET_CANARY not in str(caught.value)
     assert str(caught.value) == "backend cannot send"
 
@@ -383,7 +383,7 @@ def test_ensure_age_key_refuses_symlink(tmp_path, monkeypatch):
         raise AssertionError("age-keygen must not run on a symlink")
 
     monkeypatch.setattr(subprocess, "run", boom)
-    with pytest.raises(VaultStateError, match="age key file is not usable"):
+    with pytest.raises(IdentityStateError, match="age key file is not usable"):
         ensure_age_key(vault, "agent")
     assert not stolen.exists()
     assert key.is_symlink()
@@ -410,11 +410,11 @@ def test_resolve_tool_skips_current_directory(tmp_path, monkeypatch):
     assert found.resolve() != planted.resolve()
 
 
-def test_leftover_seal_tmp_is_shredded_on_list(tmp_path, monkeypatch):
+def test_leftover_secret_tmp_is_shredded_on_list(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     hold = secrets_home(vault, "P")
     hold.mkdir(parents=True)
-    leftover = hold / "seal.leftover.tmp"
+    leftover = hold / "secret.leftover.tmp"
     leftover.write_text(PLAIN_CANARY, encoding="utf-8")
     monkeypatch.setattr(
         "agentself.backends.store.sops.run_cmd",
@@ -426,7 +426,7 @@ def test_leftover_seal_tmp_is_shredded_on_list(tmp_path, monkeypatch):
 
 
 def test_shred_unlink_overwrites_plaintext_and_does_not_follow_symlink(tmp_path):
-    path = tmp_path / "seal.tmp"
+    path = tmp_path / "secret.tmp"
     path.write_text(PLAIN_CANARY, encoding="utf-8")
     shred_unlink(path)
     assert not path.exists()
@@ -440,11 +440,11 @@ def test_shred_unlink_overwrites_plaintext_and_does_not_follow_symlink(tmp_path)
     assert target.read_text(encoding="utf-8") == AGE_CANARY
 
 
-def test_seal_failed_shreds_plaintext_tmp(tmp_path, monkeypatch):
+def test_create_failed_shreds_plaintext_tmp(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    principal_id = "P"
-    key = identity_home(vault, principal_id) / "agent.agekey"
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
     key.parent.mkdir(parents=True)
     key.write_bytes(b"dummy-age-key\n")
     seen: list[Path] = []
@@ -464,20 +464,20 @@ def test_seal_failed_shreds_plaintext_tmp(tmp_path, monkeypatch):
 
     monkeypatch.setattr("agentself.backends.store.sops.run_cmd", fake_run_cmd)
     store = SopsStoreAccess(vault, MemoryLog())
-    with pytest.raises(StoreResourceError, match="^seal failed$") as caught:
-        store.seal(principal_id, "token", PLAIN_CANARY)
+    with pytest.raises(StoreResourceError, match="^create failed$") as caught:
+        store.create(identity_id, "token", PLAIN_CANARY)
     assert PLAIN_CANARY not in str(caught.value)
     assert seen
     for path in seen:
         assert not path.exists()
 
 
-def test_reveal_non_utf8_fails_closed_without_secret(tmp_path, monkeypatch):
+def test_get_non_utf8_fails_closed_without_secret(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()
-    principal_id = "P"
-    key = identity_home(vault, principal_id) / "agent.agekey"
-    hold = secrets_home(vault, principal_id)
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
+    hold = secrets_home(vault, identity_id)
     hold.mkdir(parents=True)
     key.write_bytes(b"dummy-age-key\n")
     entry = hold / "token.sops"
@@ -493,8 +493,8 @@ def test_reveal_non_utf8_fails_closed_without_secret(tmp_path, monkeypatch):
 
     monkeypatch.setattr("agentself.backends.store.sops.run_cmd", fake_run_cmd)
     store = SopsStoreAccess(vault, MemoryLog())
-    with pytest.raises(StoreResourceError, match="^reveal failed$") as caught:
-        store.reveal(principal_id, "token")
+    with pytest.raises(StoreResourceError, match="^get failed$") as caught:
+        store.get(identity_id, "token")
     assert PLAIN_CANARY not in str(caught.value)
     assert caught.value.__cause__ is None
 
@@ -562,16 +562,16 @@ def test_wallet_send_log_hash_is_capped():
 
 def test_store_failure_message_does_not_include_value(vault, monkeypatch):
     app = build_app(vault)
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
 
-    def boom(self, principal_id, name, value):
-        raise StoreResourceError(f"seal failed {value}")
+    def boom(self, identity_id, name, value):
+        raise StoreResourceError(f"create failed {value}")
 
     monkeypatch.setattr(
-        "agentself.backends.store.sops.SopsStoreAccess.seal",
+        "agentself.backends.store.sops.SopsStoreAccess.create",
         boom,
     )
     with pytest.raises(StoreFailure) as caught:
-        app.gateway.seal("notes", PLAIN_CANARY)
+        app.client.create("notes", PLAIN_CANARY)
     assert PLAIN_CANARY not in str(caught.value)
     assert str(caught.value) == "store error"

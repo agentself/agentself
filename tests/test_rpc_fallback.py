@@ -24,7 +24,7 @@ from tests.support import (
     MockRpc,
     build_app,
     cli_env,
-    enroll_principal,
+    init_identity,
     run_cli,
 )
 
@@ -64,8 +64,8 @@ def test_gateway_403_then_publicnode(vault, monkeypatch):
     opener.fail(MAINNET, 403)
     opener.ok(PUBLICNODE)
     app = build_app(vault, rpc_opener=opener)
-    enroll_principal(app, monkeypatch)
-    bal = app.gateway.wallet_balance()
+    init_identity(app, monkeypatch)
+    bal = app.client.wallet_balance()
     assert bal["asset"] == "USDC"
     assert bal["amount"] == "2"
     assert bal["gas_asset"] == "ETH"
@@ -88,9 +88,9 @@ def test_all_urls_fail_gateway_reason_rpc(vault, monkeypatch):
     opener = FakeRpcOpener()
     opener.fail_all(429)
     app = build_app(vault, rpc_opener=opener)
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     with pytest.raises(ChannelFailure) as caught:
-        app.gateway.wallet_balance()
+        app.client.wallet_balance()
     assert caught.value.reason == "rpc"
 
 
@@ -205,9 +205,9 @@ def test_gateway_override_reason_rpc(vault, monkeypatch):
     opener.fail(OVERRIDE, 403)
     opener.ok(PUBLICNODE)
     app = build_app(vault, rpc_opener=opener, eth_rpc_url=OVERRIDE)
-    enroll_principal(app, monkeypatch)
+    init_identity(app, monkeypatch)
     with pytest.raises(ChannelFailure) as caught:
-        app.gateway.wallet_balance()
+        app.client.wallet_balance()
     assert caught.value.reason == "rpc"
     assert opener.urls == [OVERRIDE]
     assert MAINNET not in opener.urls
