@@ -4,6 +4,8 @@ import builtins
 import hashlib
 import json
 import os
+import re
+import secrets
 import urllib.error
 from collections.abc import Callable
 from pathlib import Path
@@ -16,6 +18,7 @@ from agentself.backends.email.contract import (
     require_addr,
     require_secret,
     secret_or_env,
+    setup_failed,
     setup_needed,
 )
 from agentself.backends.email.http import request as http_request
@@ -30,13 +33,15 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import option_named
+from agentself.internal.setup import PRIVATE_SETUP_OUTPUTS, option_named
 
 _MESSAGE_COUNT_CAP = 100
 _RETRIEVAL_BYTE_BUDGET = 4_194_304
 
 _API = "https://api.agentmail.to"
 _INBOXES_URL = _API + "/v0/inboxes"
+_SIGN_UP_URL = _API + "/v0/agent/sign-up"
+_VERIFY_URL = _API + "/v0/agent/verify"
 _FORBID_LIVE = "AGENTSELF_FORBID_LIVE_AGENTMAIL"
 _LIVE_HOST = "api.agentmail.to"
 
@@ -222,19 +227,70 @@ class AgentMailMailboxAccess(MailboxAccess):
         state: object | None = None,
     ) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
-        del state
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
         token = secret_or_env(
             credential or extra.get("credential"), SOURCE_AGENTMAIL_CREDENTIAL
         )
-        if not token:
-            self._log.record("mailbox_connect", identity_id, None, "error")
+        if token:
+            return self._connect_existing(identity_id, require_secret(token), wanted)
+
+        continuation = state if isinstance(state, dict) else {}
+        phase = str(continuation.get("phase") or "").strip()
+        if phase == "verify":
+            return self._continue_verification(identity_id, extra, continuation)
+
+        method = (extra.get("setup_method") or "").strip()
+        if phase == "existing_credential" and not method:
+            method = "existing_credential"
+        elif phase == "create_account" and not method:
+            method = "create_account"
+        if not method:
+            return setup_needed(
+                option_named(OPTIONS, "setup_method"),
+                human_action_required=True,
+                continuation={"phase": "setup_method"},
+            )
+        if method == "existing_credential":
             return setup_needed(
                 option_named(OPTIONS, "credential"),
                 human_action_required=True,
+                continuation={"phase": "existing_credential"},
             )
-        credential = require_secret(token)
+        if method != "create_account":
+            return setup_failed("invalid setup method")
+
+        human_email = (extra.get("human_email") or "").strip()
+        if not human_email:
+            return setup_needed(
+                option_named(OPTIONS, "human_email"),
+                human_action_required=True,
+                continuation={"phase": "create_account"},
+            )
+        if not _valid_email(human_email):
+            return setup_failed("invalid human email")
+        username = _signup_username(identity_id)
+        signed_up, unavailable = self._sign_up(human_email, username)
+        if unavailable:
+            return setup_failed("signup unavailable; connect with existing_credential")
+        api_key = require_secret(str(signed_up.get("api_key") or ""))
+        inbox_id = str(signed_up.get("inbox_id") or "").strip()
+        if not inbox_id:
+            raise MailboxError("no inbox")
+        return setup_needed(
+            option_named(OPTIONS, "otp"),
+            human_action_required=True,
+            message="Enter the six-digit code sent to the approved human email.",
+            continuation={
+                "phase": "verify",
+                "api_key": api_key,
+                "inbox_id": inbox_id,
+            },
+        )
+
+    def _connect_existing(
+        self, identity_id: str, credential: str, wanted: str
+    ) -> dict[str, object]:
         live = _live_inboxes(self._listed_inboxes(credential))
         if wanted:
             target = wanted.lower()
@@ -277,6 +333,95 @@ class AgentMailMailboxAccess(MailboxAccess):
         self._write_inbox_id(identity_id, inbox_id)
         self._log.record("mailbox_connect", identity_id, None, "ok")
         return mailbox_view(email, owned_address=True)
+
+    def _continue_verification(
+        self,
+        identity_id: str,
+        answers: dict[str, str],
+        continuation: dict[object, object],
+    ) -> dict[str, object]:
+        api_key = require_secret(str(continuation.get("api_key") or ""))
+        inbox_id = str(continuation.get("inbox_id") or "").strip()
+        if not inbox_id:
+            raise MailboxError("no inbox")
+        otp = (answers.get("otp") or "").strip()
+        retry = {
+            "phase": "verify",
+            "api_key": api_key,
+            "inbox_id": inbox_id,
+        }
+        if not (len(otp) == 6 and otp.isascii() and otp.isdigit()):
+            return setup_needed(
+                option_named(OPTIONS, "otp"),
+                human_action_required=True,
+                message="Enter the six-digit verification code.",
+                continuation=retry,
+            )
+        if not self._verify(api_key, otp):
+            return setup_needed(
+                option_named(OPTIONS, "otp"),
+                human_action_required=True,
+                message="Verification failed. Check the code and try again.",
+                continuation=retry,
+            )
+        inbox = next(
+            (
+                item
+                for item in _live_inboxes(self._listed_inboxes(api_key))
+                if str(item.get("inbox_id") or "") == inbox_id
+            ),
+            None,
+        )
+        if inbox is None:
+            raise MailboxError("no inbox")
+        email = str(inbox.get("email") or "").strip()
+        if not email:
+            raise MailboxError("no inbox")
+        self._write_inbox_id(identity_id, inbox_id)
+        self._log.record("mailbox_connect", identity_id, None, "ok")
+        result = mailbox_view(email, owned_address=True)
+        result[PRIVATE_SETUP_OUTPUTS] = {"credential": api_key}
+        return result
+
+    def _sign_up(
+        self, human_email: str, username: str
+    ) -> tuple[dict[str, object], bool]:
+        payload = json.dumps(
+            {
+                "human_email": human_email,
+                "username": username,
+                "source": "agentself",
+            }
+        ).encode("utf-8")
+        status, body = self._post_json(_SIGN_UP_URL, payload)
+        if status in (400, 401, 403, 404, 409, 422):
+            return {}, True
+        if not 200 <= status < 300:
+            raise MailboxError("rpc failed")
+        return _object(body, "signup failed"), False
+
+    def _verify(self, api_key: str, otp: str) -> bool:
+        payload = json.dumps({"otp_code": otp}).encode("utf-8")
+        status, body = self._post_json(_VERIFY_URL, payload, api_key)
+        if status in (400, 422):
+            return False
+        if status in (401, 403):
+            raise MailboxError("invalid credentials")
+        if not 200 <= status < 300:
+            raise MailboxError("rpc failed")
+        data = _object(body, "verify failed")
+        return data.get("verified") is True
+
+    def _post_json(
+        self, url: str, payload: bytes, token: str | None = None
+    ) -> tuple[int, bytes]:
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = "Bearer " + require_secret(token)
+        try:
+            return (self._poster or _default_poster)(url, headers, payload)
+        except (OSError, urllib.error.URLError, TimeoutError) as exc:
+            raise MailboxError("rpc failed") from exc
 
     def _listed_inboxes(self, token: str) -> builtins.list[object]:
         data = _object(self._request(_INBOXES_URL, token), "no inbox")
@@ -415,6 +560,24 @@ def _safe_filename(message_id: str) -> str:
     except ValueError:
         digest = hashlib.sha256(message_id.encode("utf-8")).hexdigest()
         return "m" + digest[:32]
+
+
+def _valid_email(value: str) -> bool:
+    return (
+        "@" in value
+        and not value.startswith("@")
+        and not value.endswith("@")
+        and "\r" not in value
+        and "\n" not in value
+        and all(ord(ch) >= 32 for ch in value)
+    )
+
+
+def _signup_username(identity_id: str) -> str:
+    stem = re.sub(r"[^a-z0-9]+", "-", identity_id.lower()).strip("-") or "agent"
+    entropy = secrets.token_bytes(16)
+    suffix = hashlib.sha256(identity_id.encode("utf-8") + entropy).hexdigest()[:16]
+    return f"{stem[:40]}-{suffix}"
 
 
 def _json(body: bytes) -> object | None:

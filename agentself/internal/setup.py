@@ -22,6 +22,7 @@ SETUP_STATUSES = frozenset(
 
 OPTION_ADDRESS = "address"
 OPTION_CREDENTIAL = "credential"
+PRIVATE_SETUP_OUTPUTS = "private_outputs"
 OPTION_TYPE_STRING = "string"
 OPTION_TYPE_SECRET = "secret"
 OPTION_TYPE_CHOICE = "choice"
@@ -46,6 +47,26 @@ class SetupOption(TypedDict):
     persist: NotRequired[bool]
     persist_as: NotRequired[str]
     runtime_only: NotRequired[bool]
+
+
+class SetupResult(TypedDict, total=False):
+    """Backend setup result.
+
+    ``private_outputs`` is an in-process handoff to the custody manager. The
+    manager may persist declared setup options from it, but public setup views
+    must never include it.
+    """
+
+    status: str
+    address: str | None
+    owned_address: bool
+    needs_domain: bool
+    option: dict[str, object]
+    continuation: object
+    private_outputs: Mapping[str, str]
+    reason: str
+    message: str
+    human_action_required: bool
 
 
 ENV_EMAIL_ADDRESS = "AGENTSELF_EMAIL_ADDRESS"

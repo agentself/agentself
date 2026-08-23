@@ -24,6 +24,21 @@
         "asset": "",
         "options": [
           {
+            "name": "setup_method",
+            "type": "choice",
+            "required": true,
+            "sensitive": false,
+            "default": null,
+            "choices": [
+              "existing_credential",
+              "create_account"
+            ],
+            "source": "",
+            "help": "Choose existing_credential to connect an approved API key, or create_account only when the user explicitly authorizes creating a new external AgentMail account. Account creation sends a verification code to the approved human email.",
+            "prompt": "Choose how to connect AgentMail",
+            "action": null
+          },
+          {
             "name": "credential",
             "type": "secret",
             "required": true,
@@ -31,13 +46,37 @@
             "default": null,
             "choices": [],
             "source": "AGENTSELF_AGENTMAIL_API_KEY",
-            "help": "AgentMail API key (starts with am_). Use an existing approved key. If none is available, open API Keys at https://console.agentmail.to and wait for the operator to create and copy one. Creating a new AgentMail organization through signup is an external account action and requires explicit user authorization. When that exact action is authorized for a first-time, unclaimed signup, follow https://docs.agentmail.to/api-reference/agent/sign-up once with the approved email identity and capture the key from its HTTP response. If signup reports that the identity is claimed, forbidden, or unavailable, stop and ask the user; do not probe aliases or disposable email providers. The OTP or confirmation email does not contain the key. A key is shown once and cannot be retrieved; if lost, create another in the console. Stop credential discovery as soon as one key validates. For transient use, provide AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email invocation. To store it in this identity, write the key to a file and continue with --result-file. Cannot obtain a key: agentself init --force --email imap, or stop.",
+            "help": "Existing AgentMail API key (starts with am_). Open API Keys at https://console.agentmail.to if an operator needs to create one. For transient use, provide AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email invocation. To store it in this identity, write the key to a file and continue with --result-file.",
             "prompt": "Paste the credential",
             "action": {
               "kind": "open_url",
               "label": "Open AgentMail API Keys",
               "url": "https://console.agentmail.to"
             }
+          },
+          {
+            "name": "human_email",
+            "type": "string",
+            "required": true,
+            "sensitive": false,
+            "default": null,
+            "choices": [],
+            "source": "",
+            "help": "Human email approved for this authorized account creation. A six-digit verification code will be sent there. If signup says the identity is claimed, forbidden, or unavailable, stop and ask the user to use existing_credential; aliases are not tried.",
+            "prompt": "Approved human email for verification",
+            "action": null
+          },
+          {
+            "name": "otp",
+            "type": "secret",
+            "required": true,
+            "sensitive": true,
+            "default": null,
+            "choices": [],
+            "source": "",
+            "help": "Six-digit verification code sent to the approved human email.",
+            "prompt": "Enter the six-digit verification code",
+            "action": null
           },
           {
             "name": "address",

@@ -177,9 +177,17 @@ def format_status(view: dict[str, object], vault: Path) -> str:
     recipient = str(view.get("recipient") or "")
     owned = email.get("owned_address") and email.get("address")
     email_line = str(email["address"]) if owned else "not configured"
-    nxt = "" if owned else "next: agentself email connect\n"
     wallet_backend = str(view.get("wallet_backend") or "")
     email_backend = str(view.get("email_backend") or "")
+    if owned:
+        nxt = ""
+    elif email_backend == "agentmail":
+        nxt = (
+            "next: agentself email connect\n"
+            "routes: existing_credential, or create_account with explicit authorization\n"
+        )
+    else:
+        nxt = "next: agentself email connect\n"
     return redact_secrets(
         f"identity_dir: {vault}\n"
         f"wallet: {addr}\n"

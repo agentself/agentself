@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+from collections.abc import Mapping
 from typing import NoReturn, Protocol
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
@@ -58,6 +59,7 @@ from agentself.internal.setup import (
     ENV_EMAIL_CREDENTIAL,
     OPTION_ADDRESS,
     OPTION_CREDENTIAL,
+    PRIVATE_SETUP_OUTPUTS,
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
     SETUP_FAILED,
@@ -336,6 +338,9 @@ class CustodyManager:
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
             self._persist_setup_answers(identity, mailbox, incoming)
+            generated = desc.get(PRIVATE_SETUP_OUTPUTS)
+            if isinstance(generated, Mapping):
+                self._persist_setup_answers(identity, mailbox, generated)
             view = _email_view(desc)
             self._persist_email_success(identity, view, sources.get(OPTION_ADDRESS))
             self._delete_email_continuation(identity)
@@ -600,15 +605,16 @@ class CustodyManager:
         self,
         identity: Identity,
         mailbox: MailboxAccess,
-        answers: dict[str, str],
+        answers: Mapping[str, object],
     ) -> None:
         descriptors = {
             str(item.get("name") or ""): item
             for item in mailbox.setup_options()
             if str(item.get("name") or "").strip()
         }
-        for name, value in answers.items():
-            text = (value or "").strip()
+        for raw_name, value in answers.items():
+            name = str(raw_name or "").strip()
+            text = value.strip() if isinstance(value, str) else ""
             option = descriptors.get(name)
             if (
                 not text

@@ -24,6 +24,8 @@ OURS = "money-maker-bot@agentmail.to"
 TAKEN = "money-maker@agentmail.to"
 API = "https://api.agentmail.to"
 INBOXES = API + "/v0/inboxes"
+SIGN_UP = API + "/v0/agent/sign-up"
+VERIFY = API + "/v0/agent/verify"
 
 
 class Http:
@@ -32,6 +34,7 @@ class Http:
         self.gets: list[tuple[str, dict[str, str]]] = []
         self._gets: dict[str, tuple[int, bytes] | BaseException] = {}
         self._post: tuple[int, bytes] | BaseException = (200, b"{}")
+        self._posts: dict[str, list[tuple[int, bytes] | BaseException]] = {}
 
     def on_get(self, url: str, status: int, payload: object) -> None:
         body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
@@ -53,11 +56,16 @@ class Http:
     def post_raises(self, exc: BaseException) -> None:
         self._post = exc
 
+    def on_post(self, url: str, status: int, payload: object) -> None:
+        body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        self._posts.setdefault(url, []).append((status, body))
+
     def poster(
         self, url: str, headers: dict[str, str], payload: bytes
     ) -> tuple[int, bytes]:
         self.posts.append((url, dict(headers), payload))
-        result = self._post
+        queued = self._posts.get(url, [])
+        result = queued.pop(0) if queued else self._post
         if isinstance(result, BaseException):
             raise result
         return result
@@ -549,16 +557,44 @@ def test_connect_no_token_zero_http(vault):
     mb = _box(vault, log, http)
     desc = mb.connect(PRINCIPAL)
     assert desc["status"] == "input_required"
-    assert desc["option"]["name"] == "credential"
+    assert desc["option"]["name"] == "setup_method"
+    assert desc["option"]["choices"] == ["existing_credential", "create_account"]
     selected = mb.connect(PRINCIPAL, address=OURS)
     assert selected["status"] == "input_required"
-    assert selected["option"]["name"] == "credential"
+    assert selected["option"]["name"] == "setup_method"
     assert not selected.get("owned_address")
     assert http.gets == []
     assert http.posts == []
     _secret_absent(log)
     assert TAKEN not in str(desc)
     assert f"{PRINCIPAL}@agentmail.to" not in str(desc)
+
+
+def test_connect_existing_credential_is_an_explicit_setup_branch(vault):
+    log = MemoryLog()
+    http = Http()
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": "inb_existing", "email": OURS}]},
+    )
+    mb = _box(vault, log, http)
+    credential_step = mb.connect(
+        PRINCIPAL,
+        answers={"setup_method": "existing_credential"},
+        state={"phase": "setup_method"},
+    )
+    assert credential_step["option"]["name"] == "credential"
+    assert http.gets == []
+    connected = mb.connect(
+        PRINCIPAL,
+        credential=CANARY,
+        state=credential_step["continuation"],
+    )
+    assert connected["owned_address"] is True
+    assert connected["address"] == OURS
+    assert len(http.gets) == 1
+    assert http.posts == []
 
 
 def test_connect_selected_unknown_address_fails_without_local_state(vault):
@@ -764,3 +800,99 @@ def test_connect_create_rpc_failed(vault):
     _secret_absent(log, err.value)
     _no_local_outbox(vault)
     _no_local_outbox(vault)
+
+
+def test_authorized_signup_verifies_otp_and_returns_private_key(vault):
+    log = MemoryLog()
+    http = Http()
+    inbox_id = "inb_signed_up"
+    http.on_post(
+        SIGN_UP,
+        200,
+        {
+            "organization_id": "org_new",
+            "inbox_id": inbox_id,
+            "api_key": CANARY,
+        },
+    )
+    http.on_post(VERIFY, 400, {"error": "invalid otp"})
+    http.on_post(VERIFY, 200, {"verified": True})
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": ISSUED}]},
+    )
+    mb = _box(vault, log, http)
+
+    email_step = mb.connect(
+        PRINCIPAL,
+        answers={"setup_method": "create_account"},
+        state={"phase": "setup_method"},
+    )
+    assert email_step["option"]["name"] == "human_email"
+    otp_step = mb.connect(
+        PRINCIPAL,
+        answers={"human_email": "owner@example.com"},
+        state=email_step["continuation"],
+    )
+    assert otp_step["option"]["name"] == "otp"
+    assert otp_step["option"]["sensitive"] is True
+    assert len(http.posts) == 1
+    signup_url, signup_headers, signup_body = http.posts[0]
+    assert signup_url == SIGN_UP
+    assert "Authorization" not in signup_headers
+    signup = json.loads(signup_body)
+    assert signup["human_email"] == "owner@example.com"
+    assert signup["source"] == "agentself"
+    assert signup["username"].startswith(PRINCIPAL + "-")
+    assert len(signup["username"].rsplit("-", 1)[1]) == 16
+
+    malformed = mb.connect(
+        PRINCIPAL,
+        answers={"otp": "12345"},
+        state=otp_step["continuation"],
+    )
+    assert malformed["option"]["name"] == "otp"
+    assert len(http.posts) == 1
+    rejected = mb.connect(
+        PRINCIPAL,
+        answers={"otp": "123456"},
+        state=malformed["continuation"],
+    )
+    assert rejected["option"]["name"] == "otp"
+    assert "try again" in rejected["message"].lower()
+    connected = mb.connect(
+        PRINCIPAL,
+        answers={"otp": "654321"},
+        state=rejected["continuation"],
+    )
+    assert connected["address"] == ISSUED
+    assert connected["owned_address"] is True
+    assert connected["private_outputs"] == {"credential": CANARY}
+    verify_posts = [item for item in http.posts if item[0] == VERIFY]
+    assert [json.loads(item[2])["otp_code"] for item in verify_posts] == [
+        "123456",
+        "654321",
+    ]
+    assert all(item[1]["Authorization"] == "Bearer " + CANARY for item in verify_posts)
+    _secret_absent(log)
+
+
+@pytest.mark.parametrize("status", [400, 403, 409, 422])
+def test_signup_unavailable_stops_without_alias_probe(vault, status):
+    log = MemoryLog()
+    http = Http()
+    http.on_post(SIGN_UP, status, {"error": "unavailable"})
+    mb = _box(vault, log, http)
+    result = mb.connect(
+        PRINCIPAL,
+        answers={"human_email": "owner@example.com"},
+        state={"phase": "create_account"},
+    )
+    assert result["status"] == "failed"
+    assert result["reason"] == "signup unavailable; connect with existing_credential"
+    assert len(http.posts) == 1
+    body = json.loads(http.posts[0][2])
+    assert set(body) == {"human_email", "username", "source"}
+    assert http.gets == []
+    assert VERIFY not in [item[0] for item in http.posts]

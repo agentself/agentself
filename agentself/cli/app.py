@@ -788,6 +788,11 @@ def _init(vault: Path, args) -> int:
             f"recipient: {recipient}\n"
             f"email_backend: {email_backend}\n"
         )
+        if email_backend == "agentmail":
+            text += (
+                "email_setup: agentself email connect; choose existing_credential, "
+                "or create_account with explicit authorization\n"
+            )
         sys.stdout.write(redact_secrets(text))
         return 0
     except UnboundCaller:

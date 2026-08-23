@@ -34,6 +34,10 @@ agentself email connect
 `init` creates one identity directory. Run `agentself show` to inspect it;
 repeat `init` is safe, and `--force` is required to change an existing
 identity or its backends. Email setup is optional and does not block init.
+For AgentMail, `email connect` offers two explicit routes: connect an existing
+API key, or create an account when that external action has been authorized.
+The account route asks for the approved human email, sends its six-digit OTP,
+and keeps the generated API key encrypted while setup continues.
 
 ## Commands
 
@@ -107,6 +111,9 @@ Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient
 email configuration when appropriate. Runtime environment credentials are
 not copied into the identity; complete `email connect` with its secure result
 file when the credential should be encrypted into the identity.
+If authorized AgentMail signup reports that the requested identity is claimed,
+forbidden, or unavailable, stop and use the existing-key route. The CLI does
+not probe alternate aliases.
 
 ## Automation and agents
 
