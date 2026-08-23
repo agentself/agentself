@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from agentself.backends.store.contract import StoreResourceError
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.bind import public_recipient
 from agentself.compose import compose
 from agentself.host import CHANNELS, Bind, Channel
+from agentself.internal.custody.errors import StoreFailure
 from agentself.internal.files import identity_home
 from agentself.internal.types import BoundCaller
 
@@ -39,6 +43,28 @@ def _patch_memory_catalog(monkeypatch) -> None:
             note=store.note,
         ),
     )
+
+
+def test_init_retries_prepare_after_failed_prepare(vault, monkeypatch):
+    app = build_app(vault)
+    app.keys["P"] = setup_identity(app.vault, "P")
+    app.bind(monkeypatch, "P")
+    n = {"c": 0}
+    real = MemoryStoreAccess.prepare
+
+    def flaky(self, identity_id):
+        n["c"] += 1
+        if n["c"] == 1:
+            raise StoreResourceError("gpg keygen failed: socket name is too long")
+        return real(self, identity_id)
+
+    monkeypatch.setattr(MemoryStoreAccess, "prepare", flaky)
+    with pytest.raises(StoreFailure, match="socket name is too long"):
+        app.client.init("memory")
+    assert n["c"] == 1
+    view = app.client.init("memory")
+    assert view["id"] == "P"
+    assert n["c"] == 2
 
 
 def test_memory_store_create_get_via_client(vault, monkeypatch):

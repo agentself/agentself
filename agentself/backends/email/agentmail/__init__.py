@@ -9,10 +9,9 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
-from agentself.backends.email.agentmail.options import (
+from agentself.backends.email.agentmail_options import (
     OPTIONS,
     SOURCE_AGENTMAIL_CREDENTIAL,
-    option_named,
 )
 from agentself.backends.email.contract import (
     MailboxAccess,
@@ -33,6 +32,7 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.setup import option_named
 
 _API = "https://api.agentmail.to"
 _INBOXES_URL = _API + "/v0/inboxes"
@@ -207,7 +207,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not token:
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
-                option_named("credential"),
+                option_named(OPTIONS, "credential"),
                 human_action_required=True,
             )
         credential = require_secret(token)
@@ -229,6 +229,7 @@ class AgentMailMailboxAccess(MailboxAccess):
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(
                 option_named(
+                    OPTIONS,
                     "address",
                     required=True,
                     prompt="Choose the inbox for this identity",

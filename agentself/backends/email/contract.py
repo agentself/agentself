@@ -138,12 +138,13 @@ class MailboxAccess(ABC):
         answers: dict[str, str] | None = None,
         state: object | None = None,
     ) -> dict[str, object]:
-        """Generic setup. Default is describe(); no create.
+        """Return a mailbox view when connected, or setup_needed otherwise.
 
-        Return a mailbox view when connected. Return setup_needed() when the
-        backend needs input, a human action, or a later continuation. Public
-        callers never see provider workflow names. `state` is an opaque
-        backend continuation from a previous incomplete setup.
+        Incomplete setup may return opaque `continuation` for the next call.
+        `state` is that continuation from a previous incomplete setup.
+        Resumable failures must return setup_needed, not raise MailboxError.
+        Transient rpc MailboxError is also resumable; other MailboxError is
+        terminal.
         """
 
         del answers, state

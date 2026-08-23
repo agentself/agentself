@@ -42,6 +42,7 @@ class FileIdentityAccess:
         self._root = Path(vault_root)
         self._registry = self._root / "registry.json"
         self._log = log
+        # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed = (
             frozenset(allowed_bindings)
             if allowed_bindings is not None

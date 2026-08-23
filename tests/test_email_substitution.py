@@ -222,9 +222,16 @@ def test_oauthish_backend_stays_put_without_continuation_blob() -> None:
 def test_forged_or_unknown_setup_state_fails(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
-    env = cli_env(tmp_path / "vault")
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
+    SyntheticEmailAccess.received_states = []
+    SyntheticEmailAccess.issued = []
     _patch_mailbox(monkeypatch)
+    code, first, first_blob = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert first["status"] == "action_required"
+    assert _continuation_file(vault).is_file()
     forged = encode_state({"n": "not-a-stored-nonce"})
     code, unknown, blob = _connect(
         monkeypatch,
@@ -236,5 +243,16 @@ def test_forged_or_unknown_setup_state_fails(
     assert unknown["ok"] is False
     assert unknown["status"] == "failed"
     assert unknown["reason"] == "unknown setup"
-    assert CONTINUATION_CANARY not in blob
-    assert CREDENTIAL_CANARY not in blob
+    assert CONTINUATION_CANARY not in blob + first_blob
+    assert CREDENTIAL_CANARY not in blob + first_blob
+    assert _continuation_file(vault).is_file()
+    code, pending, pending_blob = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"]],
+    )
+    assert code == 3, pending
+    assert pending["status"] == "pending"
+    assert CONTINUATION_CANARY not in pending_blob
+    assert _continuation_file(vault).is_file()

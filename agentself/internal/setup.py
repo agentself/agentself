@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NotRequired, TypedDict
 
 SETUP_CONNECTED = "connected"
@@ -84,7 +85,7 @@ def setup_option(
     persist_as: str = "",
     runtime_only: bool = False,
 ) -> dict[str, Any]:
-    """Backend discovery / setup option. Catalog JSON uses public fields only."""
+    """Backend discovery / setup option."""
 
     return {
         "name": name,
@@ -105,6 +106,19 @@ def setup_option(
 
 def public_setup_option(option: dict[str, object]) -> dict[str, object]:
     return {key: option[key] for key in _PUBLIC_OPTION_KEYS if key in option}
+
+
+def option_named(
+    options: Sequence[Mapping[str, Any]],
+    name: str,
+    **updates: object,
+) -> dict[str, Any]:
+    for item in options:
+        if item.get("name") == name:
+            option = dict(item)
+            option.update(updates)
+            return option
+    raise KeyError(name)
 
 
 def credential_option(

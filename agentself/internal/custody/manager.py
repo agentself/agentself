@@ -133,6 +133,7 @@ class CustodyManager:
         self._wallets = wallets
         self._email_backend = email_backend or "agentmail"
         self._wallet_backend = wallet_backend or "base"
+        # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed_store_bindings = (
             frozenset(allowed_store_bindings)
             if allowed_store_bindings is not None
@@ -153,17 +154,17 @@ class CustodyManager:
             if found.recipient != caller.recipient:
                 self._log.record("init", identity_id, None, "refused")
                 raise Refused("refused")
-            self._log.record("init", identity_id, None, "ok")
-            return found
-        if store_binding not in self._allowed_store_bindings:
-            self._log.record("init", identity_id, None, "refused")
-            raise Refused("refused")
-        try:
-            identity = self._identities.init(
-                identity_id, caller.recipient, store_binding
-            )
-        except RegistryError as exc:
-            self._fail_store("init", identity_id, "registry.json", exc)
+            identity = found
+        else:
+            if store_binding not in self._allowed_store_bindings:
+                self._log.record("init", identity_id, None, "refused")
+                raise Refused("refused")
+            try:
+                identity = self._identities.init(
+                    identity_id, caller.recipient, store_binding
+                )
+            except RegistryError as exc:
+                self._fail_store("init", identity_id, "registry.json", exc)
         try:
             store = self._stores.for_binding(identity.store_binding)
         except (StoreError, FileNotFoundError) as exc:
@@ -331,9 +332,11 @@ class CustodyManager:
                 state=blob,
             )
         except MailboxError as exc:
-            self._delete_email_continuation(identity)
+            mapped = _channel_from_mailbox(exc)
+            if mapped.reason != "rpc":
+                self._delete_email_continuation(identity)
             self._log.record("email_connect", identity.id, None, "error")
-            raise _channel_from_mailbox(exc) from None
+            raise mapped from None
         status = setup_status_of(desc)
         if status == SETUP_CONNECTED:
             self._persist_setup_answers(identity, mailbox, incoming)
@@ -644,6 +647,14 @@ class CustodyManager:
                 continue
             persist_as = str(option.get("persist_as") or "").strip()
             key = persist_as or f"email.{self._email_backend}.{name}"
+            if is_reserved_secret_name(key) or key in PROTECTED_SECRET_NAMES:
+                self._log.record("email_connect", identity.id, key, "refused")
+                raise Refused("refused")
+            try:
+                require_safe_token(key, "name")
+            except ValueError:
+                self._log.record("email_connect", identity.id, key, "refused")
+                raise Refused("refused") from None
             self._store_put(identity, key, text, "email_connect")
 
     def _persist_email_success(

@@ -31,6 +31,10 @@ Do not encode as architecture:
 from __future__ import annotations
 
 import ast
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import get_type_hints
 
@@ -120,6 +124,61 @@ def test_client_cli_and_main_do_not_import_backends_or_vendor_sdks():
         names = _imported_modules(path)
         assert not _mentions(names, "agentself.backends"), path
         assert not _mentions(names, *VENDOR_ROOTS), path
+
+
+def test_host_imports_option_modules_not_bind_packages():
+    names = _imported_modules(PKG / "host.py")
+    for name in names:
+        if not _is_under(name, "agentself.backends"):
+            continue
+        assert not _is_channel_factory(name), name
+        assert not _is_under(name, "agentself.backends.email.http"), name
+        rest = name[len("agentself.backends.") :].split(".")
+        assert len(rest) >= 2, name
+        bind = rest[1]
+        assert bind.endswith("_options"), name
+        package = ".".join(("agentself.backends", rest[0], bind[: -len("_options")]))
+        assert name != package and not _is_under(name, package), name
+
+
+def test_host_and_help_do_not_load_email_adapters():
+    script = (
+        "import json, sys\n"
+        "banned = [\n"
+        "    'imaplib', 'smtplib',\n"
+        "    'agentself.backends.email.http',\n"
+        "    'agentself.backends.email.agentmail',\n"
+        "    'agentself.backends.email.imap',\n"
+        "]\n"
+        "def loaded():\n"
+        "    return sorted(name for name in banned if name in sys.modules)\n"
+        "import agentself.host\n"
+        "assert loaded() == [], loaded()\n"
+        "assert 'agentself.backends.email.agentmail_options' in sys.modules\n"
+        "assert 'agentself.backends.email.imap_options' in sys.modules\n"
+        "from agentself.cli.app import main\n"
+        "try:\n"
+        "    code = main(['--help'])\n"
+        "except SystemExit as exc:\n"
+        "    code = exc.code\n"
+        "assert code in (0, None), code\n"
+        "assert loaded() == [], loaded()\n"
+        "print(json.dumps({'ok': True}))\n"
+    )
+    merged = os.environ.copy()
+    src = str(PROJECT_ROOT)
+    pythonpath = merged.get("PYTHONPATH", "")
+    merged["PYTHONPATH"] = src + os.pathsep + pythonpath if pythonpath else src
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=str(PROJECT_ROOT),
+        env=merged,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout.splitlines()[-1]) == {"ok": True}
 
 
 def test_backends_do_not_import_each_other_client_or_manager():

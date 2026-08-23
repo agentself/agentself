@@ -20,14 +20,11 @@ from agentself.backends.email.contract import (
     secret_or_env,
     setup_needed,
 )
-from agentself.backends.email.imap.options import (
-    OPTIONS,
-    SOURCE_IMAP_CREDENTIAL,
-    option_named,
-)
+from agentself.backends.email.imap_options import OPTIONS, SOURCE_IMAP_CREDENTIAL
 from agentself.internal.files import IdentityBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
+from agentself.internal.setup import option_named
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
@@ -231,10 +228,10 @@ class ImapMailboxAccess(MailboxAccess):
         )
         if not wanted:
             self._log.record("mailbox_connect", identity_id, None, "error")
-            return setup_needed(option_named("address"))
+            return setup_needed(option_named(OPTIONS, "address"))
         if not token:
             self._log.record("mailbox_connect", identity_id, None, "error")
-            return setup_needed(option_named("credential"))
+            return setup_needed(option_named(OPTIONS, "credential"))
         token = require_secret(token)
         inbox = self._inbox(wanted)
         box = self._imap_login(inbox, token)

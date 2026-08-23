@@ -248,13 +248,37 @@ def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
 
     vault = tmp_path / "vault"
     env = cli_env(vault)
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(
-        "agentself.cli.app.ensure_age_key",
-        lambda *a, **k: (_ for _ in ()).throw(
-            RuntimeError("gpg keygen failed: socket name is too long")
-        ),
+    host_bin = plant_host_binaries(
+        tmp_path / "host-bin", "age-keygen", "age", "gpg", "pass", "sops"
     )
+    suffix = ".exe" if os.name == "nt" else ""
+    for name in ("gpg", "pass"):
+        if shutil.which(name, path=str(host_bin)) is None:
+            dummy = host_bin / f"{name}{suffix}"
+            dummy.write_bytes(b"")
+            if os.name != "nt":
+                dummy.chmod(0o755)
+    env["PATH"] = str(host_bin) + os.pathsep + env.get("PATH", "")
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(passstore, "_have_tool", lambda name: True)
+    generates = {"n": 0}
+
+    def fake_run(argv, *, env=None, timeout=30, failed=""):
+        if "--generate-key" in argv:
+            generates["n"] += 1
+            return subprocess.CompletedProcess(
+                argv,
+                2,
+                b"",
+                b"gpg: generating identity GPG key\n"
+                b"gpg: AGE-SECRET-KEY-LEAKME\n"
+                b"gpg-agent[1]: socket name is too long\n",
+            )
+        if "--list-secret-keys" in argv:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    monkeypatch.setattr(passstore, "_run_host", fake_run)
     code = main(["init", "--store", "pass"])
     captured = capsys.readouterr()
     assert code == 1
@@ -263,6 +287,9 @@ def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
     assert captured.err.startswith(
         "error: gpg keygen failed: socket name is too long\n"
     )
+    assert "AGE-SECRET-KEY-LEAKME" not in captured.err
+    assert generates["n"] >= 1
+    first = generates["n"]
     js = main(["--json", "init", "--store", "pass"])
     blob = capsys.readouterr()
     assert js == 1
@@ -271,3 +298,26 @@ def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
     assert data["ok"] is False
     assert data["error"] == "error"
     assert "socket name is too long" in data["reason"]
+    assert generates["n"] > first
+
+
+def test_email_connect_missing_gpg_points_to_diagnose(tmp_path, monkeypatch, capsys):
+    from agentself.cli.app import main
+
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["init"], env).returncode == 0
+    apply_cli_env(monkeypatch, env)
+
+    def boom(self, identity_id):
+        raise StoreResourceError("gpg not on PATH")
+
+    monkeypatch.setattr("agentself.backends.store.sops.SopsStoreAccess.list", boom)
+    code = main(["--json", "email", "connect"])
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert code == 1
+    assert data["ok"] is False
+    assert data["reason"] == "gpg not on PATH"
+    assert data["next"] == "agentself diagnose"
+    assert "install --tools" not in json.dumps(data) + captured.err

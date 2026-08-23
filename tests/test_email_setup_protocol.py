@@ -17,7 +17,13 @@ from agentself.backends.email.contract import (
 )
 from agentself.cli.app import main
 from agentself.internal.custody.manager import _channel_from_mailbox
-from agentself.internal.names import EMAIL_ADDRESS_NAME, EMAIL_CREDENTIAL_NAME
+from agentself.internal.files import secrets_home
+from agentself.internal.names import (
+    EMAIL_ADDRESS_NAME,
+    EMAIL_CONTINUATION_NAME,
+    EMAIL_CREDENTIAL_NAME,
+    WALLET_KEY_NAME,
+)
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_PENDING,
@@ -34,8 +40,9 @@ CREDENTIAL = "app-password-do-not-leak"
 class ScriptedMailbox(MailboxAccess):
     """Test double. A new backend needs this contract, not parser or Client changes."""
 
-    def __init__(self, connect_fn) -> None:
+    def __init__(self, connect_fn, options=None) -> None:
         self._connect = connect_fn
+        self._options = options
         self.calls: list[tuple[str, str | None, str | None]] = []
 
     def send(self, identity_id, to, subject, body, credential=None, address=None):
@@ -63,6 +70,8 @@ class ScriptedMailbox(MailboxAccess):
         return mailbox_view()
 
     def setup_options(self):
+        if self._options is not None:
+            return self._options
         return (
             credential_option(persist=True, persist_as=EMAIL_CREDENTIAL_NAME),
             address_option(persist=True, persist_as=EMAIL_ADDRESS_NAME),
@@ -86,6 +95,10 @@ def _patch_mailbox(monkeypatch, mailbox: ScriptedMailbox) -> None:
         "agentself.compose.MailboxAccessFactory.for_binding",
         lambda self, binding: mailbox,
     )
+
+
+def _continuation_file(vault: Path, identity_id: str = "agent") -> Path:
+    return secrets_home(vault, identity_id) / f"{EMAIL_CONTINUATION_NAME}.sops"
 
 
 def _connect(
@@ -588,13 +601,21 @@ def test_json_continue_control_chars_are_not_rpc(
 
 
 def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
-    env = cli_env(tmp_path / "vault")
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
 
-    def connect(_token, _address, _answers):
-        return setup_needed(credential_option())
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(credential_option(), continuation={"phase": "wait"})
+        return mailbox_view(ADDRESS, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert _continuation_file(vault).is_file()
     cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
     code, unknown = _connect(
         monkeypatch,
@@ -611,6 +632,21 @@ def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 1
     assert unknown["ok"] is False
     assert unknown["status"] == "failed"
+    assert _continuation_file(vault).is_file()
+    code, done = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [
+            "--continue",
+            "--state",
+            first["state"],
+            "--result-file",
+            cred,
+        ],
+    )
+    assert code == 0, done
+    assert done["status"] == "connected"
 
 
 def test_env_connects_without_copying_into_identity_dir(
@@ -744,3 +780,130 @@ def test_imap_alias_env_covers_send_receive_list(tmp_path: Path, monkeypatch, ca
     assert CREDENTIAL not in captured.out + captured.err
     assert smtp.logins
     assert imap.logins
+
+
+@pytest.mark.parametrize(
+    "persist_as",
+    [WALLET_KEY_NAME, EMAIL_CONTINUATION_NAME, "not a token"],
+)
+def test_persist_as_refuses_reserved_protected_and_invalid(
+    tmp_path: Path, monkeypatch, capsys, persist_as: str
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["--json", "init"], env).returncode == 0
+    got = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
+    assert got.returncode == 0, got.stdout + got.stderr
+    wallet = json.loads(got.stdout)["value"]
+    option = credential_option(persist=True, persist_as=persist_as)
+
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(option, continuation={"phase": "wait"})
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect, options=(option,)))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    code, refused = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [
+            "--continue",
+            "--state",
+            first["state"],
+            "--result-file",
+            cred,
+        ],
+    )
+    assert code == 2
+    assert refused["ok"] is False
+    assert refused["error"] == "refused"
+    after_proc = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
+    assert after_proc.returncode == 0, after_proc.stdout + after_proc.stderr
+    after = json.loads(after_proc.stdout)["value"]
+    assert after == wallet
+    assert CREDENTIAL not in after
+
+
+def test_rpc_mailbox_error_keeps_continuation(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["--json", "init"], env).returncode == 0
+    n = {"i": 0}
+
+    def connect(token, address, answers):
+        del address
+        n["i"] += 1
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if n["i"] == 1:
+            return setup_needed(credential_option(), continuation={"phase": "wait"})
+        if n["i"] == 2:
+            raise MailboxError("rpc failed")
+        if not secret:
+            return setup_needed(credential_option(), continuation={"phase": "wait"})
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert _continuation_file(vault).is_file()
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    extra = [
+        "--continue",
+        "--state",
+        first["state"],
+        "--result-file",
+        cred,
+    ]
+    code, failed = _connect(monkeypatch, capsys, env, extra)
+    assert code == 1
+    assert failed["ok"] is False
+    assert failed["reason"] == "rpc"
+    assert _continuation_file(vault).is_file()
+    code, done = _connect(monkeypatch, capsys, env, extra)
+    assert code == 0, done
+    assert done["status"] == "connected"
+    assert not _continuation_file(vault).is_file()
+
+
+def test_terminal_mailbox_error_deletes_continuation(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["--json", "init"], env).returncode == 0
+    n = {"i": 0}
+
+    def connect(_token, _address, _answers):
+        n["i"] += 1
+        if n["i"] == 1:
+            return setup_needed(credential_option(), continuation={"phase": "wait"})
+        raise MailboxError("invalid credentials")
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert _continuation_file(vault).is_file()
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    code, failed = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [
+            "--continue",
+            "--state",
+            first["state"],
+            "--result-file",
+            cred,
+        ],
+    )
+    assert code == 1
+    assert failed["reason"] == "invalid credentials"
+    assert not _continuation_file(vault).is_file()

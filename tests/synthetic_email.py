@@ -15,6 +15,7 @@ from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_PENDING,
     credential_option,
+    option_named,
     setup_option,
 )
 
@@ -184,10 +185,7 @@ class SyntheticEmailAccess(MailboxAccess):
 
 
 def _named(name: str) -> dict[str, object]:
-    for item in OPTIONS:
-        if item.get("name") == name:
-            return dict(item)
-    raise KeyError(name)
+    return option_named(OPTIONS, name)
 
 
 def _continuation(phase: str, nonce: str | None = None) -> dict[str, object]:

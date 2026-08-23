@@ -256,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             nxt="agentself backends email",
         )
     except HostToolMissing as exc:
-        return _fail_missing_tool(args, exc)
+        return _fail_missing_tool(args, exc, vault)
     except ChannelFailure as exc:
         reason = exc.reason
         return _fail(
@@ -532,13 +532,25 @@ def _tools_next(missing: list[str], store_name: str | None = None) -> str:
     return _DIAGNOSE_NEXT
 
 
-def _fail_missing_tool(args, exc: HostToolMissing) -> int:
+def _fail_missing_tool(args, exc: HostToolMissing, vault: Path | None = None) -> int:
     missing = [
         part.strip()
         for part in str(exc.tool).replace(" and ", ",").split(",")
         if part.strip()
     ]
-    store_name = getattr(args, "store", None) or CHANNELS["store"].default
+    store_name = getattr(args, "store", None) or None
+    if not store_name and vault is not None:
+        try:
+            cfg = load_config(vault)
+            if config_path(vault).is_file():
+                identity_id = (cfg.get("identity_id") or "").strip()
+                recorded = _registry_store_binding(vault, identity_id)
+                if recorded in CHANNELS["store"].names:
+                    store_name = recorded
+        except IdentityStateError:
+            pass
+    if not store_name:
+        store_name = CHANNELS["store"].default
     return _fail(
         args,
         1,
@@ -824,7 +836,7 @@ def _init(vault: Path, args) -> int:
     except ValueError:
         return _fail(args, 2, "refused\n", "refused")
     except HostToolMissing as exc:
-        return _fail_missing_tool(args, exc)
+        return _fail_missing_tool(args, exc, vault)
     except StoreFailure as exc:
         return _store_fail(args, exc)
     except FileNotFoundError:
@@ -935,14 +947,9 @@ def _email_connect(vault: Path, args) -> int:
     except ChannelFailure as exc:
         return _email_connect_channel_fail(args, exc)
     except HostToolMissing as exc:
-        return _fail(
-            args,
-            1,
-            f"error: {exc}\n",
-            "error",
-            str(exc),
-            nxt=_INSTALL_TOOLS_NEXT,
-        )
+        return _fail_missing_tool(args, exc, vault)
+    except Refused:
+        return _fail(args, 2, "refused\n", "refused")
     except StoreFailure as exc:
         return _store_fail(args, exc)
     except Exception:
@@ -1053,14 +1060,9 @@ def _email_connect_result(vault: Path, args, result: dict[str, object]) -> int:
             except StoreFailure as exc:
                 return _store_fail(args, exc)
             except HostToolMissing as exc:
-                return _fail(
-                    args,
-                    1,
-                    f"error: {exc}\n",
-                    "error",
-                    str(exc),
-                    nxt=_INSTALL_TOOLS_NEXT,
-                )
+                return _fail_missing_tool(args, exc, vault)
+            except Refused:
+                return _fail(args, 2, "refused\n", "refused")
             except Exception:
                 return _fail(args, 1, "error\n", "error")
             return _email_connect_result(vault, args, nxt)

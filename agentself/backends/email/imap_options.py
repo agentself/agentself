@@ -51,12 +51,3 @@ OPTIONS = (
         help=HELP_IMAP_SMTP_HOST,
     ),
 )
-
-
-def option_named(name: str, **updates: object) -> dict[str, object]:
-    for item in OPTIONS:
-        if item.get("name") == name:
-            option = dict(item)
-            option.update(updates)
-            return option
-    raise KeyError(name)
