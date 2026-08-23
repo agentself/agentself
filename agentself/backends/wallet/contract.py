@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 
 class WalletError(Exception):
@@ -13,8 +14,18 @@ class CannotAuthorize(WalletError):
 
 
 class CannotSend(WalletError):
-    def __init__(self, message: str = "backend cannot send") -> None:
+    def __init__(
+        self, message: str = "backend cannot send", reason: str = "cannot_send"
+    ) -> None:
+        self.reason = reason
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class WalletMaterial:
+    """Declared material. name is the store key. create() is adapter-owned."""
+
+    name: str
 
 
 class WalletAccess(ABC):
@@ -31,7 +42,8 @@ class WalletAccess(ABC):
         """Amount and asset as strings. Extra keys are allowed."""
 
     @abstractmethod
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> None: ...
+    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+        """Send and return the asset actually used. Empty asset is the backend default."""
 
     @abstractmethod
     def describe(self, identity_id: str) -> dict[str, object]: ...
@@ -41,3 +53,18 @@ class WalletAccess(ABC):
         self, identity_id: str, message: str, authorization: str
     ) -> dict[str, object]:
         """Confirm an authorization against this identity. Never names a vendor."""
+
+    def required_material(self) -> WalletMaterial | None:
+        """None means no store material (remote / watch-only)."""
+
+        return None
+
+    def create_material(self) -> str:
+        """Produce a new material value. Only called if required and missing."""
+
+        raise WalletError("backend cannot create material")
+
+    def bind_material(self, value: str) -> None:
+        """Receive store material. Default no-op."""
+
+        return None

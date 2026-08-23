@@ -55,7 +55,11 @@ class EmailSendNotReady(ChannelFailure):
 
 
 class NoGas(CustodyError):
-    """USDC send needs ETH for gas. Fail closed when the wallet has no ETH."""
+    """Cannot pay the network fee. Fail closed when the wallet has no gas."""
+
+    def __init__(self, message: str = "need gas", reason: str = "no_gas") -> None:
+        self.reason = reason
+        super().__init__(message)
 
 
 class CannotAuthorize(CustodyError):
@@ -64,5 +68,8 @@ class CannotAuthorize(CustodyError):
 
 
 class CannotSend(CustodyError):
-    def __init__(self, message: str = "backend cannot send") -> None:
+    def __init__(
+        self, message: str = "backend cannot send", reason: str = "cannot_send"
+    ) -> None:
+        self.reason = reason
         super().__init__(message)

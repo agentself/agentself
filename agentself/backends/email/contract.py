@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 
 from agentself.internal.setup import SETUP_FAILED, SETUP_INPUT_REQUIRED
@@ -7,6 +8,13 @@ from agentself.internal.setup import SETUP_FAILED, SETUP_INPUT_REQUIRED
 
 class MailboxError(Exception):
     """Mailbox Resource failure. Must never include a secret or credential value."""
+
+
+def secret_or_env(value: str | None, env_name: str) -> str:
+    token = (value or "").strip()
+    if token:
+        return token
+    return os.environ.get(env_name, "").strip()
 
 
 def require_addr(to: str) -> None:

@@ -96,7 +96,9 @@ def _no_local_outbox(vault: Path) -> None:
         assert not path.exists() or not any(path.rglob("*"))
 
 
-def test_no_token_zero_http(vault):
+def test_no_token_zero_http(vault, monkeypatch):
+    monkeypatch.delenv("AGENTSELF_AGENTMAIL_API_KEY", raising=False)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
     log = MemoryLog()
     http = Http()
     mb = _box(vault, log, http, domain="agentmail.to")
@@ -633,6 +635,36 @@ def test_connect_unauthorized_is_invalid_credentials(vault):
     assert CANARY not in str(err.value)
     _secret_absent(log, err.value)
     _no_local_outbox(vault)
+
+
+def test_alias_env_fills_empty_credential(vault, monkeypatch):
+    monkeypatch.setenv("AGENTSELF_AGENTMAIL_API_KEY", CANARY)
+    log = MemoryLog()
+    http = Http()
+    inbox_id = "inb_alias"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        200,
+        {"messages": []},
+    )
+    mb = _box(vault, log, http)
+    view = mb.describe(PRINCIPAL, address=OURS)
+    assert view["owned_address"] is True
+    assert view["address"] == OURS
+    mb.send(PRINCIPAL, "a@example.com", "s", "b", address=OURS)
+    listed = mb.list(PRINCIPAL, address=OURS)
+    assert listed == []
+    connected = mb.connect(PRINCIPAL, address=OURS)
+    assert connected["owned_address"] is True
+    assert connected["address"] == OURS
+    assert http.gets
+    assert http.posts
+    _secret_absent(log)
 
 
 def test_connect_create_rpc_failed(vault):

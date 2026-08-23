@@ -268,7 +268,7 @@ def _parser() -> argparse.ArgumentParser:
             "initialized. Does not fetch host tools. Missing age/sops: "
             "next: agentself install --tools. "
             "Email without a token or address is not ready, not a failure. "
-            "Does not send mail or USDC. Prefer --json."
+            "Does not send mail or assets. Prefer --json."
         ),
         epilog="Examples:\n  agentself diagnose\n  agentself --json diagnose",
     )
@@ -523,7 +523,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Show, address, balance, authorize, and send",
         description=(
             "Show, address, balance, authorize, and send. "
-            "address is the destination id. send defaults to USDC."
+            "address is the destination id. send uses the backend default asset."
         ),
         epilog=(
             "Examples:\n"
@@ -628,15 +628,16 @@ def _parser() -> argparse.ArgumentParser:
         wallet_sub,
         "send",
         json_parent,
-        help="Send an amount of an asset. Asset defaults to USDC",
+        help="Send an amount of an asset",
         description=(
-            "Send an amount of an asset. Asset defaults to USDC. "
+            "Send an amount of an asset. "
+            "ASSET is optional; the backend supplies its default. "
             "Refuses without gas or when the backend cannot send."
         ),
         epilog=(
             "Examples:\n"
             "  agentself wallet send TO AMOUNT\n"
-            "  agentself wallet send TO AMOUNT USDC\n"
+            "  agentself wallet send TO AMOUNT ASSET\n"
             "  agentself --json wallet send TO AMOUNT"
         ),
     )
@@ -647,7 +648,7 @@ def _parser() -> argparse.ArgumentParser:
         nargs="?",
         default="",
         metavar="ASSET",
-        help="Asset to send (default USDC)",
+        help="Asset to send. Omit to use the backend default",
     )
 
     backup_p = _cmd(

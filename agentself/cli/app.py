@@ -22,7 +22,6 @@ from agentself.host import (
     ENV_LOG,
     UnknownBind,
     backends_payload,
-    bind_of,
     format_backends,
     unknown_bind,
 )
@@ -73,7 +72,11 @@ from agentself.local import (
     resolve_setting,
 )
 
-CLI_SCHEMA_VERSION = 1
+CLI_SCHEMA_VERSION = 2
+_SEND_HUMAN = {
+    "no_gas": "need gas",
+    "insufficient_asset": "need funds",
+}
 _INSTALL_TOOLS_NEXT = "agentself install --tools"
 _DIAGNOSE_NEXT = "agentself diagnose"
 _SKILL_TARGETS = {
@@ -234,20 +237,12 @@ def main(argv: list[str] | None = None) -> int:
             "backend cannot authorize",
         )
     except CannotSend as exc:
-        msg = str(exc)
-        if msg in ("need USDC", "need USD"):
-            return _fail(args, 2, f"refused: {msg}\n", "refused", msg)
-        return _fail(
-            args,
-            2,
-            "refused: backend cannot send\n",
-            "refused",
-            "backend cannot send",
-        )
-    except NoGas:
-        return _fail(
-            args, 2, "refused: need ETH for gas\n", "refused", "need ETH for gas"
-        )
+        reason = getattr(exc, "reason", None) or "cannot_send"
+        human = _SEND_HUMAN.get(reason, "backend cannot send")
+        return _fail(args, 2, f"refused: {human}\n", "refused", reason)
+    except NoGas as exc:
+        reason = getattr(exc, "reason", None) or "no_gas"
+        return _fail(args, 2, "refused: need gas\n", "refused", reason)
     except MissingSecret:
         return _fail(args, 3, "missing\n", "missing", nxt="agentself secret list")
     except EmailSendNotReady as exc:
@@ -662,26 +657,19 @@ def _diagnose_identity(
         return problems, ready
     ready["store"] = True
     ready["email"] = "email.address" in names
-    wallet_name = (cfg.get("wallet_backend") or "").strip()
-    wallet = bind_of("wallet", wallet_name)
-    if wallet is None or (wallet.live and wallet.custody == "eoa-key"):
-        if "wallet.key" not in names:
-            problems.append(("wallet.key is missing", "agentself init"))
-            return problems, ready
-        try:
-            client.get("wallet.key")
-        except StoreFailure as exc:
-            problems.append((_store_reason(exc), "agentself secret get wallet.key"))
-            return problems, ready
-        except MissingSecret:
-            problems.append(("wallet.key is missing", "agentself init"))
-            return problems, ready
-        except Exception:
-            problems.append(("identity is not usable", "agentself init"))
-            return problems, ready
-        ready["wallet"] = True
-    else:
-        ready["wallet"] = True
+    try:
+        status = client.wallet_material_status()
+    except StoreFailure as exc:
+        problems.append((_store_reason(exc), "agentself secret list"))
+        return problems, ready
+    except Exception:
+        problems.append(("identity is not usable", "agentself init"))
+        return problems, ready
+    if not status.get("ready"):
+        missing = str(status.get("missing") or "wallet material")
+        problems.append((f"{missing} is missing", "agentself init"))
+        return problems, ready
+    ready["wallet"] = True
     return problems, ready
 
 
@@ -791,7 +779,6 @@ def _init(vault: Path, args) -> int:
                     "id": identity_id,
                     "recipient": recipient,
                     "address": addr,
-                    "usdc": addr,
                     "wallet_backend": wallet_backend,
                     "email_backend": email_backend,
                 },
@@ -1430,11 +1417,21 @@ def _wallet(client, args) -> int:
                 nxt="agentself wallet verify --help",
             )
         checked = client.wallet_verify(message, authorization)
+        scheme = str(checked.get("scheme") or "").strip()
+        if not scheme:
+            return _fail(
+                args,
+                1,
+                "error: missing scheme\n",
+                "error",
+                "missing scheme",
+                nxt="agentself backends wallet",
+            )
         valid = bool(checked.get("valid"))
         payload = {
             "valid": valid,
             "address": checked.get("address"),
-            "scheme": checked.get("scheme") or "eip191",
+            "scheme": scheme,
         }
         if _as_json(args):
             if valid:
@@ -1648,7 +1645,6 @@ def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
         "id": view.get("id"),
         "recipient": view.get("recipient"),
         "address": addr,
-        "usdc": addr,
         "wallet_backend": view.get("wallet_backend"),
         "email_backend": view.get("email_backend"),
         "identity_dir": str(vault),

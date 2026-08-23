@@ -21,11 +21,6 @@ from agentself.backends.wallet.contract import (
     WalletAccess,
     WalletError,
 )
-from agentself.host import (
-    ENV_EMAIL_ADDRESS,
-    ENV_EMAIL_CREDENTIAL,
-    bind_of,
-)
 from agentself.internal.custody.errors import (
     CannotAuthorize,
     CannotSend,
@@ -39,13 +34,11 @@ from agentself.internal.custody.errors import (
     StoreFailure,
     UnknownIdentity,
 )
-from agentself.internal.eoa import generate_secp256k1
 from agentself.internal.log import Log
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
     EMAIL_CREDENTIAL_NAME,
     PROTECTED_SECRET_NAMES,
-    WALLET_KEY_NAME,
     is_reserved_secret_name,
     require_safe_token,
 )
@@ -54,6 +47,8 @@ from agentself.internal.registry import (
     RegistryFormatError,
 )
 from agentself.internal.setup import (
+    ENV_EMAIL_ADDRESS,
+    ENV_EMAIL_CREDENTIAL,
     OPTION_ADDRESS,
     OPTION_CREDENTIAL,
     SETUP_ACTION_REQUIRED,
@@ -487,25 +482,41 @@ class CustodyManager:
         caller: BoundCaller,
         to: str,
         amount: str,
-        asset: str = "USDC",
-    ) -> None:
+        asset: str = "",
+    ) -> str:
         identity = self._require_identity(caller, "wallet_send", None)
         wallet = self._ready_wallet(identity, "wallet_send")
         try:
-            wallet.send(identity.id, to, amount, asset)
+            used = (wallet.send(identity.id, to, amount, asset) or "").strip()
         except WalletCannotSend as exc:
-            msg = str(exc)
-            if msg == "need ETH for gas":
-                self._log.record("wallet_send", identity.id, None, "no_eth")
-                raise NoGas("need ETH for gas") from None
+            reason = getattr(exc, "reason", None) or "cannot_send"
+            if reason == "no_gas":
+                self._log.record("wallet_send", identity.id, None, "no_gas")
+                raise NoGas() from None
             self._log.record("wallet_send", identity.id, None, "cannot_send")
-            if msg in ("need USDC", "need USD"):
-                raise CannotSend(msg) from None
-            raise CannotSend() from None
+            raise CannotSend(_send_message(reason), reason=reason) from None
         except WalletError as exc:
             self._log.record("wallet_send", identity.id, None, "error")
             raise _channel_from_wallet(exc) from None
+        if not used:
+            self._log.record("wallet_send", identity.id, None, "cannot_send")
+            raise CannotSend(reason="cannot_send")
         self._log.record("wallet_send", identity.id, None, "ok")
+        return used
+
+    def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]:
+        identity = self._require_identity(caller, "wallet_material", None)
+        wallet = self._wallet_for(identity, "wallet_material")
+        need = wallet.required_material()
+        if need is None:
+            self._log.record("wallet_material", identity.id, None, "ok")
+            return {"ready": True, "missing": None}
+        held = self._optional_secret_value(identity, need.name, "wallet_material")
+        if held:
+            self._log.record("wallet_material", identity.id, None, "ok")
+            return {"ready": True, "missing": None}
+        self._log.record("wallet_material", identity.id, None, "missing")
+        return {"ready": False, "missing": need.name}
 
     def identity(self, caller: BoundCaller) -> dict[str, object]:
         identity = self._require_identity(caller, "identity", None)
@@ -538,15 +549,12 @@ class CustodyManager:
         answers: dict[str, str],
         operation: str = "email_connect",
     ) -> tuple[str | None, str | None, dict[str, str]]:
-        catalog = bind_of("email", self._email_backend)
-        options = list(catalog.options) if catalog is not None else []
         address, address_src = self._resolve_email_field(
             identity,
             OPTION_ADDRESS,
             ENV_EMAIL_ADDRESS,
             EMAIL_ADDRESS_NAME,
             answers,
-            options,
             operation,
         )
         credential, cred_src = self._resolve_email_field(
@@ -555,7 +563,6 @@ class CustodyManager:
             ENV_EMAIL_CREDENTIAL,
             EMAIL_CREDENTIAL_NAME,
             answers,
-            options,
             operation,
         )
         sources = {}
@@ -572,7 +579,6 @@ class CustodyManager:
         env_generic: str,
         vault_name: str,
         answers: dict[str, str],
-        options: builtins.list[dict[str, object]],
         operation: str,
     ) -> tuple[str | None, str | None]:
         env_val = os.environ.get(env_generic, "").strip()
@@ -581,15 +587,6 @@ class CustodyManager:
         held = self._optional_secret_value(identity, vault_name, operation)
         if held:
             return held, "vault"
-        alias = ""
-        for item in options:
-            if item.get("name") == option_name:
-                alias = str(item.get("source") or "").strip()
-                break
-        if alias and alias != env_generic:
-            alias_val = os.environ.get(alias, "").strip()
-            if alias_val:
-                return alias_val, "alias"
         setup_val = (answers.get(option_name) or "").strip()
         if setup_val:
             return setup_val, "setup"
@@ -696,14 +693,28 @@ class CustodyManager:
 
     def _ready_wallet(self, identity: Identity, operation: str) -> WalletAccess:
         wallet = self._wallet_for(identity, operation)
-        if not getattr(wallet, "needs_material", False):
+        need = wallet.required_material()
+        if need is None:
             return wallet
-        key = self._wallet_key(identity, operation)
-        binder = getattr(wallet, "bind_key", None)
-        if binder is None:
-            self._log.record(operation, identity.id, None, "error")
-            raise ChannelFailure("channel error")
-        binder(key)
+        value = self._optional_secret_value(identity, need.name, operation)
+        if not value:
+            try:
+                created = wallet.create_material()
+            except WalletError as exc:
+                self._log.record(operation, identity.id, None, "error")
+                raise _channel_from_wallet(exc) from None
+            store = self._store_for(identity, operation, need.name)
+            try:
+                store.create(identity.id, need.name, created)
+            except SecretExists:
+                try:
+                    created = store.get(identity.id, need.name)
+                except (StoreError, FileNotFoundError) as exc:
+                    self._fail_store(operation, identity.id, need.name, exc)
+            except (StoreError, FileNotFoundError) as exc:
+                self._fail_store(operation, identity.id, need.name, exc)
+            value = created
+        wallet.bind_material(value)
         return wallet
 
     def _optional_secret_value(
@@ -722,31 +733,6 @@ class CustodyManager:
             return None
         except (StoreError, FileNotFoundError) as exc:
             self._fail_store(operation, identity.id, name, exc)
-
-    def _wallet_key(self, identity: Identity, operation: str) -> str:
-        store = self._store_for(identity, operation, WALLET_KEY_NAME)
-        try:
-            names = store.list(identity.id)
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store(operation, identity.id, WALLET_KEY_NAME, exc)
-        if WALLET_KEY_NAME in names:
-            try:
-                return store.get(identity.id, WALLET_KEY_NAME)
-            except SecretMissing:
-                pass
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store(operation, identity.id, WALLET_KEY_NAME, exc)
-        key = generate_secp256k1()
-        try:
-            store.create(identity.id, WALLET_KEY_NAME, key)
-        except SecretExists:
-            try:
-                return store.get(identity.id, WALLET_KEY_NAME)
-            except (StoreError, FileNotFoundError) as exc:
-                self._fail_store(operation, identity.id, WALLET_KEY_NAME, exc)
-        except (StoreError, FileNotFoundError) as exc:
-            self._fail_store(operation, identity.id, WALLET_KEY_NAME, exc)
-        return key
 
     def _fail_store(
         self,
@@ -803,15 +789,22 @@ def _mailbox_rpc_failure(low: str, cause: BaseException | None) -> bool:
 def _channel_from_wallet(exc: BaseException) -> ChannelFailure:
     msg = str(exc)
     low = msg.lower()
-    if msg in {"rpc failed", "no RPC configured"} or "rpc" in low or "eth_call" in low:
+    tagged = getattr(exc, "reason", None)
+    if tagged == "rpc" or msg in {"rpc failed", "no RPC configured"}:
         reason = "rpc"
     elif "missing key" in low:
         reason = "no_key"
-    elif "cannot send" in low:
+    elif tagged == "cannot_send" or "cannot send" in low:
         reason = "cannot_send"
     else:
         reason = "error"
     return ChannelFailure("channel error", reason=reason)
+
+
+def _send_message(reason: str) -> str:
+    if reason == "insufficient_asset":
+        return "need funds"
+    return "backend cannot send"
 
 
 def _host_tool_from(exc: BaseException) -> str | None:

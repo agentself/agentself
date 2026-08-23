@@ -168,7 +168,7 @@ def test_json_version_and_machine_alias(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
     assert version["version"] == __version__
-    assert version["cli"] == 1
+    assert version["cli"] == 2
     assert version["package"]
     assert version["executable"]
     machine = run_cli(["--machine", "--version"], env)
@@ -194,7 +194,7 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
     assert started["id"] == "agent"
     assert str(started["recipient"]).startswith("age1")
     assert str(started["address"]).startswith("0x")
-    assert started["usdc"] == started["address"]
+    assert "usdc" not in started
     assert started["wallet_backend"] == "base"
     assert started["email_backend"] == "agentmail"
 

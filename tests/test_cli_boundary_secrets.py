@@ -87,7 +87,8 @@ class _LeakMailboxFactory:
 
 
 class _LeakWallet:
-    needs_material = False
+    def required_material(self):
+        return None
 
     def address(self, identity_id):
         return "0x" + "11" * 20

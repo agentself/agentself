@@ -1,12 +1,38 @@
-"""Closed call graph: Client does not import backends; backends do not import each other or the manager.
+"""Architectural fitness functions for the closed ports-and-adapters layout.
 
-IDesign stays as rules, not folder names. Folders follow rclone: one directory per shipped backend.
+Intended call graph:
+
+    CLI → Client → CustodyManager → channel contracts / factories → backends
+
+compose.py is the composition root. It is the only module that may import
+factories and construct concrete backends.
+
+These tests encode dependency direction and substitution, not file size or
+folder counts. Adding a backend for an existing channel should not require
+CLI commands, Client methods, manager methods, or unrelated backends.
+
+Keep:
+
+* CLI, Client, and __main__ do not import backends or vendor SDKs.
+* Backends do not import each other, the Client, the CLI, or the manager.
+* The manager imports channel contracts, not implementations or factories.
+* Factories return the channel contract.
+* Contracts and factories do not import vendor types.
+* compose.py wires factories; the CLI does not import backends.
+* Secret commands do not select a store implementation.
+
+Do not encode as architecture:
+
+* line counts, class counts, or factory file length
+* packaging layout (src/ vs repo root)
+* historical removed-backend names
 """
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import get_type_hints
 
 from tests.support import PROJECT_ROOT
 
@@ -15,13 +41,7 @@ BACKENDS = PKG / "backends"
 INTERNAL = PKG / "internal"
 CLI = PKG / "cli"
 
-RA_MODULES = (
-    "agentself.backends.wallet",
-    "agentself.backends.email",
-    "agentself.backends.store",
-    "agentself.internal.registry",
-)
-
+CHANNELS = frozenset({"wallet", "email", "store"})
 CLIENT_ROOTS = (
     "agentself.client",
     "agentself.bind",
@@ -30,9 +50,7 @@ CLIENT_ROOTS = (
     "agentself.cli",
     "agentself.__main__",
 )
-
 MANAGER_ROOTS = ("agentself.internal.custody",)
-
 VENDOR_ROOTS = (
     "eth_account",
     "eth_utils",
@@ -51,13 +69,10 @@ VENDOR_ROOTS = (
     "smtplib",
 )
 
-CHANNEL_FOLDERS = frozenset({"wallet", "email", "store"})
-
 
 def _imported_modules(rel: str | Path) -> set[str]:
     path = PROJECT_ROOT / rel if not isinstance(rel, Path) else rel
-    src = path.read_text(encoding="utf-8")
-    tree = ast.parse(src)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -82,42 +97,146 @@ def _py_files(root: Path) -> list[Path]:
     )
 
 
-def test_registry_does_not_import_store_or_manager():
-    names = _imported_modules(INTERNAL / "registry.py")
-    assert not _mentions(names, "agentself.backends.store")
-    assert not _mentions(names, *MANAGER_ROOTS)
-    assert not _mentions(names, *CLIENT_ROOTS)
+def _channel_dirs(channel: str) -> set[str]:
+    root = BACKENDS / channel
+    return {
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
 
 
-def test_backends_do_not_import_each_other_or_manager():
-    for channel in CHANNEL_FOLDERS:
-        root = BACKENDS / channel
-        for path in _py_files(root):
+def _is_channel_factory(name: str) -> bool:
+    if not name.startswith("agentself.backends."):
+        return False
+    rest = name[len("agentself.backends.") :]
+    parts = rest.split(".")
+    return len(parts) >= 2 and parts[1] == "factory"
+
+
+def test_client_cli_and_main_do_not_import_backends_or_vendor_sdks():
+    files = [PKG / "client.py", PKG / "__main__.py", *_py_files(CLI)]
+    for path in files:
+        names = _imported_modules(path)
+        assert not _mentions(names, "agentself.backends"), path
+        assert not _mentions(names, *VENDOR_ROOTS), path
+
+
+def test_backends_do_not_import_each_other_client_or_manager():
+    for channel in CHANNELS:
+        for path in _py_files(BACKENDS / channel):
             names = _imported_modules(path)
             assert not _mentions(names, *MANAGER_ROOTS), path
             assert not _mentions(names, *CLIENT_ROOTS), path
             assert not _mentions(names, "agentself.internal.registry"), path
-            for other in CHANNEL_FOLDERS:
+            for other in CHANNELS:
                 if other == channel:
                     continue
-                assert not _mentions(names, f"agentself.backends.{other}"), (
-                    f"{path} imported {other}"
+                assert not _mentions(names, f"agentself.backends.{other}"), path
+
+
+def test_manager_imports_contracts_not_implementations():
+    banned = (
+        "agentself.client",
+        "agentself.cli",
+        "agentself.compose",
+        "agentself.host",
+    )
+    for path in _py_files(INTERNAL / "custody"):
+        names = _imported_modules(path)
+        assert not _mentions(names, *banned), path
+        for channel in CHANNELS:
+            prefix = f"agentself.backends.{channel}"
+            for name in names:
+                if not _is_under(name, prefix):
+                    continue
+                rest = name[len(prefix) :].lstrip(".")
+                assert rest == "contract" or rest.startswith("contract."), (
+                    f"{path} imported backend implementation {name}"
                 )
 
 
-def test_secret_cli_does_not_take_store_flag():
-    from agentself.cli.parser import _parser
+def test_only_compose_imports_channel_factories():
+    compose = PKG / "compose.py"
+    for path in _py_files(PKG):
+        if path.is_relative_to(BACKENDS):
+            continue
+        imported = [
+            name for name in _imported_modules(path) if _is_channel_factory(name)
+        ]
+        if path == compose:
+            assert imported, path
+            continue
+        assert not imported, f"{path} imported channel factory {imported}"
 
-    parser = _parser()
-    commands = parser._subparsers._group_actions[0].choices
+
+def test_registry_does_not_import_store_manager_or_client():
+    names = _imported_modules(INTERNAL / "registry.py")
+    assert not _mentions(names, "agentself.backends")
+    assert not _mentions(names, *MANAGER_ROOTS)
+    assert not _mentions(names, *CLIENT_ROOTS)
+
+
+def test_compose_is_the_composition_root():
+    names = _imported_modules(PKG / "compose.py")
+    assert _mentions(names, "agentself.backends.wallet.factory")
+    assert _mentions(names, "agentself.backends.email.factory")
+    assert _mentions(names, "agentself.backends.store.factory")
+    assert _mentions(names, "agentself.internal.custody")
+    assert not _mentions(names, "agentself.cli")
+    for path in (PKG / "__main__.py", *_py_files(CLI)):
+        imported = _imported_modules(path)
+        assert not _mentions(imported, "agentself.backends"), path
+
+
+def test_factories_return_the_contract():
+    from agentself.backends.email.contract import MailboxAccess
+    from agentself.backends.email.factory import MailboxAccessFactory
+    from agentself.backends.store.contract import StoreAccess
+    from agentself.backends.store.factory import StoreAccessFactory
+    from agentself.backends.wallet.contract import WalletAccess
+    from agentself.backends.wallet.factory import WalletAccessFactory
+
+    for factory, contract in (
+        (StoreAccessFactory, StoreAccess),
+        (MailboxAccessFactory, MailboxAccess),
+        (WalletAccessFactory, WalletAccess),
+    ):
+        hints = get_type_hints(factory.for_binding)
+        assert hints["return"] is contract, factory
+
+
+def test_contracts_and_factories_have_no_vendor_types():
+    paths = [INTERNAL / "registry.py"]
+    for channel in CHANNELS:
+        paths.append(BACKENDS / channel / "contract.py")
+        paths.append(BACKENDS / channel / "factory.py")
+    for path in paths:
+        names = _imported_modules(path)
+        assert not _mentions(names, *VENDOR_ROOTS), path
+
+
+def test_wallet_contract_stays_provider_neutral():
+    contract = (BACKENDS / "wallet" / "contract.py").read_text(encoding="utf-8")
+    assert "key_hex" not in contract
+    assert "NoEthForGas" not in contract
+    assert "USDC" not in contract
+    assert "ETH" not in contract
+
+
+def test_secret_commands_do_not_select_a_store():
+    from agentself.cli.parser import _parser
+    from agentself.host import CHANNELS as catalog
+
+    assert catalog["store"].flag == "--store"
+    commands = _parser()._subparsers._group_actions[0].choices
     init_flags = {
         option
         for action in commands["init"]._actions
         for option in action.option_strings
     }
     assert "--store" in init_flags
-    secret = commands["secret"]
-    secret_cmds = secret._subparsers._group_actions[0].choices
+    secret_cmds = commands["secret"]._subparsers._group_actions[0].choices
     for name in ("create", "get", "update", "delete"):
         flags = {
             option
@@ -127,32 +246,43 @@ def test_secret_cli_does_not_take_store_flag():
         assert "--store" not in flags
 
 
-def test_contracts_and_factories_have_no_vendor_types():
-    paths = [INTERNAL / "registry.py"]
-    for channel in CHANNEL_FOLDERS:
-        for name in ("contract.py", "factory.py"):
-            path = BACKENDS / channel / name
-            if path.is_file():
-                paths.append(path)
-    assert paths
-    for path in paths:
-        names = _imported_modules(path)
-        assert not _mentions(names, *VENDOR_ROOTS), f"{path} imported vendor {names}"
+def test_backend_folders_are_wired_by_factories():
+    found = {
+        path.name
+        for path in BACKENDS.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+    assert found == CHANNELS
+    for channel in CHANNELS:
+        root = BACKENDS / channel
+        assert (root / "contract.py").is_file()
+        assert (root / "factory.py").is_file()
+        folders = _channel_dirs(channel)
+        imported: set[str] = set()
+        prefix = f"agentself.backends.{channel}."
+        for name in _imported_modules(root / "factory.py"):
+            if not name.startswith(prefix):
+                continue
+            part = name[len(prefix) :].split(".", 1)[0]
+            if (root / part).is_dir():
+                imported.add(part)
+        assert imported == folders, (channel, imported, folders)
 
 
-def test_client_and_cli_do_not_import_backends_or_sdks():
-    files = [PKG / "client.py", PKG / "__main__.py", *_py_files(CLI)]
-    for rel in files:
-        names = _imported_modules(rel)
-        for pkg in RA_MODULES:
-            assert not _mentions(names, pkg), f"{rel} imported {pkg}: {names}"
-        assert not _mentions(names, *VENDOR_ROOTS), f"{rel} imported vendor {names}"
+def test_channel_resource_access_is_not_under_internal():
+    found = {
+        path.name
+        for path in INTERNAL.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    }
+    assert found.isdisjoint(CHANNELS)
+    assert "custody" in found
+    assert (INTERNAL / "registry.py").is_file()
 
 
-def test_compose_may_wire_factories_cli_may_not():
-    names = _imported_modules(PKG / "compose.py")
-    assert _mentions(names, "agentself.backends.wallet.factory")
-    assert _mentions(names, "agentself.internal.custody")
-    for path in (PKG / "__main__.py", *_py_files(CLI)):
-        imported = _imported_modules(path)
-        assert not _mentions(imported, "agentself.backends"), path
+def test_main_reexports_cli_and_does_not_compose():
+    names = _imported_modules(PKG / "__main__.py")
+    assert "agentself.cli.app" in names
+    assert not _mentions(names, "agentself.compose")
+    assert not _mentions(names, "agentself.backends")
+    assert not _mentions(names, *MANAGER_ROOTS)

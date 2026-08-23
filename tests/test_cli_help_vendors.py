@@ -89,7 +89,8 @@ def test_nested_help_shows_args_and_defaults(tmp_path):
 
     send = run_cli(["wallet", "send", "--help"], env)
     assert send.returncode == 0, send.stderr
-    assert "USDC" in send.stdout
+    assert "ASSET" in send.stdout
+    assert "USDC" not in send.stdout
     assert "TO" in send.stdout
     assert "AMOUNT" in send.stdout
 

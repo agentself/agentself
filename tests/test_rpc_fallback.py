@@ -30,7 +30,7 @@ PUBLICNODE, DRPC = BaseWalletAccess.fallback_rpcs
 
 def _key_wallet(opener=None, *, rpc=None, rpc_url=None):
     wallet = BaseWalletAccess(MemoryLog(), rpc=rpc, rpc_url=rpc_url, rpc_opener=opener)
-    wallet.bind_key(generate_secp256k1())
+    wallet.bind_material(generate_secp256k1())
     return wallet
 
 
@@ -109,7 +109,7 @@ def test_ethereum_empty_rpc_does_not_invent_fallbacks():
     opener = FakeRpcOpener()
     opener.fail_all(403)
     wallet = EthereumWalletAccess(MemoryLog(), rpc_opener=opener)
-    wallet.bind_key(generate_secp256k1())
+    wallet.bind_material(generate_secp256k1())
     with pytest.raises(WalletError, match="no RPC configured"):
         wallet.balance("P")
     assert opener.urls == []

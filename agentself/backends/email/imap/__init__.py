@@ -17,6 +17,7 @@ from agentself.backends.email.contract import (
     mailbox_view,
     require_addr,
     require_secret,
+    secret_or_env,
     setup_needed,
 )
 from agentself.internal.files import IdentityBusy, exclusive
@@ -104,6 +105,7 @@ class ImapMailboxAccess(MailboxAccess):
     ) -> None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
+        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_send", identity_id, to, "error")
             raise MailboxError("send failed")
@@ -130,6 +132,7 @@ class ImapMailboxAccess(MailboxAccess):
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
+        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_recv", identity_id, None, "error")
             raise MailboxError("recv failed")
@@ -170,6 +173,7 @@ class ImapMailboxAccess(MailboxAccess):
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
+        credential = secret_or_env(credential, SOURCE_IMAP_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_list", identity_id, None, "error")
             raise MailboxError("list failed")
@@ -220,7 +224,9 @@ class ImapMailboxAccess(MailboxAccess):
         require_safe_token(identity_id, "identity id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
-        token = credential or extra.get("credential") or ""
+        token = secret_or_env(
+            credential or extra.get("credential"), SOURCE_IMAP_CREDENTIAL
+        )
         if not wanted:
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(address_option(required=True, help=HELP_IMAP_ADDRESS))

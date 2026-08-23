@@ -195,19 +195,33 @@ class InstrumentedMailboxFactory:
         return out
 
 
+class DoubleWalletFactory:
+    """Product factory plus a synthetic test double. Double is not a catalog bind."""
+
+    def __init__(self, inner: WalletAccessFactory) -> None:
+        self.inner = inner
+
+    def for_binding(self, binding: str) -> WalletAccess:
+        if binding == "synthetic":
+            from tests.synthetic_wallet import SyntheticWalletAccess
+
+            return SyntheticWalletAccess()
+        return self.inner.for_binding(binding)
+
+
 class InstrumentedWalletAccess:
     def __init__(self, inner: WalletAccess) -> None:
         self.inner = inner
         self.calls: list[tuple] = []
 
-    @property
-    def needs_material(self) -> bool:
-        return bool(getattr(self.inner, "needs_material", False))
+    def required_material(self):
+        return self.inner.required_material()
 
-    def bind_key(self, key_hex: str) -> None:
-        binder = getattr(self.inner, "bind_key", None)
-        if binder is not None:
-            binder(key_hex)
+    def create_material(self):
+        return self.inner.create_material()
+
+    def bind_material(self, value: str) -> None:
+        self.inner.bind_material(value)
 
     def address(self, identity_id):
         self.calls.append(("address",))
@@ -411,12 +425,14 @@ def build_app(
     else:
         injected = MockRpc()
     wallets = InstrumentedWalletFactory(
-        WalletAccessFactory(
-            log,
-            rpc=injected,
-            eth_rpc_url=eth_rpc_url,
-            vault_root=vault,
-            rpc_opener=rpc_opener,
+        DoubleWalletFactory(
+            WalletAccessFactory(
+                log,
+                rpc=injected,
+                eth_rpc_url=eth_rpc_url,
+                vault_root=vault,
+                rpc_opener=rpc_opener,
+            )
         )
     )
     manager = CustodyManager(

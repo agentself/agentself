@@ -12,9 +12,10 @@ from agentself.backends.wallet.contract import (
     CannotSend,
     WalletAccess,
     WalletError,
+    WalletMaterial,
 )
 from agentself.backends.wallet.rpc import HttpJsonRpc, RpcClient, _dedup_urls
-from agentself.internal.eoa import hex_0x
+from agentself.internal.eoa import generate_secp256k1, hex_0x
 from agentself.internal.files import (
     IdentityBusy,
     atomic_write_text,
@@ -22,7 +23,7 @@ from agentself.internal.files import (
     identity_home,
 )
 from agentself.internal.log import Log
-from agentself.internal.names import require_safe_token
+from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
 
 USDC_DECIMALS = 6
 ETH_DECIMALS = 18
@@ -30,11 +31,9 @@ BALANCE_OF_SELECTOR = keccak(text="balanceOf(address)")[:4]
 TRANSFER_SELECTOR = keccak(text="transfer(address,uint256)")[:4]
 USDC_ASSET = "USDC"
 GAS_ASSET = "ETH"
-NEED_USDC = "need USDC"
 
 
 class ChainWalletAccess(WalletAccess):
-    needs_material = True
     chain_name: str
     chain_label: str
     chain_id: int
@@ -66,10 +65,14 @@ class ChainWalletAccess(WalletAccess):
         self._key_hex = (key_hex or "").strip() or None
         self._root = Path(vault_root) if vault_root is not None else None
 
-    def bind_key(self, key_hex: str) -> None:
-        """Non-ABC helper. Inject EOA material from the Manager, never from StoreAccess."""
+    def required_material(self) -> WalletMaterial | None:
+        return WalletMaterial(name=WALLET_KEY_NAME)
 
-        self._key_hex = _normalize_key(key_hex)
+    def create_material(self) -> str:
+        return generate_secp256k1()
+
+    def bind_material(self, value: str) -> None:
+        self._key_hex = _normalize_key(value)
 
     def address(self, identity_id: str) -> str:
         require_safe_token(identity_id, "identity id")
@@ -109,20 +112,24 @@ class ChainWalletAccess(WalletAccess):
             "gas_amount": _format_eth(wei),
         }
 
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> None:
+    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
         require_safe_token(identity_id, "identity id")
         self._require_key()
-        if (asset or "").strip() != USDC_ASSET:
+        wanted = (asset or "").strip()
+        if not wanted:
+            wanted = USDC_ASSET
+        elif wanted != USDC_ASSET:
             self._log.record("wallet_send", identity_id, None, "cannot_send")
-            raise CannotSend(NEED_USDC)
+            raise CannotSend("unsupported asset", reason="unsupported_asset")
         if self._root is None:
-            self._send_once(identity_id, to, amount, asset)
-            return
+            self._send_once(identity_id, to, amount, wanted)
+            return wanted
         try:
             with exclusive(self._root):
-                self._send_once(identity_id, to, amount, asset)
+                self._send_once(identity_id, to, amount, wanted)
         except IdentityBusy as exc:
             raise WalletError("rpc failed") from exc
+        return wanted
 
     def describe(self, identity_id: str) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
@@ -155,8 +162,8 @@ class ChainWalletAccess(WalletAccess):
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         if wei == 0:
-            self._log.record("wallet_send", identity_id, None, "no_eth")
-            raise CannotSend("need ETH for gas")
+            self._log.record("wallet_send", identity_id, None, "no_gas")
+            raise CannotSend("need ETH for gas", reason="no_gas")
         try:
             units = _usdc_units(amount)
         except CannotSend:
@@ -176,12 +183,14 @@ class ChainWalletAccess(WalletAccess):
         )
         if held < units:
             self._log.record("wallet_send", identity_id, None, "cannot_send")
-            raise CannotSend(NEED_USDC)
+            raise CannotSend("need USDC", reason="insufficient_asset")
         try:
             dest = to_checksum_address(to)
         except (ValueError, TypeError):
             self._log.record("wallet_send", identity_id, None, "cannot_send")
-            raise CannotSend(NEED_USDC) from None
+            raise CannotSend(
+                "invalid destination", reason="invalid_destination"
+            ) from None
         pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, dest, units, addr, self.chain_id):
             self._finish_pending(identity_id, pending)
@@ -392,9 +401,9 @@ def _usdc_units(amount: str) -> int:
     try:
         value = Decimal(str(amount).strip())
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
-        raise CannotSend(NEED_USDC) from exc
+        raise CannotSend("invalid amount", reason="invalid_amount") from exc
     if not value.is_finite() or value < 0:
-        raise CannotSend(NEED_USDC)
+        raise CannotSend("invalid amount", reason="invalid_amount")
     scaled = value * (Decimal(10) ** USDC_DECIMALS)
     return int(scaled.to_integral_value(rounding=ROUND_DOWN))
 

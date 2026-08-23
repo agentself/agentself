@@ -70,8 +70,11 @@ def test_wallet_address_stable_sign_verifiable_key_hidden(app, monkeypatch):
 def test_wallet_send_fails_closed_without_eth(app, monkeypatch):
     init_identity(app, monkeypatch)
     app.client.wallet_address()
-    with pytest.raises(NoGas, match="ETH"):
+    with pytest.raises(NoGas, match="gas") as caught:
         app.client.wallet_send("0x" + "11" * 20, "1")
+    assert caught.value.reason == "no_gas"
+    assert "ETH" not in str(caught.value)
+    assert "USDC" not in str(caught.value)
 
 
 def test_base_send_without_eth_raises_backend_error_not_contract_type():
@@ -80,7 +83,7 @@ def test_base_send_without_eth_raises_backend_error_not_contract_type():
     wallet = WalletAccessFactory(MemoryLog(), rpc=MockRpc(eth_wei=0)).for_binding(
         "base"
     )
-    wallet.bind_key(generate_secp256k1())
+    wallet.bind_material(generate_secp256k1())
     with pytest.raises(NoEthForGas, match="need ETH for gas"):
         wallet.send("P", "0x" + "11" * 20, "1", "USDC")
     assert not hasattr(wallet_contract, "NoEthForGas")
@@ -101,7 +104,16 @@ def test_wallet_access_contract_has_no_key_hex():
     source = _CONTRACT.read_text(encoding="utf-8")
     assert "key_hex" not in source
     assert not hasattr(wallet_contract, "NoEthForGas")
-    for name in ("address", "authorize", "balance", "send", "describe"):
+    for name in (
+        "address",
+        "authorize",
+        "balance",
+        "send",
+        "describe",
+        "required_material",
+        "create_material",
+        "bind_material",
+    ):
         method = getattr(WalletAccess, name)
         params = inspect.signature(method).parameters
         assert "key_hex" not in params
@@ -122,7 +134,7 @@ def test_describe_never_contains_a_key():
     base = factory.for_binding("base")
     from agentself.internal.eoa import generate_secp256k1
 
-    base.bind_key(generate_secp256k1())
+    base.bind_material(generate_secp256k1())
     _assert_describe_has_no_key(base.describe("P"))
 
 
@@ -180,14 +192,17 @@ def test_wallet_send_refuses_without_usdc(vault, monkeypatch):
 
     rpc = MockRpc(eth_wei=10**18, usdc_raw=0)
     wallet = WalletAccessFactory(MemoryLog(), rpc=rpc).for_binding("base")
-    wallet.bind_key(generate_secp256k1())
-    with pytest.raises(WalletCannotSend, match="USDC"):
+    wallet.bind_material(generate_secp256k1())
+    with pytest.raises(WalletCannotSend) as adapter:
         wallet.send("P", "0x" + "11" * 20, "1", "USDC")
+    assert adapter.value.reason == "insufficient_asset"
     assert not rpc.broadcast
     app = build_app(vault, rpc=MockRpc(eth_wei=10**18, usdc_raw=0))
     init_identity(app, monkeypatch)
-    with pytest.raises(CannotSend, match="USDC"):
+    with pytest.raises(CannotSend) as caught:
         app.client.wallet_send("0x" + "11" * 20, "1")
+    assert caught.value.reason == "insufficient_asset"
+    assert "USDC" not in str(caught.value)
     assert not app.rpc.broadcast
 
 
@@ -197,12 +212,14 @@ def test_wallet_send_wrong_asset_names_usdc_before_eth_check():
     wallet = WalletAccessFactory(MemoryLog(), rpc=MockRpc(eth_wei=0)).for_binding(
         "base"
     )
-    wallet.bind_key(generate_secp256k1())
-    with pytest.raises(WalletCannotSend, match="USDC") as eth_asset:
+    wallet.bind_material(generate_secp256k1())
+    with pytest.raises(WalletCannotSend) as eth_asset:
         wallet.send("P", "0x" + "11" * 20, "1", "ETH")
+    assert eth_asset.value.reason == "unsupported_asset"
     assert "need ETH for gas" not in str(eth_asset.value)
-    with pytest.raises(WalletCannotSend, match="USDC") as lower:
+    with pytest.raises(WalletCannotSend) as lower:
         wallet.send("P", "0x" + "11" * 20, "1", "usdc")
+    assert lower.value.reason == "unsupported_asset"
     assert "need ETH for gas" not in str(lower.value)
 
 
@@ -230,6 +247,8 @@ def test_wallet_send_invalid_amount_names_usdc(vault, monkeypatch):
     rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000)
     app = build_app(vault, rpc=rpc)
     init_identity(app, monkeypatch)
-    with pytest.raises(CannotSend, match="USDC"):
+    with pytest.raises(CannotSend) as caught:
         app.client.wallet_send("0x" + "11" * 20, "-1")
+    assert caught.value.reason == "invalid_amount"
+    assert "USDC" not in str(caught.value)
     assert not rpc.broadcast

@@ -27,8 +27,6 @@ ENV_SMTP_HOST = "AGENTSELF_SMTP_HOST"
 ENV_IMAP_PORT = "AGENTSELF_IMAP_PORT"
 ENV_SMTP_PORT = "AGENTSELF_SMTP_PORT"
 ENV_MAIL_USER = "AGENTSELF_MAIL_USER"
-ENV_EMAIL_ADDRESS = "AGENTSELF_EMAIL_ADDRESS"
-ENV_EMAIL_CREDENTIAL = "AGENTSELF_EMAIL_CREDENTIAL"
 ENV_AGENTMAIL_API_KEY = SOURCE_AGENTMAIL_CREDENTIAL
 ENV_MAIL_PASSWORD = SOURCE_IMAP_CREDENTIAL
 ENV_ETH_RPC_URL = "AGENTSELF_ETH_RPC_URL"
@@ -239,18 +237,6 @@ def bind_of(channel: str, name: str) -> Bind | None:
         if item.name == name:
             return item
     return None
-
-
-def default_wallet_asset(binding: str, requested: str = "") -> str:
-    """Bound catalog asset when ASSET was omitted. Chain backends stay USDC."""
-
-    wanted = (requested or "").strip()
-    if wanted:
-        return wanted
-    item = bind_of("wallet", binding)
-    if item is not None and item.asset:
-        return item.asset
-    return "USDC"
 
 
 def close_match(value: str, names: tuple[str, ...] | list[str]) -> str | None:

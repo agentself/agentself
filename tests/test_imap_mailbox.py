@@ -149,7 +149,9 @@ def _no_local_mail(vault: Path) -> None:
         assert not path.exists() or not any(path.rglob("*"))
 
 
-def test_no_token_zero_connections(vault):
+def test_no_token_zero_connections(vault, monkeypatch):
+    monkeypatch.delenv("AGENTSELF_MAIL_PASSWORD", raising=False)
+    monkeypatch.delenv("AGENTSELF_EMAIL_CREDENTIAL", raising=False)
     log = MemoryLog()
     imap = FakeImap()
     smtp = FakeSmtp()
@@ -426,6 +428,22 @@ def test_invalid_address_and_port_fail_closed(vault):
     with pytest.raises(MailboxError, match="invalid port"):
         bad_port.send(PRINCIPAL, TO, "s", "b", credential=CANARY, address=ADDRESS)
     assert smtp.opened == []
+
+
+def test_alias_env_fills_empty_credential(vault, monkeypatch):
+    monkeypatch.setenv("AGENTSELF_MAIL_PASSWORD", CANARY)
+    log = MemoryLog()
+    imap = FakeImap()
+    smtp = FakeSmtp()
+    mb = _box(vault, log, imap, smtp)
+    mb.send(PRINCIPAL, TO, "s", "b", address=ADDRESS)
+    assert smtp.logins == [(ADDRESS, CANARY)]
+    mb.list(PRINCIPAL, address=ADDRESS)
+    assert imap.logins
+    connected = mb.connect(PRINCIPAL, address=ADDRESS)
+    assert connected["owned_address"] is True
+    assert connected["address"] == ADDRESS
+    _secret_absent(log)
 
 
 def test_compose_forwards_imap_env_knobs(vault, monkeypatch):

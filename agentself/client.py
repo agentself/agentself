@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Protocol
 
 from agentself.bind import bind_from_env
-from agentself.host import default_wallet_asset
 from agentself.internal.custody.errors import UnboundCaller
 from agentself.internal.log import Log
 from agentself.internal.types import BoundCaller, Identity
@@ -65,8 +64,10 @@ class CustodyManager(Protocol):
         caller: BoundCaller,
         to: str,
         amount: str,
-        asset: str = "USDC",
-    ) -> None: ...
+        asset: str = "",
+    ) -> str: ...
+
+    def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]: ...
 
     def identity(self, caller: BoundCaller) -> dict[str, object]: ...
 
@@ -154,12 +155,11 @@ class Client:
 
     def wallet_send(self, to: str, amount: str, asset: str = "") -> str:
         caller = self._require_caller()
-        wanted = default_wallet_asset(
-            getattr(self._manager, "_wallet_backend", ""),
-            asset,
-        )
-        self._manager.wallet_send(caller, to, amount, wanted)
-        return wanted
+        return self._manager.wallet_send(caller, to, amount, asset)
+
+    def wallet_material_status(self) -> dict[str, object]:
+        caller = self._require_caller()
+        return self._manager.wallet_material_status(caller)
 
     def identity(self) -> dict[str, object]:
         caller = self._require_caller()

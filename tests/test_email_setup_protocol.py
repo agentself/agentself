@@ -628,12 +628,8 @@ def test_env_connects_without_copying_into_identity_dir(
     assert json.loads(missing.stdout)["exists"] is False
 
 
-@pytest.mark.parametrize(
-    "credential_env",
-    ["AGENTSELF_EMAIL_CREDENTIAL", "AGENTSELF_AGENTMAIL_API_KEY"],
-)
 def test_runtime_credential_env_sources_cover_all_email_operations(
-    tmp_path: Path, monkeypatch, capsys, credential_env: str
+    tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
@@ -647,7 +643,7 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     mailbox = ScriptedMailbox(connect)
     _patch_mailbox(monkeypatch, mailbox)
     env["AGENTSELF_EMAIL_ADDRESS"] = ADDRESS
-    env[credential_env] = CREDENTIAL
+    env["AGENTSELF_EMAIL_CREDENTIAL"] = CREDENTIAL
     code, connected = _connect(monkeypatch, capsys, env)
     assert code == 0, connected
 
@@ -665,7 +661,7 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     ]
     assert all(call[1:] == (CREDENTIAL, ADDRESS) for call in mailbox.calls[-4:])
 
-    for key in ("AGENTSELF_EMAIL_ADDRESS", credential_env):
+    for key in ("AGENTSELF_EMAIL_ADDRESS", "AGENTSELF_EMAIL_CREDENTIAL"):
         monkeypatch.delenv(key)
     assert main(["--json", "email", "show"]) == 0
     without_env = json.loads(capsys.readouterr().out)

@@ -155,7 +155,9 @@ def test_cli_wallet_send_no_eth_names_eth(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert captured.err == "refused: need ETH for gas\n"
+    assert captured.err == "refused: need gas\n"
+    assert "ETH" not in captured.err
+    assert "USDC" not in captured.err
 
 
 def test_cli_wallet_send_no_usdc_names_usdc(tmp_path, monkeypatch, capsys):
@@ -168,8 +170,9 @@ def test_cli_wallet_send_no_usdc_names_usdc(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert "USDC" in captured.err
-    assert captured.err.startswith("refused:")
+    assert captured.err == "refused: need funds\n"
+    assert "USDC" not in captured.err
+    assert "ETH" not in captured.err
 
 
 def test_cli_wallet_send_wrong_asset_names_usdc(tmp_path, monkeypatch, capsys):
@@ -182,7 +185,8 @@ def test_cli_wallet_send_wrong_asset_names_usdc(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1", "ETH"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert "USDC" in captured.err
+    assert captured.err == "refused: backend cannot send\n"
+    assert "USDC" not in captured.err
     assert "need ETH for gas" not in captured.err
 
 
@@ -204,7 +208,8 @@ def test_cli_wallet_send_rpc_is_error_rpc(tmp_path, monkeypatch, capsys):
 
 
 class _MissingKeyWallet:
-    needs_material = False
+    def required_material(self):
+        return None
 
     def send(self, identity_id, to, amount, asset):
         raise WalletError("missing key")

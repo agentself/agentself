@@ -14,6 +14,7 @@ from agentself.backends.email.contract import (
     mailbox_view,
     require_addr,
     require_secret,
+    secret_or_env,
     setup_needed,
 )
 from agentself.backends.email.http import request as http_request
@@ -76,6 +77,7 @@ class AgentMailMailboxAccess(MailboxAccess):
     ) -> None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
+        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_send", identity_id, to, "error")
             raise MailboxError("send failed")
@@ -97,6 +99,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         message_id: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
+        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_recv", identity_id, None, "error")
             raise MailboxError("recv failed")
@@ -155,6 +158,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         address: str | None = None,
     ) -> builtins.list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
+        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             self._log.record("mailbox_list", identity_id, None, "error")
             raise MailboxError("list failed")
@@ -176,6 +180,7 @@ class AgentMailMailboxAccess(MailboxAccess):
     ) -> dict[str, object]:
         require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
+        credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
         if not credential:
             return mailbox_view()
         credential = require_secret(credential)
@@ -196,7 +201,9 @@ class AgentMailMailboxAccess(MailboxAccess):
         require_safe_token(identity_id, "identity id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
-        token = credential or extra.get("credential") or ""
+        token = secret_or_env(
+            credential or extra.get("credential"), SOURCE_AGENTMAIL_CREDENTIAL
+        )
         if not token:
             self._log.record("mailbox_connect", identity_id, None, "error")
             return setup_needed(

@@ -8,7 +8,6 @@
       "id",
       "recipient",
       "address",
-      "usdc",
       "wallet_backend",
       "email_backend"
     ]
@@ -19,7 +18,6 @@
       "id",
       "recipient",
       "address",
-      "usdc",
       "wallet_backend",
       "email_backend",
       "identity_dir",
