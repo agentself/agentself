@@ -43,8 +43,8 @@ from agentself.internal.eoa import generate_secp256k1
 from agentself.internal.log import Log
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
-    PROTECTED_HOLD_NAMES,
     EMAIL_CREDENTIAL_NAME,
+    PROTECTED_HOLD_NAMES,
     WALLET_KEY_NAME,
     require_safe_token,
 )

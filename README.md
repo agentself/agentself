@@ -25,7 +25,7 @@ pipx install agentself
 agentself install --tools
 agentself init
 agentself wallet address
-agentself secret create API_TOKEN VALUE
+agentself secret create API_TOKEN --file ./api-token.txt
 agentself email connect
 ```
 
@@ -85,11 +85,11 @@ and required host settings are exposed by `agentself backends` and
 `agentself email connect`.
 
 The identity directory is `~/.agentself` by default. Set
-`AGENTSELF_VAULT_ROOT` to isolate identities, for example:
+`AGENTSELF_IDENTITY_DIR` to isolate identities, for example:
 
 ```bash
-AGENTSELF_VAULT_ROOT=~/.agent-a agentself init
-AGENTSELF_VAULT_ROOT=~/.agent-b agentself init
+AGENTSELF_IDENTITY_DIR=~/.agent-a agentself init
+AGENTSELF_IDENTITY_DIR=~/.agent-b agentself init
 ```
 
 Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient

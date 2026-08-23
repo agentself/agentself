@@ -1,5 +1,5 @@
 {
-  "age_key_file": "principals/agent/agent.agekey",
+  "age_key_file": "identities/agent/agent.agekey",
   "format_version": 1,
-  "principal_id": "agent"
+  "identity_id": "agent"
 }

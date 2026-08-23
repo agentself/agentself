@@ -78,7 +78,7 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
     (vault / "config.json").write_text(
         json.dumps(
             {
-                "format_version": 2,
+                "format_version": 1,
                 "identity_id": "agent",
                 "age_key_file": "identities/agent/agent.agekey",
                 "wallet_backend": "ethereum",
@@ -91,7 +91,7 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
     (vault / "registry.json").write_text(
         json.dumps(
             {
-                "format_version": 2,
+                "format_version": 1,
                 "identities": {
                     "agent": {
                         "id": "agent",

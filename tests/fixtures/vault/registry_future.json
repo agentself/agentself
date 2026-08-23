@@ -1,7 +1,7 @@
 {
-  "format_version": 3,
+  "format_version": 2,
   "future_field": "future-canary-keep",
-  "principals": {
+  "identities": {
     "agent": {
       "id": "agent",
       "recipient": "age1example",

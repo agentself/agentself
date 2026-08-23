@@ -1,6 +1,6 @@
 {
-  "age_key_file": "principals/agent/agent.agekey",
-  "format_version": 3,
+  "age_key_file": "identities/agent/agent.agekey",
+  "format_version": 2,
   "future_field": "future-canary-keep",
-  "principal_id": "agent"
+  "identity_id": "agent"
 }

@@ -250,7 +250,7 @@ def test_incomplete_registry_record_fails_closed_no_traceback(tmp_path):
     assert start.returncode == 0, start.stderr
     registry = vault / "registry.json"
     registry.write_text(
-        json.dumps({"format_version": 2, "identities": {"agent": {"id": "agent"}}})
+        json.dumps({"format_version": 1, "identities": {"agent": {"id": "agent"}}})
         + "\n",
         encoding="utf-8",
     )
@@ -272,7 +272,7 @@ def test_principal_access_drops_extra_keys_and_rejects_secret_recipient(tmp_path
     registry.write_text(
         json.dumps(
             {
-                "format_version": 2,
+                "format_version": 1,
                 "identities": {
                     "agent": {
                         "id": "agent",

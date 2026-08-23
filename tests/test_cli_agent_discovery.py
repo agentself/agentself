@@ -77,7 +77,7 @@ def test_install_copies_bundled_skill(tmp_path):
     installed = (tmp_path / ".agents" / "skills" / "agentself" / "SKILL.md").read_text(
         encoding="utf-8"
     )
-    assert "This skill requires `cli: 3`" in installed
+    assert "This skill requires `cli: 1`" in installed
     assert "an unexpected `package` / `executable` path" in installed
     assert "does not authorize external account creation" in installed
     assert "One validated credential completes discovery" in installed

@@ -29,7 +29,7 @@ Use an isolated identity directory so local runs do not touch the default
 `~/.agentself`:
 
 ```text
-AGENTSELF_VAULT_ROOT=/tmp/demo agentself init
+AGENTSELF_IDENTITY_DIR=/tmp/demo agentself init
 ```
 
 The default backends are wallet `base`, store `sops`, and email `agentmail`.

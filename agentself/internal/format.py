@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-CURRENT_FORMAT_VERSION = 2
+CURRENT_FORMAT_VERSION = 1
 
 
 def read_format_version(data: dict) -> int:

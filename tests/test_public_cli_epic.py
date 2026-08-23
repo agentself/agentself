@@ -66,28 +66,3 @@ def test_backup_restore_roundtrip(tmp_path):
     assert json.loads(shown.stdout)["address"] == addr
     blob = restore.stdout + restore.stderr
     assert "AGE-SECRET-KEY" not in blob
-
-
-def test_v1_config_fails_closed(tmp_path):
-    vault = tmp_path / "vault"
-    env = cli_env(vault)
-    assert run_cli(["init"], env).returncode == 0
-    cfg_path = vault / "config.json"
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    original = cfg_path.read_bytes()
-    v1 = {
-        "format_version": 1,
-        "principal_id": cfg["identity_id"],
-        "age_key_file": cfg["age_key_file"],
-        "wallet_binding": cfg["wallet_backend"],
-        "mailbox_binding": cfg["email_backend"],
-    }
-    cfg_path.write_text(json.dumps(v1, indent=2) + "\n", encoding="utf-8")
-    planted = cfg_path.read_bytes()
-    shown = run_cli(["--json", "show"], env)
-    assert shown.returncode == 1, shown.stdout + shown.stderr
-    data = json.loads(shown.stdout or shown.stderr)
-    assert data["ok"] is False
-    assert "format_version 1 is unsupported" in data["reason"]
-    assert cfg_path.read_bytes() == planted
-    assert planted != original

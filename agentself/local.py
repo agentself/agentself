@@ -9,9 +9,9 @@ from pathlib import Path
 from agentself.bind import bind_from_env, public_recipient
 from agentself.host import (
     ENV_AGE_KEY_FILE,
+    ENV_IDENTITY_DIR,
     ENV_IDENTITY_ID,
     ENV_MAIL_DOMAIN,
-    ENV_IDENTITY_DIR,
 )
 from agentself.internal.custody.errors import HostToolMissing, UnboundCaller
 from agentself.internal.files import (

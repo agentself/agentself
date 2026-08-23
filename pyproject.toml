@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Local identity for an agent: wallet, secrets, and optional email"
 requires-python = ">=3.11"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Michael Bilenko" }]
 keywords = [
     "agent",
@@ -37,7 +37,7 @@ Issues = "https://github.com/agentself/agentself/issues"
 agentself = "agentself.__main__:run"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

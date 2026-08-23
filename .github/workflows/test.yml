@@ -166,12 +166,12 @@ jobs:
           test "$got" = "agentself ${version}"
           agentself --help
           agentself backends
-          export AGENTSELF_VAULT_ROOT="${RUNNER_TEMP}/agentself-vault-sops"
+          export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-sops"
           agentself diagnose
           agentself init
           agentself --json diagnose
           agentself install --skills=agents
           test -f "${empty}/.agents/skills/agentself/SKILL.md"
-          export AGENTSELF_VAULT_ROOT="${RUNNER_TEMP}/agentself-vault-pass"
+          export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-pass"
           agentself init --store pass
           agentself --json diagnose

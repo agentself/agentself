@@ -14,6 +14,6 @@ First serious public alpha.
   one JSON object per command; consumers should ignore unknown fields.
 - A persistent identity contains the wallet, encrypted secrets, optional email
   state, configuration, and versioned saved metadata. The current saved format
-  is `format_version` 2.
+  is `format_version` 1.
 - `backup` and `restore` copy a complete identity for same-identity migration.
 - The package and release metadata use the PEP 440 version `0.1.0a3`.

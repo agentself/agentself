@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "principals": {
+  "identities": {
     "agent": {
       "id": "agent",
       "recipient": "age1example",
