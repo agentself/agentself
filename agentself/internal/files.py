@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -55,6 +56,48 @@ def resolve_tool(name: str) -> str:
             except OSError:
                 continue
     return raw
+
+
+def have_host_tool(name: str) -> bool:
+    """True when resolve_tool found a PATH file. Cwd hits are not installed tools."""
+
+    path = Path(resolve_tool(name))
+    if not path.is_absolute() and len(path.parts) < 2:
+        return False
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def host_env(env: Mapping[str, str] | None = None) -> dict[str, str] | None:
+    """Copy env; on Windows, refuse cwd as the executable search path."""
+
+    env_map = None if env is None else dict(env)
+    if os.name == "nt":
+        env_map = os.environ.copy() if env_map is None else env_map
+        env_map.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
+    return env_map
+
+
+def run_resolved(
+    argv: Sequence[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    stdin: bytes | None = None,
+    timeout: float = 30,
+) -> subprocess.CompletedProcess[bytes]:
+    cmd = list(argv)
+    if cmd:
+        cmd[0] = resolve_tool(str(cmd[0]))
+    return subprocess.run(
+        cmd,
+        input=stdin,
+        capture_output=True,
+        env=host_env(env),
+        timeout=timeout,
+        check=False,
+    )
 
 
 def identity_home(root: Path, identity_id: str) -> Path:
@@ -118,11 +161,16 @@ def shred_unlink(path: Path | str) -> None:
         pass
 
 
-def atomic_write(path: Path, data: bytes, *, mode: int = 0o600) -> None:
+def atomic_write(
+    path: Path, data: bytes, *, mode: int = 0o600, private_dir: bool = True
+) -> None:
     """Replace path with data, or leave the previous bytes if this crashes."""
 
     dest = Path(path)
-    ensure_private_dir(dest.parent)
+    if private_dir:
+        ensure_private_dir(dest.parent)
+    else:
+        dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=dest.name + ".", suffix=".tmp", dir=dest.parent
     )

@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 CURRENT_FORMAT_VERSION = 1
+
+
+def load_json_file(path: Path) -> object:
+    """UTF-8 JSON. A leading BOM (Windows Notepad) is ignored."""
+
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
 def read_format_version(data: dict) -> int:

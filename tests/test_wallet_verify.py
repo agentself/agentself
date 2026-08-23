@@ -50,7 +50,10 @@ def test_wallet_verify_valid_modified_mismatched_restored(tmp_path: Path) -> Non
     assert json.loads(mismatched.stdout)["error"] == "refused"
 
     backup = json.loads(
-        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
+        run_cli(
+            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"],
+            env,
+        ).stdout
     )
     key = backup["value"]
     restored = tmp_path / "restored"
@@ -63,6 +66,7 @@ def test_wallet_verify_valid_modified_mismatched_restored(tmp_path: Path) -> Non
             "secret",
             "update",
             "wallet.key",
+            "--unsafe",
             "--file",
             value_file(tmp_path, key, "wallet.key.txt"),
         ],

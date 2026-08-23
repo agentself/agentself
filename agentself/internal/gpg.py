@@ -108,6 +108,16 @@ def _create_link(link: Path, target: Path) -> None:
     link.symlink_to(target, target_is_directory=True)
 
 
+def _owned_by_us(path: Path) -> bool:
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        return False
+    try:
+        return os.stat(path, follow_symlinks=False).st_uid == getuid()
+    except OSError:
+        return False
+
+
 def _short_link(gnupg: Path, parent: Path) -> Path:
     try:
         target = _strip_extended(gnupg.resolve())
@@ -123,7 +133,8 @@ def _short_link(gnupg: Path, parent: Path) -> Path:
                 same = _strip_extended(link.resolve()) == target
             except OSError:
                 same = False
-            if same and not (os.name == "nt" and link.is_symlink()):
+            reusable = same and not (os.name == "nt" and link.is_symlink())
+            if reusable and (os.name == "nt" or _owned_by_us(link)):
                 return link
             link.unlink()
         elif link.exists():

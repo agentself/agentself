@@ -116,7 +116,8 @@
     "allowed": ["ok", "valid", "address", "scheme"]
   },
   "wallet_send": {
-    "exact": ["ok", "to", "amount", "asset"]
+    "required": ["ok", "to", "amount", "asset"],
+    "allowed": ["ok", "to", "amount", "asset", "hash"]
   },
   "wallet_balance": {
     "required": ["ok"],
@@ -140,6 +141,17 @@
     "allowed": ["address", "chain", "chain_label", "chain_id", "asset", "kind", "scheme"]
   },
   "mail_item": {
-    "allowed": ["id", "from", "to", "subject", "body", "reason"]
+    "allowed": [
+      "id",
+      "from",
+      "to",
+      "subject",
+      "body",
+      "reason",
+      "status",
+      "body_file",
+      "body_bytes",
+      "body_sha256"
+    ]
   }
 }

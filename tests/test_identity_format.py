@@ -68,6 +68,19 @@ def test_v1_config_is_the_current_saved_contract(tmp_path):
     }
 
 
+def test_config_and_registry_accept_utf8_bom(tmp_path):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    assert run_cli(["--json", "init"], env).returncode == 0
+    for name in ("config.json", "registry.json"):
+        path = vault / name
+        path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+    shown = run_cli(["--json", "show"], env)
+    assert shown.returncode == 0, shown.stderr
+    listed = run_cli(["--json", "secret", "list"], env)
+    assert listed.returncode == 0, listed.stderr
+
+
 def test_future_config_fails_closed_and_is_not_rewritten(tmp_path):
     vault = tmp_path / "vault"
     path = _plant(vault, "config_future.json", "config.json")

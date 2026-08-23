@@ -10,14 +10,21 @@ from agentself.backends.wallet.contract import WalletMaterial
 from agentself.cli.app import main
 from agentself.internal.custody.errors import CannotSend
 
-from tests.support import apply_cli_env, build_app, cli_env, init_identity, run_cli
+from tests.support import (
+    apply_cli_env,
+    build_app,
+    cli_env,
+    init_identity,
+    run_cli,
+    value_file,
+)
 from tests.synthetic_wallet import MATERIAL_NAME, SyntheticWalletAccess
 
 
 def test_omitted_asset_resolves_to_backend_default(vault, monkeypatch):
     app = build_app(vault, wallet_backend="synthetic")
     init_identity(app, monkeypatch)
-    assert app.client.wallet_send("dest", "1") == "NOTE"
+    assert app.client.wallet_send("dest", "1") == {"asset": "NOTE"}
 
 
 def test_manager_does_not_create_or_get_wallet_key(vault, monkeypatch):
@@ -179,7 +186,7 @@ def test_cli_protects_declared_material_for_list_export_and_delete(
     assert refused["error"] == "refused"
     assert MATERIAL_NAME in refused["reason"]
 
-    assert main(["--json", "secret", "get", MATERIAL_NAME, "--unsafe"]) == 0
+    assert main(["--json", "secret", "get", MATERIAL_NAME, "--unsafe", "--print"]) == 0
     exported = json.loads(capsys.readouterr().out)
     assert exported["value"] == "synthetic-note-seed"
 
@@ -187,3 +194,24 @@ def test_cli_protects_declared_material_for_list_export_and_delete(
     deleted = json.loads(capsys.readouterr().out)
     assert deleted["error"] == "refused"
     assert MATERIAL_NAME in deleted["reason"]
+
+    planted = value_file(tmp_path, "replaced-seed", "seed.txt")
+    assert main(["--json", "secret", "update", MATERIAL_NAME, "--file", planted]) == 2
+    updated = json.loads(capsys.readouterr().out)
+    assert updated["error"] == "refused"
+    assert MATERIAL_NAME in updated["reason"]
+    assert (
+        main(
+            [
+                "--json",
+                "secret",
+                "update",
+                MATERIAL_NAME,
+                "--unsafe",
+                "--file",
+                planted,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()

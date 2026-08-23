@@ -22,12 +22,13 @@ from agentself.internal.files import (
     ensure_private_dir,
     exclusive,
     identity_home,
-    resolve_tool,
+    run_resolved,
     shred_unlink,
 )
 from agentself.internal.format import (
     CURRENT_FORMAT_VERSION,
     format_version_error,
+    load_json_file,
 )
 from agentself.internal.names import require_safe_token
 from agentself.internal.types import BoundCaller
@@ -74,7 +75,7 @@ def require_supported_formats(vault: Path) -> None:
     if not path.is_file():
         return
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_json_file(path)
     except (OSError, json.JSONDecodeError):
         return
     if not isinstance(data, dict):
@@ -209,12 +210,7 @@ def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
         shred_unlink(key)
     if not key.is_file():
         try:
-            proc = subprocess.run(
-                [resolve_tool("age-keygen"), "-o", str(key)],
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
+            proc = run_resolved(["age-keygen", "-o", str(key)], timeout=30)
         except FileNotFoundError:
             shred_unlink(key)
             raise FileNotFoundError("age not on PATH") from None
@@ -236,7 +232,7 @@ def _read_config(vault: Path) -> dict[str, str]:
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = load_json_file(path)
     except (OSError, json.JSONDecodeError) as exc:
         raise IdentityStateError("cannot read config.json") from exc
     if not isinstance(data, dict):

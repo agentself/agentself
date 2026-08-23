@@ -69,6 +69,41 @@ def test_create_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
     assert "AGE-SECRET-KEY" not in sink
 
 
+def test_encrypt_strips_parent_sops_key_and_recipient_env(tmp_path, monkeypatch):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    identity_id = "P"
+    key = identity_home(vault, identity_id) / "agent.agekey"
+    key.parent.mkdir(parents=True)
+    key.write_bytes(b"dummy-age-key\n")
+    monkeypatch.setenv("SOPS_AGE_RECIPIENTS", "age1attackerrecipient")
+    monkeypatch.setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1PARENT")
+    monkeypatch.setenv("AGE_SECRET_KEY", "AGE-SECRET-KEY-1PARENTAGE")
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", "/tmp/not-the-identity-key")
+    seen_env: list[dict | None] = []
+
+    def fake_run_cmd(argv, *, env=None, stdin=None, timeout=30):
+        cmd = list(argv)
+        if cmd[0] == "age-keygen":
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=(FAKE_RECIPIENT + "\n").encode(), stderr=b""
+            )
+        if cmd[0] == "sops":
+            seen_env.append(None if env is None else dict(env))
+            return subprocess.CompletedProcess(cmd, 0, stdout=CIPHERTEXT, stderr=b"")
+        raise AssertionError(f"unexpected command {cmd}")
+
+    monkeypatch.setattr("agentself.backends.store.sops.run_cmd", fake_run_cmd)
+    SopsStoreAccess(vault, MemoryLog()).create(identity_id, "token", "plain")
+    assert seen_env
+    for env in seen_env:
+        assert env is not None
+        assert "SOPS_AGE_RECIPIENTS" not in env
+        assert "SOPS_AGE_KEY" not in env
+        assert "AGE_SECRET_KEY" not in env
+        assert env.get("SOPS_AGE_KEY_FILE") != "/tmp/not-the-identity-key"
+
+
 def test_create_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypatch):
     vault = tmp_path / "vault"
     vault.mkdir()

@@ -88,7 +88,7 @@ _BALANCE_KEYS = (
     "gas_raw",
     "gas_amount",
 )
-_MAIL_ITEM_KEYS = ("id", "from", "to", "subject", "body", "reason")
+_MAIL_ITEM_KEYS = ("id", "from", "to", "subject", "body", "reason", "status")
 
 
 class IdentityAccess(Protocol):
@@ -390,6 +390,7 @@ class CustodyManager:
         self,
         caller: BoundCaller,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> builtins.list[dict[str, str]]:
         identity, mailbox, address, token = self._email_bound(caller, "email_receive")
         try:
@@ -398,6 +399,7 @@ class CustodyManager:
                 credential=token,
                 address=address,
                 message_id=message_id,
+                include_body=include_body,
             )
         except MailboxError as exc:
             self._fail_mailbox("email_receive", identity.id, exc)
@@ -473,7 +475,7 @@ class CustodyManager:
         to: str,
         amount: str,
         asset: str = "",
-    ) -> str:
+    ) -> dict[str, str]:
         identity, wallet = self._wallet_bound(caller, "wallet_send")
         try:
             used = (wallet.send(identity.id, to, amount, asset) or "").strip()
@@ -490,7 +492,13 @@ class CustodyManager:
             self._log.record("wallet_send", identity.id, None, "cannot_send")
             raise CannotSend(reason="cannot_send")
         self._log.record("wallet_send", identity.id, None, "ok")
-        return used
+        result = {"asset": used}
+        getter = getattr(wallet, "payment_ref", None)
+        ref = (getter() or "").strip() if callable(getter) else ""
+        hashed = _payment_hash(ref)
+        if hashed:
+            result["hash"] = hashed
+        return result
 
     def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]:
         identity = self._require_identity(caller, "wallet_material", None)
@@ -965,6 +973,15 @@ def _send_message(reason: str) -> str:
     if reason == "insufficient_asset":
         return "need funds"
     return "backend cannot send"
+
+
+def _payment_hash(value: str) -> str:
+    text = (value or "").strip()
+    if text.startswith("0x") and len(text) == 66:
+        body = text[2:]
+        if all(ch in "0123456789abcdefABCDEF" for ch in body):
+            return text
+    return ""
 
 
 def _host_tool_from(exc: BaseException) -> str | None:

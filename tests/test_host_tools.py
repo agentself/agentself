@@ -6,13 +6,19 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 import tarfile
 import zipfile
+from pathlib import Path
 
 import pytest
 
+from agentself.backends.store.passstore import _run_host
+from agentself.bind import public_recipient
 from agentself.internal import host_tools
+from agentself.internal.custody.errors import UnboundCaller
 from agentself.internal.host_tools import HostToolError, ensure_host_tools
+from agentself.local import IdentityStateError, ensure_age_key
 
 from tests.support import cli_env, run_cli
 
@@ -247,3 +253,99 @@ def test_cli_doctor_fetch_off_keeps_age_missing_shape(tmp_path):
     init = run_cli(["init"], env)
     assert init.returncode == 1
     assert "install --tools" in init.stderr
+
+
+def _plant_host_name(folder: Path, name: str) -> Path:
+    planted = folder / (name + (".exe" if os.name == "nt" else ""))
+    planted.write_text("not-the-real-" + name, encoding="utf-8")
+    if os.name != "nt":
+        planted.chmod(0o755)
+    return planted
+
+
+def _record_resolved_spawns(
+    monkeypatch,
+) -> list[tuple[list[str], dict[str, str] | None]]:
+    recorded: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def fake_run(argv, **kwargs):
+        env = kwargs.get("env")
+        recorded.append((list(argv), env if env is None else dict(env)))
+        return subprocess.CompletedProcess(argv, 1, b"", b"refused")
+
+    monkeypatch.setattr("agentself.internal.files.subprocess.run", fake_run)
+    return recorded
+
+
+def _assert_spawn_skips_cwd(recorded, planted: Path) -> None:
+    assert recorded, "expected a host spawn"
+    argv, env = recorded[0]
+    cmd0 = Path(argv[0])
+    if cmd0.is_absolute() or len(cmd0.parts) > 1:
+        assert cmd0.resolve() != planted.resolve()
+    if os.name == "nt":
+        assert env is not None
+        assert env.get("NoDefaultCurrentDirectoryInExePath") == "1"
+
+
+def test_diagnose_and_init_ignore_planted_cwd_age_keygen(tmp_path):
+    vault = tmp_path / "vault"
+    work = tmp_path / "work"
+    work.mkdir()
+    planted = _plant_host_name(work, "age-keygen")
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    env = cli_env(vault)
+    env["PATH"] = str(work) + os.pathsep + str(empty)
+    diagnosed = run_cli(["diagnose"], env, cwd=work)
+    assert diagnosed.returncode == 1, diagnosed.stdout + diagnosed.stderr
+    assert "age not on PATH" in diagnosed.stderr
+    assert planted.is_file()
+    started = run_cli(["init"], env, cwd=work)
+    assert started.returncode == 1, started.stdout + started.stderr
+    assert "age not on PATH" in started.stderr
+    js = run_cli(["--json", "diagnose"], env, cwd=work)
+    data = json.loads(js.stdout or js.stderr)
+    assert data["ok"] is False
+    assert data["reason"] == "age not on PATH"
+
+
+def test_diagnose_ignores_cwd_age_keygen_not_on_path(tmp_path):
+    vault = tmp_path / "vault"
+    work = tmp_path / "work"
+    work.mkdir()
+    _plant_host_name(work, "age-keygen")
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    env = cli_env(vault)
+    env["PATH"] = str(empty)
+    proc = run_cli(["diagnose"], env, cwd=work)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "age not on PATH" in proc.stderr
+
+
+def test_age_keygen_and_pass_spawns_skip_cwd_binary(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    work.mkdir()
+    age = _plant_host_name(work, "age-keygen")
+    gpg = _plant_host_name(work, "gpg")
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("PATH", str(work))
+    recorded = _record_resolved_spawns(monkeypatch)
+
+    vault = tmp_path / "vault"
+    with pytest.raises((RuntimeError, IdentityStateError, FileNotFoundError)):
+        ensure_age_key(vault, "agent")
+    _assert_spawn_skips_cwd(recorded, age)
+
+    recorded.clear()
+    key = tmp_path / "agent.agekey"
+    key.write_text("AGE-SECRET-KEY-NOTAREALKEY\n", encoding="utf-8")
+    with pytest.raises(UnboundCaller):
+        public_recipient(str(key))
+    _assert_spawn_skips_cwd(recorded, age)
+
+    recorded.clear()
+    proc = _run_host(["gpg", "--version"])
+    assert proc.returncode == 1
+    _assert_spawn_skips_cwd(recorded, gpg)

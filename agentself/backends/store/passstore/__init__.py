@@ -17,8 +17,9 @@ from agentself.internal.files import (
     atomic_write_text,
     ensure_private_dir,
     exclusive,
+    have_host_tool,
     identity_home,
-    resolve_tool,
+    run_resolved,
     shred_unlink,
 )
 from agentself.internal.gpg import (
@@ -211,13 +212,7 @@ class PassStoreAccess(StoreAccess):
 
 
 def _have_tool(name: str) -> bool:
-    path = Path(resolve_tool(name))
-    if len(path.parts) < 2:
-        return False
-    try:
-        return path.is_file()
-    except OSError:
-        return False
+    return have_host_tool(name)
 
 
 def _run_host(
@@ -227,15 +222,8 @@ def _run_host(
     timeout: int = 30,
     failed: str = "keygen failed",
 ) -> subprocess.CompletedProcess[bytes]:
-    cmd = [resolve_tool(argv[0]), *argv[1:]]
     try:
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-            env=env,
-        )
+        return run_resolved(argv, env=env, timeout=timeout)
     except FileNotFoundError:
         raise StoreResourceError(f"{argv[0] if argv else 'tool'} not on PATH") from None
     except subprocess.TimeoutExpired:

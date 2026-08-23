@@ -286,6 +286,7 @@ def test_list_maps_meta_and_caches_inbox_id(vault):
             "from": "src@example.com",
             "to": "a@x.to, b@y.to",
             "subject": "subj",
+            "status": "new",
         }
     ]
     cache = identity_home(vault, PRINCIPAL) / "agentmail" / "inbox_id"

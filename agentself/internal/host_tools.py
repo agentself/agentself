@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agentself import __version__
 from agentself.host import ENV_FETCH_TOOLS, ENV_TOOLS_DIR
+from agentself.internal.files import have_host_tool
 
 AGE_VERSION = "v1.3.1"
 SOPS_VERSION = "v3.13.3"
@@ -81,8 +82,8 @@ def fetch_enabled() -> bool:
 def ensure_host_tools(*, fetch: bool = True) -> None:
     dest = tools_dir()
     _prepend_path(dest)
-    need_age = shutil.which("age-keygen") is None
-    need_sops = shutil.which("sops") is None
+    need_age = not have_host_tool("age-keygen")
+    need_sops = not have_host_tool("sops")
     if not need_age and not need_sops:
         return
     if not fetch or not fetch_enabled():

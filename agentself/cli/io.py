@@ -3,12 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from agentself.internal.files import atomic_write
 from agentself.internal.text import (
     byte_count,
     decode_utf8_text,
     read_text_file,
     sha256_text,
-    write_text_file,
+    utf8_bytes,
 )
 
 
@@ -26,12 +27,14 @@ def read_stdin_text(*, strip_newline: bool = True) -> str:
     )
 
 
-def load_value_file(path: str, *, strip_newline: bool = True) -> str:
-    return read_text_file(Path(path), strip_newline=strip_newline)
+def load_value_file(
+    path: str, *, strip_newline: bool = True, strip_bom: bool = True
+) -> str:
+    return read_text_file(Path(path), strip_newline=strip_newline, strip_bom=strip_bom)
 
 
 def store_value_file(path: str, value: str) -> None:
-    write_text_file(Path(path), value)
+    atomic_write(Path(path), utf8_bytes(value), mode=0o600, private_dir=False)
 
 
 def value_meta(value: str) -> dict[str, object]:

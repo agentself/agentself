@@ -52,6 +52,7 @@ class MaildirMailboxAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
         try:
@@ -61,10 +62,10 @@ class MaildirMailboxAccess(MailboxAccess):
                 if wanted:
                     messages = _take_by_id(new_dir, cur_dir, wanted)
                     self._log.record("mailbox_recv", identity_id, None, "ok")
-                    return messages
+                    return _with_body(messages, include_body)
                 messages = _consume_new(new_dir, cur_dir)
                 self._log.record("mailbox_recv", identity_id, None, "ok")
-                return messages
+                return _with_body(messages, include_body)
         except IdentityBusy as exc:
             raise MailboxError("rpc failed") from exc
 
@@ -119,6 +120,17 @@ class MaildirMailboxAccess(MailboxAccess):
         for folder in (new_dir, cur_dir, tmp_dir):
             folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         return new_dir, cur_dir
+
+
+def _with_body(
+    messages: list[dict[str, str]], include_body: bool
+) -> list[dict[str, str]]:
+    if include_body:
+        return messages
+    return [
+        {key: value for key, value in item.items() if key != "body"}
+        for item in messages
+    ]
 
 
 def _take_by_id(new_dir: Path, cur_dir: Path, wanted: str) -> list[dict[str, str]]:

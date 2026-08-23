@@ -160,6 +160,18 @@ def test_featured_parser_matches_golden_commands():
         assert shown == COMMANDS[group], (group, shown)
 
 
+def test_json_init_does_not_prompt_on_tty(tmp_path, monkeypatch, capsys):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+
+    monkeypatch.setattr("builtins.input", lambda prompt="": "prompted-id")
+    data = _main_ok(monkeypatch, capsys, env, ["init"], "init")
+    assert data["id"] == "agent"
+
+
 def test_json_version(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
@@ -251,7 +263,10 @@ def test_json_secrets_and_missing(tmp_path):
         run_cli(["--json", "secret", "exists", "notes"], env), "secret_exists"
     )
     assert present == {"ok": True, "name": "notes", "exists": True}
-    got = assert_ok(run_cli(["--json", "secret", "get", "notes"], env), "secret_get")
+    got = assert_ok(
+        run_cli(["--json", "secret", "get", "notes", "--print"], env),
+        "secret_get",
+    )
     assert got == {"ok": True, "name": "notes", "value": "only I can open this"}
     updated = assert_ok(
         run_cli(
@@ -273,7 +288,8 @@ def test_json_secrets_and_missing(tmp_path):
     assert "wallet.key" in listed["protected"]
     assert "only I can open this" not in json.dumps(listed)
     missing = assert_err(
-        run_cli(["--json", "secret", "get", "ghost"], env), error="missing"
+        run_cli(["--json", "secret", "get", "ghost", "--meta"], env),
+        error="missing",
     )
     assert missing["next"] == "agentself secret list"
     clash = assert_err(
@@ -379,7 +395,23 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
         ["wallet", "send", _TO, "1"],
         "wallet_send",
     )
-    assert sent == {"ok": True, "to": _TO, "amount": "1", "asset": "USDC"}
+    assert sent["ok"] is True
+    assert sent["to"] == _TO
+    assert sent["amount"] == "1"
+    assert sent["asset"] == "USDC"
+    assert sent["hash"].startswith("0x")
+    assert len(sent["hash"]) == 66
+    assert all(ch in "0123456789abcdefABCDEF" for ch in sent["hash"][2:])
+    again = _main_ok(
+        monkeypatch,
+        capsys,
+        env,
+        ["wallet", "send", _TO, "1"],
+        "wallet_send",
+    )
+    assert again["hash"] != sent["hash"]
+    assert again["hash"].startswith("0x")
+    assert len(again["hash"]) == 66
 
 
 def test_json_failure_envelope_and_streams(tmp_path):

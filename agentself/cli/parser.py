@@ -261,7 +261,7 @@ def _parser() -> argparse.ArgumentParser:
             "Named secrets. create refuses if the name exists with a different value. "
             "The same value is unchanged. "
             "update requires it. delete removes a name. list prints names only. "
-            "wallet.key cannot be deleted and needs --unsafe to export."
+            "wallet.key cannot be deleted and needs --unsafe to export or replace."
         ),
         epilog=(
             "Examples:\n"
@@ -290,7 +290,8 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Write a named secret. Refuses if the name exists with a different value. "
             "Repeating the same value is unchanged. "
-            "VALUE may be omitted: reads stdin when stdin is not a tty, or --file PATH."
+            "VALUE may be omitted: reads stdin when stdin is not a tty. "
+            "--file PATH preserves the exact UTF-8 file bytes."
         ),
         epilog=(
             "Examples:\n"
@@ -304,32 +305,38 @@ def _parser() -> argparse.ArgumentParser:
         secret_sub,
         "get",
         json_parent,
-        help="Print a named secret",
+        help="Export a named secret safely",
         description=(
-            "Print a named secret. Exits 3 if the name is missing. "
-            "wallet.key requires --unsafe. --file writes the exact stored bytes. "
-            "--meta prints size and SHA-256 without the value."
+            "Export a named secret. Exits 3 if the name is missing. "
+            "Use --file for private file output or --meta for size and SHA-256. "
+            "Plaintext stdout requires --print. wallet.key also requires --unsafe."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself secret get NAME\n"
             "  agentself secret get NAME --file PATH\n"
             "  agentself secret get NAME --meta\n"
-            "  agentself --json secret get NAME"
+            "  agentself secret get NAME --print"
         ),
     )
     get_secret.add_argument("name", metavar="NAME", help="Secret name")
-    get_secret.add_argument(
+    secret_output = get_secret.add_mutually_exclusive_group()
+    secret_output.add_argument(
         "--file",
         dest="to_file",
         default="",
         metavar="PATH",
         help="Write the value to a file instead of stdout",
     )
-    get_secret.add_argument(
+    secret_output.add_argument(
         "--meta",
         action="store_true",
         help="Print size and SHA-256 without the value",
+    )
+    secret_output.add_argument(
+        "--print",
+        dest="print_value",
+        action="store_true",
+        help="Explicitly print the plaintext value to stdout",
     )
     get_secret.add_argument(
         "--unsafe",
@@ -341,10 +348,18 @@ def _parser() -> argparse.ArgumentParser:
         "update",
         json_parent,
         help="Update a named secret. The name must exist",
-        description="Update a named secret. The name must exist. Same value rules as create.",
+        description=(
+            "Update a named secret. The name must exist. Same value rules as create. "
+            "wallet.key requires --unsafe."
+        ),
         epilog="Examples:\n  agentself secret update NAME VALUE",
     )
     _add_secret_write_args(update_p)
+    update_p.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow replacing a protected secret",
+    )
     _cmd(
         secret_sub,
         "list",
@@ -383,13 +398,15 @@ def _parser() -> argparse.ArgumentParser:
             "Optional email. connect does not block init. "
             "connect runs a generic, resumable setup. "
             "Backends publish required inputs through agentself backends email. "
-            "Send without credentials fails closed."
+            "Send without credentials fails closed. receive prints headers only; "
+            "fetch a body by ID with receive ID --file PATH."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email connect\n"
             "  agentself email show\n"
             "  agentself --json email receive\n"
+            "  agentself email receive ID --file PATH\n"
             "  agentself backends email\n"
             "\n"
             "Use agentself email <command> --help to drill in."
@@ -414,7 +431,9 @@ def _parser() -> argparse.ArgumentParser:
             "when input or a human action is required. "
             "Continue with --json --continue --state STATE --result-file PATH. "
             "Sensitive answers come from --result-file, stdin, or a hidden prompt, "
-            "never from argv."
+            "never from argv. Happy path: run connect, obtain the requested backend "
+            "credential, provide it through the secure prompt or --result-file, then "
+            "verify with agentself --json email show."
         ),
         epilog=(
             "Examples:\n"
@@ -478,11 +497,16 @@ def _parser() -> argparse.ArgumentParser:
         "receive",
         json_parent,
         help="Receive new mail, or fetch one id again",
-        description="Receive new mail, or fetch one id again even if already received.",
+        description=(
+            "Receive new mail, or fetch one id again even if already received. "
+            "Headers and new/seen status are safe by default; bodies may contain "
+            "credentials and are omitted unless --file or --print is explicit."
+        ),
         epilog=(
             "Examples:\n"
             "  agentself email receive\n"
-            "  agentself email receive ID\n"
+            "  agentself email receive ID --file PATH\n"
+            "  agentself email receive ID --print\n"
             "  agentself --json email receive"
         ),
     )
@@ -491,6 +515,20 @@ def _parser() -> argparse.ArgumentParser:
         nargs="?",
         metavar="ID",
         help="Fetch this id again even if already received",
+    )
+    body_output = email_receive.add_mutually_exclusive_group()
+    body_output.add_argument(
+        "--file",
+        dest="body_file",
+        default="",
+        metavar="PATH",
+        help="Write one message body to a private file; requires ID",
+    )
+    body_output.add_argument(
+        "--print",
+        dest="print_body",
+        action="store_true",
+        help="Explicitly include message bodies on stdout",
     )
     _cmd(
         email_sub,
@@ -504,9 +542,10 @@ def _parser() -> argparse.ArgumentParser:
         sub,
         "wallet",
         json_parent,
-        help="Show, address, balance, authorize, and send",
+        help="Show, address, balance, authorize (sign), and send",
         description=(
-            "Show, address, balance, authorize, and send. "
+            "Show, address, balance, authorize, and send. Looking for signing? "
+            "Use wallet authorize; JSON output reports the chosen scheme. "
             "address is the destination id. send uses the backend default asset."
         ),
         epilog=(

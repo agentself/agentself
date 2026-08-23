@@ -145,13 +145,22 @@ class InstrumentedMailboxAccess:
             address=address,
         )
 
-    def receive(self, identity_id, *, credential=None, address=None, message_id=None):
+    def receive(
+        self,
+        identity_id,
+        *,
+        credential=None,
+        address=None,
+        message_id=None,
+        include_body=True,
+    ):
         self.calls.append(("receive", identity_id))
         return self.inner.receive(
             identity_id,
             credential=credential,
             address=address,
             message_id=message_id,
+            include_body=include_body,
         )
 
     def list(self, identity_id, *, credential=None, address=None):
@@ -280,6 +289,10 @@ class InstrumentedWalletAccess:
         self.calls.append(("send",))
         return self.inner.send(identity_id, to, amount, asset)
 
+    def payment_ref(self) -> str:
+        getter = getattr(self.inner, "payment_ref", None)
+        return getter() if callable(getter) else ""
+
     def describe(self, identity_id):
         self.calls.append(("describe",))
         return self.inner.describe(identity_id)
@@ -330,7 +343,7 @@ class MockRpc:
         if method == "eth_call":
             return "0x" + format(self.usdc_raw, "x").zfill(64)
         if method == "eth_getTransactionCount":
-            return "0x0"
+            return hex(len(self.sent_raw))
         if method == "eth_gasPrice":
             return "0x3b9aca00"
         if method == "eth_estimateGas":

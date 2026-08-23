@@ -106,6 +106,16 @@ def test_operation_help_stays_provider_neutral(tmp_path):
             assert not _has_token(text, provider), (args, provider, text)
 
 
+def test_backend_email_discovery_includes_first_run_stop_rules(tmp_path):
+    proc = run_cli(["backends", "email"], cli_env(tmp_path / "vault"))
+    assert proc.returncode == 0, proc.stderr
+    text = " ".join(proc.stdout.split())
+    assert "credential:" in text
+    assert "--result-file" in text
+    assert "claimed, forbidden, or unavailable" in text
+    assert "stop and ask the user" in text
+
+
 def test_help_does_not_print_status(tmp_path):
     env = cli_env(tmp_path / "vault")
     started = run_cli(["init"], env)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import textwrap
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -149,7 +150,11 @@ CHANNELS: dict[str, Channel] = {
                 options=IMAP_OPTIONS,
             ),
         ),
-        note="email connect does not block init.",
+        note=(
+            "email connect does not block init. Run connect, supply the requested "
+            "credential through its secure prompt or --result-file, then verify with "
+            "agentself --json email show."
+        ),
     ),
     "store": Channel(
         name="store",
@@ -237,7 +242,7 @@ def backends_payload(channel: str | None = None) -> dict[str, object]:
 
 def format_backends(channel: str | None = None) -> str:
     if channel:
-        return _format_channel(CHANNELS[channel]) + "\n"
+        return _format_channel(CHANNELS[channel], verbose_options=True) + "\n"
     lines = [
         "Shipped backends. Same command tree on every backend.",
         "Each backend lists live/local, custody, and supported verbs.",
@@ -295,7 +300,7 @@ def _bind_label(name: str, default: str) -> str:
     return f"{name} (default)" if name == default else name
 
 
-def _format_channel(spec: Channel) -> str:
+def _format_channel(spec: Channel, *, verbose_options: bool = False) -> str:
     meta = [spec.env, spec.flag] if spec.env else [spec.flag]
     lines = [f"{spec.name}  ({', '.join(meta)})"]
     labels = [_bind_label(item.name, spec.default) for item in spec.binds]
@@ -304,6 +309,20 @@ def _format_channel(spec: Channel) -> str:
         lines.append(f"  {label.ljust(width)}  {item.summary}")
         if item.options:
             lines.append(f"  {' ' * width}  {_format_options(item)}")
+            if verbose_options:
+                indent = " " * (width + 6)
+                for option in item.options:
+                    name = str(option.get("name") or "")
+                    help_text = str(option.get("help") or "")
+                    if name and help_text:
+                        lines.extend(
+                            textwrap.wrap(
+                                f"{name}: {help_text}",
+                                width=88,
+                                initial_indent=indent,
+                                subsequent_indent=indent,
+                            )
+                        )
         lines.append(f"  {' ' * width}  {_format_caps(item)}")
     if spec.note:
         lines.append(f"  {spec.note}")

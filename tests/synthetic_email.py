@@ -66,9 +66,10 @@ class SyntheticEmailAccess(MailboxAccess):
         credential: str | None = None,
         address: str | None = None,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        del credential, address, message_id
+        del credential, address, message_id, include_body
         return []
 
     def list(

@@ -36,6 +36,7 @@ class CustodyManager(Protocol):
         caller: BoundCaller,
         *,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> builtins.list[dict[str, str]]: ...
 
     def email_list(self, caller: BoundCaller) -> builtins.list[dict[str, str]]: ...
@@ -67,7 +68,7 @@ class CustodyManager(Protocol):
         to: str,
         amount: str,
         asset: str = "",
-    ) -> str: ...
+    ) -> dict[str, str]: ...
 
     def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]: ...
 
@@ -126,9 +127,12 @@ class Client:
         self,
         *,
         message_id: str | None = None,
+        include_body: bool = True,
     ) -> builtins.list[dict[str, str]]:
         caller = self._require_caller()
-        return self._manager.email_receive(caller, message_id=message_id)
+        return self._manager.email_receive(
+            caller, message_id=message_id, include_body=include_body
+        )
 
     def email_list(self) -> builtins.list[dict[str, str]]:
         caller = self._require_caller()
@@ -159,7 +163,7 @@ class Client:
         caller = self._require_caller()
         return self._manager.wallet_balance(caller)
 
-    def wallet_send(self, to: str, amount: str, asset: str = "") -> str:
+    def wallet_send(self, to: str, amount: str, asset: str = "") -> dict[str, str]:
         caller = self._require_caller()
         return self._manager.wallet_send(caller, to, amount, asset)
 

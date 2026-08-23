@@ -96,7 +96,7 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert sealed.returncode == 0, sealed.stderr
     assert secret not in sealed.stdout
     assert secret not in sealed.stderr
-    got = run_cli(["secret", "get", "notes"], env)
+    got = run_cli(["secret", "get", "notes", "--print"], env)
     assert got.returncode == 0, got.stderr
     assert got.stdout.strip() == secret
 
@@ -104,7 +104,7 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert argv.returncode == 0, argv.stderr
     assert "argv-value" not in argv.stdout
     assert "argv-value" not in argv.stderr
-    got_argv = run_cli(["secret", "get", "other"], env)
+    got_argv = run_cli(["secret", "get", "other", "--print"], env)
     assert got_argv.returncode == 0, got_argv.stderr
     assert got_argv.stdout.strip() == "argv-value"
 
@@ -123,7 +123,7 @@ def test_set_value_and_file_fails_closed(tmp_path):
     assert "next:" in proc.stderr
     assert "argv-secret" not in proc.stdout + proc.stderr
     assert "from-file" not in proc.stdout + proc.stderr
-    missing = run_cli(["secret", "get", "notes"], env)
+    missing = run_cli(["secret", "get", "notes", "--meta"], env)
     assert missing.returncode == 3
 
 
@@ -333,7 +333,23 @@ def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
     by_id = {item["id"]: item for item in messages}
     assert bad_id in by_id
     assert good_id in by_id
-    assert by_id[bad_id]["reason"] in {"mailbox_error", "http"}
-    assert by_id[good_id]["body"] == "full good"
+    assert all("body" not in item for item in messages)
+    assert "body" not in by_id[good_id]
+    assert by_id[good_id]["status"] == "seen"
+    assert not [url for url, _headers in http.gets if "/messages/msg" in url]
     assert "hold-value" not in captured.out
     assert "hold-value" not in captured.err
+
+    body_file = tmp_path / "message-body.txt"
+    code = main(["--json", "email", "receive", good_id, "--file", str(body_file)])
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    exported = json.loads(captured.out)["messages"][0]
+    assert "body" not in exported
+    assert exported["body_file"] == str(body_file)
+    assert body_file.read_text(encoding="utf-8") == "full good"
+
+    code = main(["--json", "email", "receive", good_id, "--print"])
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    assert json.loads(captured.out)["messages"][0]["body"] == "full good"
