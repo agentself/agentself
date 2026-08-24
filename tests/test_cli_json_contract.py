@@ -187,6 +187,11 @@ def test_json_backends_match_goldens(tmp_path):
     env = cli_env(tmp_path / "vault")
     catalog = assert_ok(run_cli(["--json", "backends"], env), "backends")
     assert _strip_prose(catalog) == _strip_prose(_golden("backends.json"))
+    blob = json.dumps(catalog).lower()
+    assert "otp" not in blob
+    assert "imap_host" not in blob
+    assert "smtp_host" not in blob
+    assert "help" not in blob
     for channel in CHANNELS:
         one = assert_ok(
             run_cli(["--json", "backends", channel], env), "backends_channel"
@@ -195,6 +200,33 @@ def test_json_backends_match_goldens(tmp_path):
         assert one["channel"]["name"] == channel
         assert "backends" in one["channel"]
         assert one["channel"]["backends"]
+        for item in one["channel"]["backends"]:
+            assert "options" not in item
+    email = assert_ok(
+        run_cli(["--json", "backends", "email", "agentmail"], env), "backends_channel"
+    )
+    names = [item["name"] for item in email["channel"]["backends"]]
+    assert names == ["agentmail"]
+    options = email["channel"]["backends"][0]["options"]
+    option_names = [item["name"] for item in options]
+    assert "setup_method" in option_names
+    assert "credential" in option_names
+    assert any(item.get("help") for item in options)
+
+
+def test_json_commands_lists_featured_verbs(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    data = assert_ok(run_cli(["--json", "commands"], env), "commands")
+    names = [item["name"] for item in data["commands"]]
+    for verb in ("init", "show", "secret", "email", "wallet"):
+        assert verb in names
+    for item in data["commands"]:
+        assert set(item) == {"name", "args", "next"}
+        assert isinstance(item["args"], list)
+        assert item["next"].startswith("agentself ")
+    blob = json.dumps(data)
+    assert "0x" not in blob
+    assert "AGE-SECRET-KEY" not in blob
 
 
 def test_json_init_show_identity_doctor_recipient(tmp_path):
@@ -390,7 +422,7 @@ def test_json_email_mark_contract(tmp_path):
     assert unmarked == {"ok": True, "id": "provider/id", "acted": False}
 
 
-def test_json_email_connect_never_prompts_and_keeps_option_help(
+def test_json_email_connect_never_prompts_and_keeps_compact_next_step(
     tmp_path, monkeypatch, capsys
 ):
     _vault, env, _started = _init(tmp_path)
@@ -407,8 +439,14 @@ def test_json_email_connect_never_prompts_and_keeps_option_help(
     data = _main_err(monkeypatch, capsys, env, ["email", "connect"], error="missing")
     assert prompted == []
     assert data["status"] == "input_required"
-    help_text = data["option"]["help"]
-    assert help_text
+    assert data["option"]["name"] == "setup_method"
+    assert data["option"]["choices"] == [
+        "existing_credential",
+        "create_account",
+    ]
+    assert "help" not in data["option"]
+    assert "prompt" not in data["option"]
+    assert data["next"].startswith("agentself --json email connect --continue --state ")
     assert data["continue"].startswith(
         "agentself --json email connect --continue --state "
     )

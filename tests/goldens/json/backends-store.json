@@ -21,8 +21,7 @@
         ],
         "custody": "age-files",
         "network": "",
-        "asset": "",
-        "options": []
+        "asset": ""
       },
       {
         "name": "pass",
@@ -37,8 +36,7 @@
         ],
         "custody": "gpg-pass",
         "network": "",
-        "asset": "",
-        "options": []
+        "asset": ""
       }
     ]
   }

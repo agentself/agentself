@@ -12,6 +12,7 @@ _FEATURED_TOP = (
     "init",
     "show",
     "backends",
+    "commands",
     "diagnose",
     "secret",
     "email",
@@ -67,6 +68,8 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "NAME" in create.stdout
     assert "VALUE" in create.stdout
     assert "--file" in create.stdout
+    assert "--from-dir" in create.stdout
+    assert "--from-files" in create.stdout
 
     send = run_cli(["wallet", "send", "--help"], env)
     assert send.returncode == 0, send.stderr
@@ -89,6 +92,7 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "--email" in init.stdout
     assert "--wallet" in init.stdout
     assert "--store" in init.stdout
+    assert "--wallet-key-file" in init.stdout
     assert "base (default)" in init.stdout
     assert "agentmail (default)" in init.stdout
 

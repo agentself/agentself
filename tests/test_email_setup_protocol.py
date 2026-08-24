@@ -592,7 +592,8 @@ def test_json_continue_control_chars_are_not_rpc(
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
     code, first = _connect(monkeypatch, capsys, env)
     assert code == 3
-    assert "AGENT PROCEDURE FOR JSON" in first["option"]["help"]
+    assert first["option"]["name"] == "credential"
+    assert "help" not in first["option"]
     cred = tmp_path / "credential.txt"
     cred.write_bytes(b"tok\r\nAuthorization: Bearer paste-artifact")
     code, failed = _connect(

@@ -8,9 +8,90 @@ from agentself.host import CHANNELS, ENV_IDENTITY_DIR, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
-_FEATURED = (
-    "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
+_FEATURED = "{init,show,backends,commands,diagnose,secret,note,email,wallet,backup,restore,install}"
+_COMMANDS = (
+    {
+        "name": "init",
+        "args": [
+            "--id",
+            "--wallet",
+            "--email",
+            "--store",
+            "--force",
+            "--wallet-key-file",
+        ],
+        "next": "agentself --json init",
+    },
+    {
+        "name": "show",
+        "args": [],
+        "next": "agentself --json show",
+    },
+    {
+        "name": "backends",
+        "args": ["CHANNEL", "BACKEND"],
+        "next": "agentself --json backends",
+    },
+    {
+        "name": "commands",
+        "args": [],
+        "next": "agentself --json commands",
+    },
+    {
+        "name": "diagnose",
+        "args": [],
+        "next": "agentself --json diagnose",
+    },
+    {
+        "name": "secret",
+        "args": ["create", "get", "update", "list", "delete", "exists"],
+        "next": "agentself --json secret list",
+    },
+    {
+        "name": "note",
+        "args": ["set", "get", "list", "delete", "exists"],
+        "next": "agentself --json note list",
+    },
+    {
+        "name": "email",
+        "args": ["connect", "show", "send", "receive", "list", "find", "mark"],
+        "next": "agentself --json email connect",
+    },
+    {
+        "name": "wallet",
+        "args": ["show", "address", "balance", "authorize", "verify", "send"],
+        "next": "agentself --json wallet address",
+    },
+    {
+        "name": "backup",
+        "args": ["PATH"],
+        "next": "agentself backup PATH",
+    },
+    {
+        "name": "restore",
+        "args": ["PATH"],
+        "next": "agentself restore PATH",
+    },
+    {
+        "name": "install",
+        "args": ["--skills", "--tools"],
+        "next": "agentself install --tools",
+    },
 )
+
+
+def commands_payload() -> dict[str, object]:
+    return {"ok": True, "commands": [dict(item) for item in _COMMANDS]}
+
+
+def format_commands() -> str:
+    width = max(len(str(item["name"])) for item in _COMMANDS)
+    lines = []
+    for item in _COMMANDS:
+        args = " ".join(str(part) for part in item["args"])
+        name = str(item["name"]).ljust(width)
+        lines.append(f"{name}  {args}".rstrip())
+    return "\n".join(lines) + "\n"
 
 
 class _Parser(argparse.ArgumentParser):
@@ -103,8 +184,15 @@ def _add_create_flags(parser: argparse.ArgumentParser) -> None:
         )
 
 
-def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("name", metavar="NAME", help="Secret name")
+def _add_secret_write_args(
+    parser: argparse.ArgumentParser, *, name_required: bool = True
+) -> None:
+    parser.add_argument(
+        "name",
+        nargs=None if name_required else "?",
+        metavar="NAME",
+        help="Secret name",
+    )
     parser.add_argument(
         "value",
         nargs="?",
@@ -174,21 +262,21 @@ def _parser() -> argparse.ArgumentParser:
             "and optional email.\n"
             "\n"
             "No command prints the current identity.\n"
-            "Use agentself <command> --help to drill in.\n"
-            "Use agentself backends to list shipped backends.\n"
-            "Use agentself diagnose to check this host.\n"
+            "Use agentself --json commands for the compact verb index.\n"
+            "Use agentself backends CHANNEL BACKEND to drill into setup options.\n"
+            "Use agentself --json diagnose to check this host.\n"
             "Use --version to print the package version.\n"
             "Prefer --json for one JSON object.\n"
             "Exit codes: 0 ok, 1 error, 2 refused, 3 missing."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself --help\n"
-            "  agentself --version\n"
+            "  agentself --json --version\n"
+            "  agentself --json commands\n"
+            "  agentself --json diagnose\n"
             "  agentself install --tools\n"
             "  agentself init\n"
             "  agentself backends\n"
-            "  agentself diagnose\n"
             "  agentself --json show\n"
             "  agentself secret create NAME VALUE\n"
             "  agentself note set NAME VALUE\n"
@@ -228,6 +316,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself init\n"
             "  agentself init --id NAME\n"
             "  agentself init --wallet base\n"
+            "  agentself init --wallet-key-file PATH\n"
             "  agentself init --force\n"
             "  agentself --json init"
         ),
@@ -237,6 +326,18 @@ def _parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Allow identity or backend changes on an existing identity",
+    )
+    init_p.add_argument(
+        "--wallet-key-file",
+        dest="wallet_key_file",
+        default="",
+        metavar="PATH",
+        help="Seal this hex key as wallet.key on first init. Use - to read stdin",
+    )
+    init_p.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow replacing wallet.key on an existing identity",
     )
 
     _cmd(
@@ -258,18 +359,20 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="List shipped backends",
         description=(
-            "List shipped host backends and their setup options. Same command tree on "
-            "every backend; each backend lists live/local and supported verbs. "
+            "List shipped host backends. Default output is names and short summaries. "
+            "Same command tree on every backend. "
             "Pick with init flags or AGENTSELF_*_BACKEND. "
             "Flag, then env, then identity-directory config, then default. No failover. "
             "One identity per directory; isolate with AGENTSELF_IDENTITY_DIR, "
-            "not named remotes."
+            "not named remotes. Drill in with CHANNEL or CHANNEL BACKEND for options."
         ),
         epilog=(
             "Examples:\n"
             "  agentself backends\n"
             "  agentself backends wallet\n"
             "  agentself --json backends\n"
+            "  agentself --json backends email\n"
+            "  agentself --json backends email agentmail\n"
             "  agentself init --wallet base"
         ),
     )
@@ -280,6 +383,25 @@ def _parser() -> argparse.ArgumentParser:
         metavar="{" + ",".join(names) + "}",
         choices=names,
         help="One channel. Omit to list all",
+    )
+    backends_p.add_argument(
+        "backend",
+        nargs="?",
+        metavar="BACKEND",
+        default="",
+        help="One backend. Omit to list the channel without option essays",
+    )
+
+    _cmd(
+        sub,
+        "commands",
+        json_parent,
+        help="List featured verbs",
+        description=(
+            "List featured verbs with compact args and a next step. "
+            "Prefer this over dumping human --help."
+        ),
+        epilog="Examples:\n  agentself commands\n  agentself --json commands",
     )
 
     _cmd(
@@ -313,6 +435,7 @@ def _parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  agentself secret create NAME VALUE\n"
             "  agentself secret create NAME --file PATH\n"
+            "  agentself secret create --from-dir DIR\n"
             "  agentself secret get NAME\n"
             "  agentself secret exists NAME\n"
             "  agentself secret delete NAME\n"
@@ -337,16 +460,41 @@ def _parser() -> argparse.ArgumentParser:
             "Write a named secret. Refuses if the name exists with a different value. "
             "Repeating the same value is unchanged. "
             "VALUE may be omitted: reads stdin when stdin is not a tty. "
-            "--file PATH drops a leading UTF-8 BOM and keeps a trailing newline."
+            "--file PATH drops a leading UTF-8 BOM and keeps a trailing newline. "
+            "--from-dir DIR imports each regular file's basename as a name. "
+            "--from-files NAME=PATH may be repeated. "
+            "wallet.key needs --unsafe."
         ),
         epilog=(
             "Examples:\n"
             "  agentself secret create NAME VALUE\n"
             "  agentself secret create NAME --file PATH\n"
+            "  agentself secret create --from-dir DIR\n"
+            "  agentself secret create --from-files NAME=PATH\n"
             "  agentself --json secret create NAME VALUE"
         ),
     )
-    _add_secret_write_args(create_p)
+    _add_secret_write_args(create_p, name_required=False)
+    create_p.add_argument(
+        "--from-dir",
+        dest="from_dir",
+        default="",
+        metavar="DIR",
+        help="Import each regular file in DIR; basename is the secret name",
+    )
+    create_p.add_argument(
+        "--from-files",
+        dest="from_files",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="Import NAME from PATH. Repeat. Same file decode as --file",
+    )
+    create_p.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow creating wallet.key",
+    )
     get_secret = _cmd(
         secret_sub,
         "get",

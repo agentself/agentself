@@ -3,6 +3,7 @@
     "init",
     "show",
     "backends",
+    "commands",
     "diagnose",
     "secret",
     "note",
