@@ -1,13 +1,41 @@
 # Release checklist
 
-1. Confirm `main` is clean and CI is green.
-2. Choose the release version and update the single package version.
-3. Finalize the matching section in `CHANGELOG.md`.
-4. Build the wheel and source distribution; run `twine check --strict`.
-5. Run pytest, Ruff, mypy, and an installed-wheel CLI smoke test.
-6. After merge to `main`, create the matching `vVERSION` tag on that commit and push it.
-7. Let the tag workflow publish to TestPyPI, then PyPI, through Trusted Publishing (OIDC).
-8. Create the GitHub release from the matching changelog section. Verify the published package, version, CLI smoke test, and GitHub release.
+Version, changelog, classifier, and docs live in a PR. Merge to `main`, then
+wait for `test.yml` green on that merge commit (including wheel and sdist).
 
-Do not replace Trusted Publishing with a long-lived PyPI API token. Keep the
-release tag and package version identical.
+1. Confirm `main` is clean and CI is green on that merge commit.
+2. Confirm the single package version in `agentself/__init__.py` matches the
+   changelog section.
+3. Confirm the matching section in `CHANGELOG.md` is final.
+4. Do not rebuild dist and do not `twine upload`. The tag workflow reuses the
+   tested `dist/` from `test.yml`.
+5. Confirm pytest, Ruff, mypy, and the installed-wheel CLI smoke test were
+   green on that merge commit.
+6. Tag **only** the merge commit on `main`, never the PR branch: annotated tag
+   `vVERSION` matching `__version__`, then `git push origin vVERSION`. For
+   0.1.0: `git tag -a v0.1.0 <merge-sha>` and `git push origin v0.1.0`.
+7. Let the tag workflow publish to TestPyPI, then PyPI, through Trusted
+   Publishing (OIDC). No API token.
+8. After publish is green, create the GitHub Release from the matching
+   changelog section. For 0.1.0, use `## 0.1.0`. **Do not mark 0.1.0 as
+   pre-release.** Verify `agentself --version` is `agentself 0.1.0`.
+
+Create the GitHub release from a notes file
+(`gh release create vVERSION --notes-file PATH`), not an interpolated
+PowerShell or cmd string.
+
+If notes include a fenced install snippet, the closing fence must be on its
+own line. Put a blank line between the closing fence and the next sentence.
+Do not write a closing fence of backtick-backtick-backtick followed by n.
+
+Example:
+
+```bash
+uv tool install agentself
+```
+
+Then verify the published CLI.
+
+Do not re-register Trusted Publishing unless the workflow path or repo
+identity changed. Do not replace Trusted Publishing with a long-lived PyPI
+API token. Keep the release tag and package version identical.

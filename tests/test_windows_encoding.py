@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from agentself.cli.app import _write_human_plaintext
 from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.text import strip_one_trailing_newline
 
-from tests.support import cli_env, run_cli, value_file
+from tests.support import PROJECT_ROOT, cli_env, run_cli, value_file
 
 
 def test_parse_secp256k1_hex_strips_bom_and_whitespace() -> None:
@@ -85,6 +86,96 @@ def test_secret_create_refuses_windows_reserved_names(tmp_path: Path) -> None:
     )
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert json.loads(proc.stdout)["error"] == "refused"
+
+
+def _run_bytes(
+    args: list[str], env: dict[str, str]
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [sys.executable, "-m", "agentself", *args],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        capture_output=True,
+        timeout=60,
+    )
+
+
+def test_human_print_writes_binary_lf_terminator(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+    no_nl = tmp_path / "no-nl.txt"
+    no_nl.write_bytes(b"plain-secret")
+    created = run_cli(
+        ["--json", "secret", "create", "demo.nonewline", "--file", str(no_nl)],
+        env,
+    )
+    assert created.returncode == 0, created.stderr
+    crlf = tmp_path / "crlf.txt"
+    crlf.write_bytes(b"crlf-secret\r\n")
+    created_crlf = run_cli(
+        ["--json", "secret", "create", "demo.crlf", "--file", str(crlf)],
+        env,
+    )
+    assert created_crlf.returncode == 0, created_crlf.stderr
+
+    printed = _run_bytes(["secret", "get", "demo.nonewline", "--print"], env)
+    assert printed.returncode == 0, printed.stderr
+    assert printed.stdout.endswith(b"\x0a")
+    assert not printed.stdout.endswith(b"\x0d\x0a")
+    assert printed.stdout == b"plain-secret\n"
+
+    printed_crlf = _run_bytes(["secret", "get", "demo.crlf", "--print"], env)
+    assert printed_crlf.returncode == 0, printed_crlf.stderr
+    assert printed_crlf.stdout.endswith(b"\x0a")
+    assert not printed_crlf.stdout.endswith(b"\x0d\x0a")
+    assert printed_crlf.stdout == b"crlf-secret\n"
+
+    dest = tmp_path / "out-crlf.txt"
+    got = run_cli(["--json", "secret", "get", "demo.crlf", "--file", str(dest)], env)
+    assert got.returncode == 0, got.stderr
+    assert dest.read_bytes() == b"crlf-secret\r\n"
+
+    note_src = tmp_path / "note.txt"
+    note_src.write_bytes(b"note-body")
+    noted = run_cli(["--json", "note", "set", "handoff", "--file", str(note_src)], env)
+    assert noted.returncode == 0, noted.stderr
+    note_printed = _run_bytes(["note", "get", "handoff"], env)
+    assert note_printed.returncode == 0, note_printed.stderr
+    assert note_printed.stdout.endswith(b"\x0a")
+    assert not note_printed.stdout.endswith(b"\x0d\x0a")
+    assert note_printed.stdout == b"note-body\n"
+
+
+def test_write_human_plaintext_without_buffer_and_flush_error(monkeypatch) -> None:
+    class TextOnly:
+        def __init__(self) -> None:
+            self.written: list[str] = []
+
+        def write(self, text: str) -> int:
+            self.written.append(text)
+            return len(text)
+
+    text_only = TextOnly()
+    monkeypatch.setattr(sys, "stdout", text_only)
+    _write_human_plaintext("plain")
+    assert text_only.written == ["plain\n"]
+
+    class FlushFails:
+        def __init__(self) -> None:
+            self.written: list[bytes] = []
+            self.buffer = self
+
+        def write(self, data: bytes) -> int:
+            self.written.append(data)
+            return len(data)
+
+        def flush(self) -> None:
+            raise OSError("flush failed")
+
+    flaky = FlushFails()
+    monkeypatch.setattr(sys, "stdout", flaky)
+    _write_human_plaintext("plain")
+    assert flaky.written == [b"plain\n"]
 
 
 def test_json_unicode_round_trip(tmp_path: Path) -> None:

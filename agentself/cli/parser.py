@@ -355,7 +355,8 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Export a named secret. Exits 3 if the name is missing. "
             "Use --file for private file output or --meta for size and SHA-256. "
-            "Plaintext stdout requires --print; human output ends with one newline. "
+            "Plaintext stdout requires --print; human --print ends with one LF; "
+            "--file keeps stored bytes. "
             "wallet.key also requires --unsafe."
         ),
         epilog=(
@@ -490,6 +491,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Print a non-secret note",
         description=(
             "Print a non-secret note value. Notes are printable by default. "
+            "Human output ends with one LF. "
             "Never use notes for credentials, OTPs, private keys, secret values, "
             "or mail bodies."
         ),

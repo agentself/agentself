@@ -14,6 +14,16 @@ SKILL = SKILL_DIR / "SKILL.md"
 SKILL_FILES = {
     path.relative_to(SKILL_DIR) for path in SKILL_DIR.rglob("*") if path.is_file()
 }
+SKILL_TAILS = [
+    "SKILL.md",
+    "references/email-connect.md",
+    "references/handoff.md",
+    "references/mail.md",
+]
+
+
+def _skill_tails(paths: list[str]) -> list[str]:
+    return [Path(path).as_posix().rsplit("/agentself/", 1)[-1] for path in paths]
 
 
 def test_install_skills_project_and_global(tmp_path):
@@ -26,6 +36,12 @@ def test_install_skills_project_and_global(tmp_path):
     project.mkdir()
     proc = run_cli(["install", "--skills"], env, cwd=project)
     assert proc.returncode == 0, proc.stderr
+    installed_lines = [
+        line[len("installed ") :]
+        for line in proc.stdout.splitlines()
+        if line.startswith("installed ")
+    ]
+    assert _skill_tails(installed_lines) == SKILL_TAILS
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
     assert dest.read_text(encoding="utf-8") == SKILL.read_text(encoding="utf-8")
@@ -48,7 +64,7 @@ def test_install_skills_project_and_global(tmp_path):
     assert agents.returncode == 0, agents.stderr
     data = json.loads(agents.stdout)
     assert data["ok"] is True
-    assert len(data["paths"]) == 1
+    assert _skill_tails(data["paths"]) == SKILL_TAILS
     assert data["paths"][0].endswith(
         str(Path(".agents") / "skills" / "agentself" / "SKILL.md")
     )

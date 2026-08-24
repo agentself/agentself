@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.0 - 2026-08-24
+
+First stable release. Public CLI commands and flags, documented
+`AGENTSELF_*` variables, `--json` schema `cli: 1`, and identity
+`format_version` 1 are now compatibility promises (see
+COMPATIBILITY.md).
+
+- `install --skills` JSON `paths` and human `installed` lines list every
+  copied skill file.
+- Unknown compact mail refs point `next` at `agentself email list`.
+- Human `secret get --print` and `note get` write a trailing LF;
+  `--file` stays byte-exact.
+- `email connect` does not persist continuation until setup needs opaque
+  resume state.
+
 ## 0.1.0a5 - 2026-08-24
 
 - Added resumable AgentMail signup, acted mail state, header-only search, and

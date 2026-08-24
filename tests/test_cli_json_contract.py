@@ -11,7 +11,8 @@ from agentself import __version__
 from agentself.cli.app import main
 from agentself.cli.parser import _FEATURED, _parser
 from agentself.host import CHANNELS
-from agentself.internal.files import identity_home
+from agentself.internal.files import identity_home, secrets_home
+from agentself.internal.names import EMAIL_CONTINUATION_NAME
 
 from tests.support import (
     MockRpc,
@@ -352,7 +353,7 @@ def test_json_notes_contract(tmp_path):
 
 
 def test_json_email_connect_without_token_is_missing(tmp_path):
-    _vault, env, _started = _init(tmp_path)
+    vault, env, _started = _init(tmp_path)
     connected = assert_err(
         run_cli(["--json", "email", "connect"], env), error="missing"
     )
@@ -367,6 +368,9 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
         "existing_credential",
         "create_account",
     ]
+    assert not (
+        secrets_home(vault, "agent") / f"{EMAIL_CONTINUATION_NAME}.sops"
+    ).is_file()
     shown = assert_ok(run_cli(["--json", "email", "show"], env), "email_show")
     assert shown["ready"] is False
     assert shown.get("owned_address") is False
@@ -511,8 +515,15 @@ def test_json_install_and_doctor_fresh(tmp_path):
         run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path),
         "install",
     )
-    assert len(installed["paths"]) == 1
-    assert installed["paths"][0].endswith("SKILL.md")
+    assert [
+        Path(path).as_posix().rsplit("/agentself/", 1)[-1]
+        for path in installed["paths"]
+    ] == [
+        "SKILL.md",
+        "references/email-connect.md",
+        "references/handoff.md",
+        "references/mail.md",
+    ]
 
 
 def test_json_doctor_identity_problem_keeps_envelope(tmp_path):

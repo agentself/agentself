@@ -8,9 +8,9 @@ agentself --json email list
 
 `email list` returns raw provider `id`, a stable compact `ref`, and headers,
 never bodies. Refs are short identity-local sequence names such as `m1`, `m2`,
-and `m3`. The syntax `m[1-9][0-9]*` is reserved for refs; any matching input
-must already be stored by list/receive or it is refused as unknown. Mappings
-are private identity state and survive backup/restore.
+and `m3`. The syntax `m[1-9][0-9]*` is reserved for refs stored by
+list/receive. If a ref is unknown, run `agentself email list`. Mappings are
+private identity state and survive backup/restore.
 
 Find likely messages without listing and mentally filtering the whole inbox:
 
