@@ -8,7 +8,9 @@ from agentself.host import CHANNELS, ENV_IDENTITY_DIR, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
-_FEATURED = "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
+_FEATURED = (
+    "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
+)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -118,6 +120,48 @@ def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_mail_filters(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--status",
+        choices=("new", "seen"),
+        default=None,
+        help="Keep messages with this backend read state",
+    )
+    acted_filter = parser.add_mutually_exclusive_group()
+    acted_filter.add_argument(
+        "--acted",
+        dest="acted_filter",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Keep messages marked acted",
+    )
+    acted_filter.add_argument(
+        "--unacted",
+        dest="acted_filter",
+        action="store_const",
+        const=False,
+        help="Keep messages not marked acted",
+    )
+
+
+def _add_note_write_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("name", metavar="NAME", help="Note name")
+    parser.add_argument(
+        "value",
+        nargs="?",
+        metavar="VALUE",
+        help="Non-secret note text",
+    )
+    parser.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Read exact UTF-8 text and newlines from a file; drops a leading BOM",
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     json_parent = argparse.ArgumentParser(add_help=False)
     _add_json_flag(json_parent)
@@ -126,7 +170,8 @@ def _parser() -> argparse.ArgumentParser:
         usage="%(prog)s [--json] [--version] [COMMAND ...]",
         formatter_class=_HELP,
         description=(
-            "Local identity for an agent: wallet, secrets, and optional email.\n"
+            "Local identity for an agent: wallet, secrets, non-secret notes, "
+            "and optional email.\n"
             "\n"
             "No command prints the current identity.\n"
             "Use agentself <command> --help to drill in.\n"
@@ -146,6 +191,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself diagnose\n"
             "  agentself --json show\n"
             "  agentself secret create NAME VALUE\n"
+            "  agentself note set NAME VALUE\n"
             "  agentself wallet address\n"
             "  agentself install --skills\n"
             "\n"
@@ -390,6 +436,91 @@ def _parser() -> argparse.ArgumentParser:
     )
     exists_p.add_argument("name", metavar="NAME", help="Secret name")
 
+    note = _cmd(
+        sub,
+        "note",
+        json_parent,
+        help="Non-secret identity notes for agent handoff",
+        description=(
+            "Non-secret identity notes for printable agent handoff context. "
+            "Notes are stored in this identity and included by backup/restore. "
+            "set is an idempotent upsert: it creates or replaces NAME. "
+            "Never store credentials, OTPs, private keys, secret values, or mail bodies."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself note set handoff 'next: run tests'\n"
+            "  agentself note set handoff --file PATH\n"
+            "  agentself note get handoff\n"
+            "  agentself --json note list\n"
+            "\n"
+            "Notes are non-secret and printable. Use agentself secret for secrets."
+        ),
+    )
+    note_sub = note.add_subparsers(
+        dest="note_command",
+        required=True,
+        metavar="{set,get,list,delete,exists}",
+        parser_class=_Parser,
+        prog="agentself note",
+    )
+    note_set = _cmd(
+        note_sub,
+        "set",
+        json_parent,
+        help="Create or replace a non-secret note",
+        description=(
+            "Idempotent upsert of a non-secret note. Provide VALUE or --file PATH, "
+            "but not both. --file drops a leading UTF-8 BOM and otherwise preserves "
+            "UTF-8 text bytes and newlines exactly. Never store credentials, OTPs, "
+            "private keys, secret values, or mail bodies."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself note set handoff 'next: run tests'\n"
+            "  agentself note set handoff --file PATH\n"
+            "  agentself --json note set handoff VALUE"
+        ),
+    )
+    _add_note_write_args(note_set)
+    note_get = _cmd(
+        note_sub,
+        "get",
+        json_parent,
+        help="Print a non-secret note",
+        description=(
+            "Print a non-secret note value. Notes are printable by default. "
+            "Never use notes for credentials, OTPs, private keys, secret values, "
+            "or mail bodies."
+        ),
+        epilog="Examples:\n  agentself note get handoff\n  agentself --json note get handoff",
+    )
+    note_get.add_argument("name", metavar="NAME", help="Note name")
+    _cmd(
+        note_sub,
+        "list",
+        json_parent,
+        help="List non-secret note names",
+        epilog="Examples:\n  agentself note list\n  agentself --json note list",
+    )
+    note_delete = _cmd(
+        note_sub,
+        "delete",
+        json_parent,
+        help="Delete a non-secret note",
+        epilog="Examples:\n  agentself note delete handoff",
+    )
+    note_delete.add_argument("name", metavar="NAME", help="Note name")
+    note_exists = _cmd(
+        note_sub,
+        "exists",
+        json_parent,
+        help="Check whether a non-secret note exists",
+        description="Exit 0 if the note exists, 3 if it is missing.",
+        epilog="Examples:\n  agentself note exists handoff",
+    )
+    note_exists.add_argument("name", metavar="NAME", help="Note name")
+
     email = _cmd(
         sub,
         "email",
@@ -400,14 +531,15 @@ def _parser() -> argparse.ArgumentParser:
             "connect runs a generic, resumable setup. "
             "Backends publish required inputs through agentself backends email. "
             "Send without credentials fails closed. receive prints headers only; "
-            "fetch a body by ID with receive ID --file PATH."
+            "find searches safe headers only. Fetch a body by ref with "
+            "receive REF --file PATH."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email connect\n"
             "  agentself email show\n"
             "  agentself --json email receive\n"
-            "  agentself email receive ID --file PATH\n"
+            "  agentself email receive REF --file PATH\n"
             "  agentself backends email\n"
             "\n"
             "Use agentself email <command> --help to drill in."
@@ -416,7 +548,7 @@ def _parser() -> argparse.ArgumentParser:
     email_sub = email.add_subparsers(
         dest="email_command",
         required=True,
-        metavar="{connect,show,send,receive,list,mark}",
+        metavar="{connect,show,send,receive,list,find,mark}",
         parser_class=_Parser,
         prog="agentself email",
     )
@@ -497,25 +629,26 @@ def _parser() -> argparse.ArgumentParser:
         email_sub,
         "receive",
         json_parent,
-        help="Receive new mail, or fetch one id again",
+        help="Receive new mail, or fetch one ref or provider id",
         description=(
-            "Receive new mail, or fetch one id again even if already received. "
+            "Receive new mail, or fetch one ref or provider id again. "
             "Headers and new/seen status are safe by default; bodies may contain "
-            "credentials and are omitted unless --file or --print is explicit."
+            "credentials and are omitted unless --file or --print is explicit. "
+            "Stored refs use reserved syntax like m1; unknown refs are refused."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email receive\n"
-            "  agentself email receive ID --file PATH\n"
-            "  agentself email receive ID --print\n"
+            "  agentself email receive REF --file PATH\n"
+            "  agentself email receive REF --print\n"
             "  agentself --json email receive"
         ),
     )
     email_receive.add_argument(
         "message_id",
         nargs="?",
-        metavar="ID",
-        help="Fetch this id again even if already received",
+        metavar="REF_OR_ID",
+        help="Fetch this stored short ref or provider id again",
     )
     body_output = email_receive.add_mutually_exclusive_group()
     body_output.add_argument(
@@ -523,7 +656,7 @@ def _parser() -> argparse.ArgumentParser:
         dest="body_file",
         default="",
         metavar="PATH",
-        help="Write one message body to a private file; requires ID",
+        help="Write one message body to a private file; requires a ref or id",
     )
     body_output.add_argument(
         "--print",
@@ -547,45 +680,48 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself --json email list --acted"
         ),
     )
-    email_list.add_argument(
-        "--status",
-        choices=("new", "seen"),
-        default=None,
-        help="Keep messages with this backend read state",
+    _add_mail_filters(email_list)
+    email_find = _cmd(
+        email_sub,
+        "find",
+        json_parent,
+        help="Find inbound message headers",
+        description=(
+            "Find a non-empty case-insensitive substring in From, To, or Subject. "
+            "Uses header-only listing and never fetches or searches message bodies. "
+            "Filter backend read state with --status, or independent local task "
+            "state with --acted/--unacted."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself email find invoice\n"
+            "  agentself email find sender@example.com --status new --unacted\n"
+            "  agentself --json email find urgent"
+        ),
     )
-    acted_filter = email_list.add_mutually_exclusive_group()
-    acted_filter.add_argument(
-        "--acted",
-        dest="acted_filter",
-        action="store_const",
-        const=True,
-        default=None,
-        help="Keep messages marked acted",
-    )
-    acted_filter.add_argument(
-        "--unacted",
-        dest="acted_filter",
-        action="store_const",
-        const=False,
-        help="Keep messages not marked acted",
-    )
+    email_find.add_argument("query", metavar="QUERY", help="Non-empty header substring")
+    _add_mail_filters(email_find)
     email_mark = _cmd(
         email_sub,
         "mark",
         json_parent,
         help="Mark a message acted or unacted",
         description=(
-            "Set independent local task state for a provider message ID. "
+            "Set independent local task state for a stored short ref or provider ID. "
             "This does not change the backend new/seen status."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself email mark ID acted\n"
-            "  agentself email mark ID unacted\n"
-            "  agentself --json email mark ID acted"
+            "  agentself email mark REF acted\n"
+            "  agentself email mark REF unacted\n"
+            "  agentself --json email mark REF acted"
         ),
     )
-    email_mark.add_argument("message_id", metavar="ID", help="Provider message ID")
+    email_mark.add_argument(
+        "message_id",
+        metavar="REF_OR_ID",
+        help="Stored short ref or provider message ID",
+    )
     email_mark.add_argument(
         "mark_state",
         choices=("acted", "unacted"),
@@ -734,7 +870,7 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="Copy the identity directory to PATH",
         description=(
-            "Copy the whole identity directory (config, age key, secrets, mail cache). "
+            "Copy the whole identity directory (config, age key, secrets, notes, mail cache). "
             "Refuses if PATH exists and is not empty, unless --force. "
             "The live age key stays plaintext on the host."
         ),

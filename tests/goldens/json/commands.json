@@ -5,6 +5,7 @@
     "backends",
     "diagnose",
     "secret",
+    "note",
     "email",
     "wallet",
     "backup",
@@ -12,6 +13,7 @@
     "install"
   ],
   "secret": ["create", "get", "update", "list", "delete", "exists"],
-  "email": ["connect", "show", "send", "receive", "list", "mark"],
+  "note": ["set", "get", "list", "delete", "exists"],
+  "email": ["connect", "show", "send", "receive", "list", "find", "mark"],
   "wallet": ["show", "address", "balance", "authorize", "verify", "send"]
 }

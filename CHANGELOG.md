@@ -2,14 +2,14 @@
 
 ## Unreleased
 
-- AgentMail setup now offers an existing-key route and an explicitly authorized,
-  resumable signup/OTP route without exposing the generated key.
-- Email messages have independent local acted state, with mark/unmark and safe
-  list filters; provider `new`/`seen` status is unchanged.
-- The installed agent skill uses workflow references for email setup, mail
-  processing, and cross-agent identity handoff.
-- Human `secret get --print` emits one trailing newline instead of adding a
-  second newline to values that already end with one.
+## 0.1.0a5 - 2026-08-24
+
+- Added resumable AgentMail signup, acted mail state, header-only search, and
+  stable compact message refs.
+- Added printable identity notes and workflow-focused skill references for
+  cross-agent handoff.
+- Preserved safe secret/mail defaults and normalized cross-platform plaintext
+  line endings.
 
 ## 0.1.0a4 - 2026-08-23
 

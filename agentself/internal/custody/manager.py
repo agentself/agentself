@@ -33,6 +33,7 @@ from agentself.internal.custody.errors import (
     ChannelFailure,
     EmailSendNotReady,
     HostToolMissing,
+    MissingNote,
     MissingSecret,
     NoGas,
     ProtectedName,
@@ -42,7 +43,11 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.log import Log
-from agentself.internal.mail_state import ActedMailState
+from agentself.internal.mail_state import (
+    ActedMailState,
+    MailRefCollision,
+    MailRefState,
+)
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
     EMAIL_CONTINUATION_NAME,
@@ -52,6 +57,7 @@ from agentself.internal.names import (
     is_reserved_secret_name,
     require_safe_token,
 )
+from agentself.internal.notes import NoteMissing, NoteStorage
 from agentself.internal.registry import (
     RegistryError,
     RegistryFormatError,
@@ -144,6 +150,8 @@ class CustodyManager:
         self._email_backend = email_backend or "agentmail"
         self._wallet_backend = wallet_backend or "base"
         self._acted_mail = ActedMailState(Path(vault_root))
+        self._mail_refs = MailRefState(Path(vault_root))
+        self._notes = NoteStorage(Path(vault_root))
         # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed_store_bindings = (
             frozenset(allowed_store_bindings)
@@ -298,6 +306,54 @@ class CustodyManager:
         identity = self._require_identity(caller, "protected_names", None)
         return sorted(self._protected_secret_names(identity, "protected_names"))
 
+    def note_set(self, caller: BoundCaller, name: str, value: str) -> str:
+        identity = self._require_identity(caller, "note_set", name)
+        try:
+            status = self._notes.set(identity.id, name, value)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_set", identity.id, name, exc)
+        self._log.record("note_set", identity.id, name, "ok")
+        return status
+
+    def note_get(self, caller: BoundCaller, name: str) -> str:
+        identity = self._require_identity(caller, "note_get", name)
+        try:
+            value = self._notes.get(identity.id, name)
+        except NoteMissing:
+            self._missing_note("note_get", identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_get", identity.id, name, exc)
+        self._log.record("note_get", identity.id, name, "ok")
+        return value
+
+    def note_list(self, caller: BoundCaller) -> builtins.list[str]:
+        identity = self._require_identity(caller, "note_list", None)
+        try:
+            names = self._notes.list(identity.id)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_list", identity.id, None, exc)
+        self._log.record("note_list", identity.id, None, "ok")
+        return names
+
+    def note_exists(self, caller: BoundCaller, name: str) -> bool:
+        identity = self._require_identity(caller, "note_exists", name)
+        try:
+            found = self._notes.exists(identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_exists", identity.id, name, exc)
+        self._log.record("note_exists", identity.id, name, "ok" if found else "missing")
+        return found
+
+    def note_delete(self, caller: BoundCaller, name: str) -> None:
+        identity = self._require_identity(caller, "note_delete", name)
+        try:
+            self._notes.delete(identity.id, name)
+        except NoteMissing:
+            self._missing_note("note_delete", identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_delete", identity.id, name, exc)
+        self._log.record("note_delete", identity.id, name, "ok")
+
     def email_connect(
         self,
         caller: BoundCaller,
@@ -412,21 +468,25 @@ class CustodyManager:
         include_body: bool = True,
     ) -> builtins.list[dict[str, object]]:
         identity, mailbox, address, token = self._email_bound(caller, "email_receive")
+        resolved_id = self._resolve_mail_id(identity.id, message_id, "email_receive")
         try:
             messages = mailbox.receive(
                 identity.id,
                 credential=token,
                 address=address,
-                message_id=message_id,
+                message_id=resolved_id,
                 include_body=include_body,
             )
         except MailboxError as exc:
             self._fail_mailbox("email_receive", identity.id, exc)
         public = _items(messages, _MAIL_ITEM_KEYS)
         try:
+            public = self._mail_refs.apply(identity.id, public)
             public = self._acted_mail.apply(identity.id, public)
-        except (OSError, UnicodeError) as exc:
-            self._fail_store("email_receive", identity.id, "email/acted", exc)
+        except MailRefCollision as exc:
+            self._fail_store("email_receive", identity.id, "email/refs", exc)
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._fail_store("email_receive", identity.id, "email", exc)
         self._log.record("email_receive", identity.id, None, "ok")
         return public
 
@@ -446,15 +506,48 @@ class CustodyManager:
             self._fail_mailbox("email_list", identity.id, exc)
         public = _items(items, _MAIL_HEADER_KEYS)
         try:
+            public = self._mail_refs.apply(identity.id, public)
             public = self._acted_mail.apply(identity.id, public)
-        except (OSError, UnicodeError) as exc:
-            self._fail_store("email_list", identity.id, "email/acted", exc)
+        except MailRefCollision as exc:
+            self._fail_store("email_list", identity.id, "email/refs", exc)
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._fail_store("email_list", identity.id, "email", exc)
         if status is not None:
             public = [item for item in public if item.get("status") == status]
         if acted is not None:
             public = [item for item in public if item.get("acted") is acted]
         self._log.record("email_list", identity.id, None, "ok")
         return public
+
+    def email_find(
+        self,
+        caller: BoundCaller,
+        query: str,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+    ) -> builtins.list[dict[str, object]]:
+        identity = self._require_identity(caller, "email_find", None)
+        normalized = query.strip()
+        if (
+            not normalized
+            or normalized != query
+            or len(normalized.encode("utf-8")) > 4096
+            or any(ord(char) < 32 for char in normalized)
+        ):
+            self._refuse("email_find", identity.id, None)
+        wanted = normalized.casefold()
+        messages = self.email_list(caller, status=status, acted=acted)
+        found = [
+            item
+            for item in messages
+            if any(
+                wanted in str(item.get(key) or "").casefold()
+                for key in ("from", "to", "subject")
+            )
+        ]
+        self._log.record("email_find", identity.id, None, "ok")
+        return found
 
     def email_mark(self, caller: BoundCaller, message_id: str, *, acted: bool) -> bool:
         identity = self._require_identity(caller, "email_mark", None)
@@ -466,12 +559,38 @@ class CustodyManager:
             or any(ord(char) < 32 for char in normalized)
         ):
             self._refuse("email_mark", identity.id, None)
+        resolved_id = self._resolve_mail_id(identity.id, normalized, "email_mark")
+        assert resolved_id is not None
         try:
-            self._acted_mail.set(identity.id, normalized, acted)
-        except (OSError, UnicodeError) as exc:
-            self._fail_store("email_mark", identity.id, "email/acted", exc)
+            self._mail_refs.remember(identity.id, resolved_id)
+            self._acted_mail.set(identity.id, resolved_id, acted)
+        except MailRefCollision as exc:
+            self._fail_store("email_mark", identity.id, "email/refs", exc)
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._fail_store("email_mark", identity.id, "email", exc)
         self._log.record("email_mark", identity.id, None, "ok")
         return acted
+
+    def _resolve_mail_id(
+        self, identity_id: str, message_id: str | None, event: str
+    ) -> str | None:
+        if message_id is None:
+            return None
+        normalized = message_id.strip()
+        if (
+            not normalized
+            or normalized != message_id
+            or len(normalized.encode("utf-8")) > 4096
+            or any(ord(char) < 32 for char in normalized)
+        ):
+            self._refuse(event, identity_id, None)
+        try:
+            return self._mail_refs.resolve(identity_id, normalized)
+        except KeyError:
+            self._log.record(event, identity_id, None, "refused")
+            raise Refused("unknown mail ref") from None
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._fail_store(event, identity_id, "email/refs", exc)
 
     def wallet_address(self, caller: BoundCaller) -> str:
         identity, wallet = self._wallet_bound(caller, "wallet_address")
@@ -942,6 +1061,12 @@ class CustodyManager:
     def _missing(self, operation: str, identity_id: str, name: str | None) -> NoReturn:
         self._log.record(operation, identity_id, name, "missing")
         raise MissingSecret("missing") from None
+
+    def _missing_note(
+        self, operation: str, identity_id: str, name: str | None
+    ) -> NoReturn:
+        self._log.record(operation, identity_id, name, "missing")
+        raise MissingNote("missing") from None
 
     def _fail_mailbox(
         self, operation: str, identity_id: str, exc: BaseException

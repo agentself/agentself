@@ -80,6 +80,7 @@
             "send",
             "receive",
             "list",
+            "find",
             "mark"
           ],
           "custody": "none",
@@ -165,6 +166,7 @@
             "send",
             "receive",
             "list",
+            "find",
             "mark"
           ],
           "custody": "none",

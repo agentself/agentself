@@ -3,8 +3,8 @@ If you are an LLM, install the CLI, then run `agentself install --skills`.
 # agentself
 
 `agentself` gives an agent a persistent local identity: a wallet, encrypted
-secrets, and optional email. It is a CLI first, with one command tree across
-the supported backends.
+secrets, non-secret notes, and optional email. It is a CLI first, with one
+command tree across the supported backends.
 
 Linux, macOS, and Windows. Python 3.11+. This is the first public alpha, so
 review [COMPATIBILITY.md](COMPATIBILITY.md) before automating against it.
@@ -35,6 +35,7 @@ agentself install --tools
 agentself init
 agentself wallet address
 agentself secret create API_TOKEN --file ./api-token.txt
+agentself note set handoff --file ./handoff.txt
 agentself email connect
 ```
 
@@ -52,6 +53,7 @@ and keeps the generated API key encrypted while setup continues.
 | --- | --- |
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
+| Non-secret notes | `note set`, `get`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list`, `mark` |
 | Backends | `backends [CHANNEL]` |
@@ -71,11 +73,22 @@ Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
 by default: use `secret get NAME --file PATH` or `--meta`; plaintext stdout
 requires `--print`.
 
-`email receive` prints headers and `new`/`seen` status without bodies. `acted`
-is independent local task state: use `email mark ID acted|unacted` and filter
-with `email list --acted|--unacted`. Fetch a specific body into a private file
-with `email receive ID --file PATH`. Bodies can contain API keys and login
-links; `--print` is an explicit unsafe choice.
+`note set` is an idempotent upsert for printable, non-secret handoff context.
+It accepts `VALUE` or `--file PATH`; file input drops a leading UTF-8 BOM and
+otherwise preserves UTF-8 bytes and newlines. Notes are included in identity
+backup/restore. Never put credentials, OTPs, private keys, secret values, or
+mail bodies in notes.
+
+`email list`, `email find QUERY`, and default `email receive` print headers and
+`new`/`seen` status without bodies. Surfaced messages include the raw provider
+`id` and a stable compact identity-local `ref` such as `m1`.
+Use the ref with `email receive REF --file PATH` or
+`email mark REF acted|unacted`; raw provider IDs remain accepted. `acted` is
+independent local task state. The compact syntax is reserved: an unknown
+matching ref is refused instead of being sent to a provider. Acted state can be
+filtered with `email list --acted|--unacted` or the same flags on `email find`.
+Bodies can contain API keys and login links; `--print` is an explicit unsafe
+choice.
 
 ## Backends & configuration
 
@@ -152,6 +165,7 @@ agentself install --skills -g
 ## Security
 
 - Secret values are encrypted at rest by the configured store.
+- Notes are non-secret and printable; private file modes are defense in depth, not encryption.
 - Secret listings return names, not values; plaintext needs `--print`, and `wallet.key` also requires `--unsafe`.
 - Email bodies stay off stdout unless `email receive --print` is explicit; prefer `ID --file PATH`.
 - Logs and structured errors redact secret values.
