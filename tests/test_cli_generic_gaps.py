@@ -203,13 +203,20 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     text = (PROJECT_ROOT / "agentself" / "skills" / "agentself" / "SKILL.md").read_text(
         encoding="utf-8"
     )
-    start = text.split("## Common path", 1)[0]
+    start, rest = text.split("## Common path", 1)
+    common = rest.split("## Open the relevant workflow", 1)[0]
+    body = start + common
     assert "agentself --json --version" in start
     assert "agentself --json diagnose" in start
     assert "agentself --json commands" in start
     assert "agentself --help" not in start
     assert "agentself <command> --help" not in start
     assert "agentself backends\n" not in start
+    assert "agentself --json wallet authorize --file PATH" in common
+    assert "never put the message on argv" in common
+    assert "Do not `--print` the signature" in common
+    assert "wallet authorize MESSAGE" not in body
+    assert "authorize --print" not in body
     assert "references/email-connect.md" in text
     assert "references/mail.md" in text
     assert "references/handoff.md" in text

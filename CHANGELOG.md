@@ -14,6 +14,9 @@
   and `next`.
 - `email connect --json` next-step objects are compact: `status`, option
   `name`, `choices` when present, and `next`.
+- Skill and `wallet authorize --help` state that signing is
+  `wallet authorize --file PATH` and that the output is the signature
+  to attach, not a send.
 
 ## 0.1.0 - 2026-08-24
 

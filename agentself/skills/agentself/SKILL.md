@@ -37,7 +37,9 @@ agentself --json show
 
 `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
-`--json show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds. Use `wallet authorize` for signing.
+`--json show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
+
+Signing is `agentself --json wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Do not `--print` the signature or dump it in chat or logs. Human and JSON output is for the caller to attach, not to echo. Existing identities use this same verb; there is no Python compose or SDK path.
 
 For secrets, prefer files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Plaintext stdout requires explicit `--print`.
 

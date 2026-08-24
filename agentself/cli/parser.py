@@ -885,12 +885,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Show, address, balance, authorize (sign), and send",
         description=(
             "Show, address, balance, authorize, and send. Looking for signing? "
-            "Use wallet authorize; JSON output reports the chosen scheme. "
+            "Use wallet authorize --file PATH; JSON output reports the chosen scheme. "
+            "That is distinct from wallet send. "
             "address is the destination id. send uses the backend default asset."
         ),
         epilog=(
             "Examples:\n"
             "  agentself wallet address\n"
+            "  agentself --json wallet authorize --file PATH\n"
             "  agentself --json wallet balance\n"
             "  agentself wallet send TO AMOUNT\n"
             "\n"
@@ -932,7 +934,9 @@ def _parser() -> argparse.ArgumentParser:
         help="Authorize an action or message. The backend picks how.",
         description=(
             "Authorize an action or message. The backend picks how. "
-            "Prefer --file PATH. A positional message is still accepted."
+            "Prefer --file PATH. A positional message is still accepted. "
+            "The output is the signature to attach, for example an HTTP "
+            "header or body. It is not a send."
         ),
         epilog=(
             "Examples:\n"

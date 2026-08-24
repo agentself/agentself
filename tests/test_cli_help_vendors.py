@@ -78,6 +78,18 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "TO" in send.stdout
     assert "AMOUNT" in send.stdout
 
+    wallet = run_cli(["wallet", "--help"], env)
+    assert wallet.returncode == 0, wallet.stderr
+    assert "authorize --file PATH" in wallet.stdout
+    assert "wallet send" in wallet.stdout
+
+    auth = run_cli(["wallet", "authorize", "--help"], env)
+    assert auth.returncode == 0, auth.stderr
+    assert "--file" in auth.stdout
+    assert "signature to attach" in auth.stdout
+    assert "not a send" in auth.stdout
+    assert "--print" not in auth.stdout
+
     email_send = run_cli(["email", "send", "--help"], env)
     assert email_send.returncode == 0, email_send.stderr
     assert "backends email" in email_send.stdout
