@@ -16,15 +16,14 @@ Do not guess flags or expose values in logs, arguments, or chat.
 
 ```bash
 agentself --json --version
-agentself --help
-agentself <command> --help
-agentself backends
-agentself diagnose
+agentself --json diagnose
 ```
 
 Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 1). Ignore unknown keys.
 
 Start by checking `agentself --json --version`. This skill requires `cli: 1`. A different schema or an unexpected `package` / `executable` path means the installation is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
+
+When a flag or next step is unclear, run `agentself --json commands` or open the matching reference below. Do not dump human `--help` or the full backends catalog by default. Drill in with `agentself --json backends CHANNEL BACKEND` only when you need setup options.
 
 Identity directory is `AGENTSELF_IDENTITY_DIR` (default `~/.agentself`).
 
@@ -38,7 +37,9 @@ agentself --json show
 
 `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
-`--json show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds. Use `wallet authorize` for signing.
+`--json show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
+
+Signing is `agentself --json wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Do not `--print` the signature or dump it in chat or logs. Human and JSON output is for the caller to attach, not to echo. Existing identities use this same verb; there is no Python compose or SDK path.
 
 For secrets, prefer files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Plaintext stdout requires explicit `--print`.
 

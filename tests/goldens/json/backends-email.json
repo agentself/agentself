@@ -23,76 +23,7 @@
         ],
         "custody": "none",
         "network": "agentmail",
-        "asset": "",
-        "options": [
-          {
-            "name": "setup_method",
-            "type": "choice",
-            "required": true,
-            "sensitive": false,
-            "default": null,
-            "choices": [
-              "existing_credential",
-              "create_account"
-            ],
-            "source": "",
-            "help": "Choose existing_credential to connect an approved API key, or create_account only when the user explicitly authorizes creating a new external AgentMail account. Account creation sends a verification code to the approved human email.",
-            "prompt": "Choose how to connect AgentMail",
-            "action": null
-          },
-          {
-            "name": "credential",
-            "type": "secret",
-            "required": true,
-            "sensitive": true,
-            "default": null,
-            "choices": [],
-            "source": "AGENTSELF_AGENTMAIL_API_KEY",
-            "help": "Existing AgentMail API key (starts with am_). Open API Keys at https://console.agentmail.to if an operator needs to create one. For transient use, provide AGENTSELF_EMAIL_CREDENTIAL or AGENTSELF_AGENTMAIL_API_KEY on every email invocation. To store it in this identity, write the key to a file and continue with --result-file.",
-            "prompt": "Paste the credential",
-            "action": {
-              "kind": "open_url",
-              "label": "Open AgentMail API Keys",
-              "url": "https://console.agentmail.to"
-            }
-          },
-          {
-            "name": "human_email",
-            "type": "string",
-            "required": true,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "",
-            "help": "Human email approved for this authorized account creation. A six-digit verification code will be sent there. If signup says the identity is claimed, forbidden, or unavailable, stop and ask the user to use existing_credential; aliases are not tried.",
-            "prompt": "Approved human email for verification",
-            "action": null
-          },
-          {
-            "name": "otp",
-            "type": "secret",
-            "required": true,
-            "sensitive": true,
-            "default": null,
-            "choices": [],
-            "source": "",
-            "help": "Six-digit verification code sent to the approved human email.",
-            "prompt": "Enter the six-digit verification code",
-            "action": null
-          },
-          {
-            "name": "address",
-            "type": "string",
-            "required": false,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "",
-            "help": "Inbox address when this key owns more than one. Use an address the provider listed. Do not invent one.",
-            "prompt": "Mailbox address",
-            "action": null
-          }
-        ]
+        "asset": ""
       },
       {
         "name": "imap",
@@ -109,69 +40,7 @@
         ],
         "custody": "none",
         "network": "imap-smtp",
-        "asset": "",
-        "options": [
-          {
-            "name": "address",
-            "type": "string",
-            "required": true,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "",
-            "help": "Existing mailbox address (user@domain). Do not invent an address.",
-            "prompt": "Mailbox address",
-            "action": null
-          },
-          {
-            "name": "credential",
-            "type": "secret",
-            "required": true,
-            "sensitive": true,
-            "default": null,
-            "choices": [],
-            "source": "AGENTSELF_MAIL_PASSWORD",
-            "help": "Password or app password for that mailbox. Gmail and Outlook need an app password, not the login password. Env AGENTSELF_MAIL_PASSWORD. Write it to a file and continue with --result-file.",
-            "prompt": "Paste the credential",
-            "action": null
-          },
-          {
-            "name": "mail_host",
-            "type": "string",
-            "required": false,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "AGENTSELF_MAIL_HOST",
-            "help": "Shared mail host when IMAP and SMTP use the same hostname.",
-            "prompt": "mail_host",
-            "action": null
-          },
-          {
-            "name": "imap_host",
-            "type": "string",
-            "required": false,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "AGENTSELF_IMAP_HOST",
-            "help": "IMAP host override. Default is imap.<address-domain>.",
-            "prompt": "imap_host",
-            "action": null
-          },
-          {
-            "name": "smtp_host",
-            "type": "string",
-            "required": false,
-            "sensitive": false,
-            "default": null,
-            "choices": [],
-            "source": "AGENTSELF_SMTP_HOST",
-            "help": "SMTP host override. Default is smtp.<address-domain>.",
-            "prompt": "smtp_host",
-            "action": null
-          }
-        ]
+        "asset": ""
       }
     ]
   }

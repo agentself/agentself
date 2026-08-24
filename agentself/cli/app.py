@@ -18,7 +18,7 @@ from agentself.cli.io import (
     store_value_file,
     value_meta,
 )
-from agentself.cli.parser import _Parser, _parser
+from agentself.cli.parser import _Parser, _parser, commands_payload, format_commands
 from agentself.host import (
     CHANNELS,
     ENV_LOG,
@@ -43,6 +43,7 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
+from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.files import (
     LOCK_NAME,
     IdentityBusy,
@@ -51,7 +52,7 @@ from agentself.internal.files import (
 )
 from agentself.internal.format import format_version_error, load_json_file
 from agentself.internal.log import NullLog, StreamLog
-from agentself.internal.names import require_safe_token
+from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
@@ -137,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         return _install(args)
     if args.command == "backends":
         return _backends(args)
+    if args.command == "commands":
+        return _commands(args)
     if args.command in ("backup", "restore"):
         return _backup_restore(vault, args)
 
@@ -416,6 +419,16 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
 
 def _backends(args) -> int:
     channel = (args.channel or "").strip() or None
+    backend = (getattr(args, "backend", None) or "").strip() or None
+    if backend and not channel:
+        return _fail(
+            args,
+            2,
+            "unknown channel\n",
+            "refused",
+            "unknown channel",
+            nxt="agentself backends --help",
+        )
     if channel and channel not in CHANNELS:
         err = unknown_bind(channel, "") or "unknown channel"
         return _fail(
@@ -426,9 +439,27 @@ def _backends(args) -> int:
             err,
             nxt="agentself backends --help",
         )
+    if backend:
+        bind_err = unknown_bind(channel or "", backend)
+        if bind_err:
+            return _fail(
+                args,
+                2,
+                f"{bind_err}\n",
+                "refused",
+                bind_err,
+                nxt=f"agentself backends {channel}",
+            )
     if _as_json(args):
-        return _emit_ok(args, backends_payload(channel))
-    sys.stdout.write(format_backends(channel))
+        return _emit_ok(args, backends_payload(channel, backend))
+    sys.stdout.write(format_backends(channel, backend))
+    return 0
+
+
+def _commands(args) -> int:
+    if _as_json(args):
+        return _emit_ok(args, commands_payload())
+    sys.stdout.write(format_commands())
     return 0
 
 
@@ -811,6 +842,9 @@ def _init(vault: Path, args) -> int:
             wallet_backend=wallet_backend,
         )
         client.init(store)
+        sealed = _seal_init_wallet_key(client, args)
+        if sealed is not None:
+            return sealed
         addr = client.wallet_address()
         merge_config(vault, {**identity_fields, **backend_fields})
         if _as_json(args):
@@ -863,6 +897,69 @@ def _init(vault: Path, args) -> int:
         return _fail(args, 1, f"error: {detail}\n", "error", detail)
     except Exception:
         return _fail(args, 1, "error\n", "error")
+
+
+def _read_wallet_key_file(path: str) -> tuple[str | None, str | None]:
+    if path == "-":
+        if sys.stdin.isatty():
+            return None, "no_key"
+        try:
+            text = read_stdin_text()
+        except UnicodeDecodeError:
+            return None, "no_key"
+        return text, None
+    try:
+        return load_value_file(path), None
+    except (OSError, UnicodeDecodeError):
+        return None, "no_key"
+
+
+def _seal_init_wallet_key(client, args) -> int | None:
+    path = (getattr(args, "wallet_key_file", None) or "").strip()
+    if not path:
+        return None
+    raw, err = _read_wallet_key_file(path)
+    parsed = parse_secp256k1_hex(raw or "") if err is None else None
+    if err is not None or parsed is None:
+        return _fail(
+            args,
+            2,
+            "refused: no_key\n",
+            "refused",
+            "no_key",
+            nxt="agentself init --help",
+        )
+    names = client.list()
+    if WALLET_KEY_NAME in names:
+        if getattr(args, "unsafe", False):
+            client.update(WALLET_KEY_NAME, parsed, unsafe=True)
+            return None
+        try:
+            client.create(WALLET_KEY_NAME, parsed)
+        except ProtectedName as exc:
+            return _fail(
+                args,
+                2,
+                f"refused: {exc}\n",
+                "refused",
+                str(exc),
+                nxt="agentself secret update NAME --unsafe",
+            )
+        except Refused as exc:
+            detail = str(exc).strip() or f"{WALLET_KEY_NAME} is protected"
+            if detail == "refused":
+                detail = f"{WALLET_KEY_NAME} is protected"
+            return _fail(
+                args,
+                2,
+                f"refused: {detail}\n",
+                "refused",
+                detail,
+                nxt="agentself secret update NAME --unsafe",
+            )
+        return None
+    client.create(WALLET_KEY_NAME, parsed)
+    return None
 
 
 def _age_key_rel(vault: Path, identity_id: str, cfg: dict[str, str]) -> str:
@@ -1129,19 +1226,43 @@ def _prompt_setup_option(result: dict[str, object]) -> dict[str, str] | None:
     return {name: value}
 
 
+def _compact_setup_option(option: object) -> dict[str, object] | None:
+    if not isinstance(option, dict):
+        return None
+    name = str(option.get("name") or "").strip()
+    if not name:
+        return None
+    payload: dict[str, object] = {"name": name}
+    option_type = str(option.get("type") or "").strip()
+    if option_type:
+        payload["type"] = option_type
+    if option.get("sensitive"):
+        payload["sensitive"] = True
+    choices = [
+        str(choice).strip()
+        for choice in (option.get("choices") or [])
+        if str(choice).strip()
+    ]
+    if choices:
+        payload["choices"] = choices
+    return payload
+
+
 def _setup_public(result: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         key: result[key]
         for key in (
             "status",
             "state",
-            "option",
             "human_action_required",
             "continue",
             "message",
         )
         if key in result
     }
+    compact = _compact_setup_option(result.get("option"))
+    if compact is not None:
+        payload["option"] = compact
     if "continue" not in payload and result.get("state"):
         payload["continue"] = continue_command(str(result["state"]))
     if "human_action_required" not in payload:
@@ -1223,9 +1344,29 @@ def _email_connect_channel_fail(args, exc: ChannelFailure) -> int:
 def _secret(client, args) -> int:
     verb = args.secret_command
     if verb == "create":
+        if _secret_bulk_requested(args):
+            return _secret_create_bulk(client, args)
+        if not (getattr(args, "name", None) or "").strip():
+            return _fail(
+                args,
+                2,
+                "refused: need a name\n",
+                "refused",
+                "need a name",
+                nxt="agentself secret create --help",
+            )
         value, err = _secret_from_args(args)
         if err is not None:
             return _secret_value_error(args, err)
+        if args.name == WALLET_KEY_NAME and not getattr(args, "unsafe", False):
+            return _fail(
+                args,
+                2,
+                f"refused: {WALLET_KEY_NAME} is protected\n",
+                "refused",
+                f"{WALLET_KEY_NAME} is protected",
+                nxt="agentself secret create NAME --unsafe",
+            )
         unchanged = client.create(args.name, value)
         payload: dict[str, object] = {"name": args.name}
         if unchanged:
@@ -1910,6 +2051,116 @@ def _status_json(view: dict[str, object], vault: Path) -> dict[str, object]:
         "email": {**email, "ready": email_ready},
         "ready": {"email": email_ready},
     }
+
+
+def _secret_bulk_requested(args) -> bool:
+    return bool((getattr(args, "from_dir", None) or "").strip()) or bool(
+        getattr(args, "from_files", None)
+    )
+
+
+def _parse_from_file_pair(raw: str) -> tuple[str, str] | None:
+    text = (raw or "").strip()
+    if "=" not in text:
+        return None
+    name, path = text.split("=", 1)
+    name = name.strip()
+    path = path.strip()
+    if not name or not path:
+        return None
+    return name, path
+
+
+def _secret_dir_files(folder: Path) -> list[Path]:
+    entries: list[Path] = []
+    for child in sorted(folder.iterdir(), key=lambda path: path.name):
+        if child.name.startswith("."):
+            continue
+        if child.is_symlink() or not child.is_file():
+            continue
+        entries.append(child)
+    return entries
+
+
+def _secret_bulk_items(args) -> tuple[list[tuple[str, str]], str | None]:
+    items: list[tuple[str, str]] = []
+    named = (getattr(args, "name", None) or "").strip()
+    from_file = (getattr(args, "from_file", None) or "").strip()
+    if named or getattr(args, "value", None) is not None or from_file:
+        return [], "name and --from-dir"
+    for raw in getattr(args, "from_files", None) or []:
+        pair = _parse_from_file_pair(raw)
+        if pair is None:
+            return [], "need a name"
+        items.append(pair)
+    folder = (getattr(args, "from_dir", None) or "").strip()
+    if folder:
+        root = Path(folder)
+        try:
+            if not root.is_dir():
+                return [], "file"
+            files = _secret_dir_files(root)
+        except OSError:
+            return [], "file"
+        items.extend((path.name, str(path)) for path in files)
+    if not items:
+        return [], "need a value"
+    return items, None
+
+
+def _secret_create_one(client, name: str, value: str, *, unsafe: bool) -> str:
+    if name == WALLET_KEY_NAME and not unsafe:
+        return "refused"
+    try:
+        unchanged = client.create(name, value)
+    except ProtectedName:
+        return "refused"
+    except Refused:
+        return "refused"
+    except ValueError:
+        return "refused"
+    return "unchanged" if unchanged else "created"
+
+
+def _secret_create_bulk(client, args) -> int:
+    items, err = _secret_bulk_items(args)
+    if err is not None:
+        return _secret_value_error(args, err)
+    created: list[str] = []
+    unchanged: list[str] = []
+    refused: list[str] = []
+    unsafe = bool(getattr(args, "unsafe", False))
+    for name, path in items:
+        try:
+            value = load_value_file(path, strip_newline=False)
+        except (OSError, UnicodeDecodeError):
+            refused.append(name)
+            continue
+        status = _secret_create_one(client, name, value, unsafe=unsafe)
+        if status == "created":
+            created.append(name)
+        elif status == "unchanged":
+            unchanged.append(name)
+        else:
+            refused.append(name)
+    payload: dict[str, object] = {
+        "created": created,
+        "unchanged": unchanged,
+        "refused": refused,
+    }
+    if created or unchanged:
+        if _as_json(args):
+            return _emit_ok(args, payload)
+        return 0
+    return _fail(
+        args,
+        2,
+        "refused\n",
+        "refused",
+        "refused",
+        nxt="agentself secret create --help",
+        extra=payload,
+    )
 
 
 def _secret_from_args(args) -> tuple[str | None, str | None]:

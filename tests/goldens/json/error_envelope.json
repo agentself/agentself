@@ -42,6 +42,9 @@
     "scheme",
     "network",
     "message_sha256",
-    "authorization"
+    "authorization",
+    "created",
+    "unchanged",
+    "refused"
   ]
 }

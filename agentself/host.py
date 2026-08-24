@@ -54,8 +54,15 @@ class Bind:
     tools: tuple[str, ...] = ()
     installable_tools: tuple[str, ...] = ()
 
-    def as_json(self) -> dict[str, object]:
+    def as_summary(self) -> dict[str, object]:
         return {
+            "name": self.name,
+            "summary": self.summary,
+            "live": self.live,
+        }
+
+    def as_json(self, *, options: bool = True) -> dict[str, object]:
+        payload: dict[str, object] = {
             "name": self.name,
             "summary": self.summary,
             "live": self.live,
@@ -63,8 +70,10 @@ class Bind:
             "custody": self.custody,
             "network": self.network,
             "asset": self.asset,
-            "options": [public_setup_option(item) for item in self.options],
         }
+        if options:
+            payload["options"] = [public_setup_option(item) for item in self.options]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -226,21 +235,35 @@ def unknown_bind(channel: str, value: str) -> str | None:
     return None
 
 
-def backends_payload(channel: str | None = None) -> dict[str, object]:
+def backends_payload(
+    channel: str | None = None, backend: str | None = None
+) -> dict[str, object]:
+    if backend:
+        spec = CHANNELS[channel or ""]
+        item = bind_of(spec.name, backend)
+        if item is None:
+            raise UnknownBind(spec.name, backend)
+        return {"ok": True, "channel": _channel_json(spec, binds=(item,), options=True)}
     if channel:
         spec = CHANNELS[channel]
-        return {"ok": True, "channel": _channel_json(spec)}
+        return {"ok": True, "channel": _channel_json(spec, options=False)}
     return {
         "ok": True,
         "prefix": ENV_PREFIX,
         "identity_dir": ENV_IDENTITY_DIR,
         "order": "flag, then env, then identity-directory config, then default",
         "failover": False,
-        "channels": [_channel_json(spec) for spec in CHANNELS.values()],
+        "channels": [_channel_catalog(spec) for spec in CHANNELS.values()],
     }
 
 
-def format_backends(channel: str | None = None) -> str:
+def format_backends(channel: str | None = None, backend: str | None = None) -> str:
+    if backend:
+        spec = CHANNELS[channel or ""]
+        item = bind_of(spec.name, backend)
+        if item is None:
+            raise UnknownBind(spec.name, backend)
+        return _format_channel(spec, verbose_options=True, binds=(item,)) + "\n"
     if channel:
         return _format_channel(CHANNELS[channel], verbose_options=True) + "\n"
     lines = [
@@ -255,12 +278,26 @@ def format_backends(channel: str | None = None) -> str:
     for spec in CHANNELS.values():
         lines.append(_format_channel(spec))
         lines.append("")
-    lines.append("Drill in: agentself backends CHANNEL")
+    lines.append("Drill in: agentself backends CHANNEL or CHANNEL BACKEND")
     lines.append("Current mounts: agentself show")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _channel_json(spec: Channel) -> dict[str, object]:
+def _channel_catalog(spec: Channel) -> dict[str, object]:
+    return {
+        "name": spec.name,
+        "note": spec.note,
+        "backends": [item.as_summary() for item in spec.binds],
+    }
+
+
+def _channel_json(
+    spec: Channel,
+    *,
+    binds: tuple[Bind, ...] | None = None,
+    options: bool = True,
+) -> dict[str, object]:
+    items = binds if binds is not None else spec.binds
     return {
         "name": spec.name,
         "env": spec.env,
@@ -268,7 +305,7 @@ def _channel_json(spec: Channel) -> dict[str, object]:
         "config": spec.config_key,
         "default": spec.default,
         "note": spec.note,
-        "backends": [item.as_json() for item in spec.binds],
+        "backends": [item.as_json(options=options) for item in items],
     }
 
 
@@ -300,12 +337,18 @@ def _bind_label(name: str, default: str) -> str:
     return f"{name} (default)" if name == default else name
 
 
-def _format_channel(spec: Channel, *, verbose_options: bool = False) -> str:
+def _format_channel(
+    spec: Channel,
+    *,
+    verbose_options: bool = False,
+    binds: tuple[Bind, ...] | None = None,
+) -> str:
+    items = binds if binds is not None else spec.binds
     meta = [spec.env, spec.flag] if spec.env else [spec.flag]
     lines = [f"{spec.name}  ({', '.join(meta)})"]
-    labels = [_bind_label(item.name, spec.default) for item in spec.binds]
+    labels = [_bind_label(item.name, spec.default) for item in items]
     width = max(len(label) for label in labels)
-    for item, label in zip(spec.binds, labels):
+    for item, label in zip(items, labels):
         lines.append(f"  {label.ljust(width)}  {item.summary}")
         if item.options:
             lines.append(f"  {' ' * width}  {_format_options(item)}")

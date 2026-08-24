@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `init --wallet-key-file PATH` seals an existing hex key as `wallet.key`
+  on first init. Replacing it on an existing identity still needs `--unsafe`.
+- `secret create --from-dir DIR` and repeated `--from-files NAME=PATH`
+  import many secrets. JSON reports `created`, `unchanged`, and `refused`
+  names only. `wallet.key` is refused without `--unsafe`.
+- Default `--json backends` is a compact catalog. Option essays are on
+  `backends CHANNEL BACKEND`. `backends CHANNEL` lists backends without
+  option help.
+- `agentself --json commands` lists featured verbs with `name`, `args`,
+  and `next`.
+- `email connect --json` next-step objects are compact: `status`, option
+  `name`, `choices` when present, and `next`.
+- Skill and `wallet authorize --help` state that signing is
+  `wallet authorize --file PATH` and that the output is the signature
+  to attach, not a send.
+
 ## 0.1.0 - 2026-08-24
 
 First stable release. Public CLI commands and flags, documented

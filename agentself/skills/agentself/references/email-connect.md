@@ -11,9 +11,10 @@ Start with:
 agentself --json email connect
 ```
 
-On exit 3, read `status`, `option`, `option.help`, optional `message`, and
-`human_action_required`. Follow the offered choices instead of inventing an
-address or provider procedure.
+On exit 3, read `status`, `option.name`, `option.choices` if present, and
+`next`. Optional `message` and `human_action_required` may also be present.
+Follow the offered choices instead of inventing an address or provider
+procedure. For option essays, run `agentself --json backends email BACKEND`.
 
 - **Existing key:** choose `existing_credential` when the user already has a
   key or will create one in the provider console. This does not authorize a

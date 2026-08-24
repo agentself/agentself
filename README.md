@@ -56,7 +56,8 @@ and keeps the generated API key encrypted while setup continues.
 | Non-secret notes | `note set`, `get`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list`, `find`, `mark` |
-| Backends | `backends [CHANNEL]` |
+| Backends | `backends [CHANNEL [BACKEND]]` |
+| Commands | `commands` |
 | Recovery | `backup`, `restore` |
 | Setup | `install --tools`, `install --skills` |
 
@@ -143,9 +144,9 @@ The CLI is designed to be discovered from a shell. No MCP server or Python
 import is required:
 
 ```bash
-agentself --help
-agentself backends
-agentself diagnose
+agentself --json --version
+agentself --json commands
+agentself --json diagnose
 ```
 
 For automation, prefer `--json`. Successful and failed commands emit one JSON
