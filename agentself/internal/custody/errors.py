@@ -24,6 +24,10 @@ class MissingSecret(CustodyError):
     pass
 
 
+class MissingNote(CustodyError):
+    pass
+
+
 class StoreFailure(CustodyError):
     """Store Resource error. No silent failover to the other implementation."""
 

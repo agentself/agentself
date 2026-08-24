@@ -34,6 +34,7 @@ from agentself.internal.custody.errors import (
     ChannelFailure,
     EmailSendNotReady,
     HostToolMissing,
+    MissingNote,
     MissingSecret,
     NoGas,
     ProtectedName,
@@ -179,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "secret":
             return _secret(client, args)
+        if args.command == "note":
+            return _note(client, args)
         if args.command == "email":
             return _email(client, args)
         if args.command == "wallet":
@@ -224,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         return _fail(args, 2, "refused: need gas\n", "refused", reason)
     except MissingSecret:
         return _fail(args, 3, "missing\n", "missing", nxt="agentself secret list")
+    except MissingNote:
+        return _fail(args, 3, "missing\n", "missing", nxt="agentself note list")
     except EmailSendNotReady as exc:
         return _fail(
             args,
@@ -1321,6 +1326,71 @@ def _secret_get(client, args) -> int:
     return 0
 
 
+def _note(client, args) -> int:
+    verb = args.note_command
+    if verb == "set":
+        value, err = _note_from_args(args)
+        if err is not None or value is None:
+            error = err or "need a value"
+            code = 3 if error == "need a value" else (1 if error == "file" else 2)
+            kind = "missing" if code == 3 else ("error" if code == 1 else "refused")
+            return _fail(
+                args,
+                code,
+                f"{kind}: {error}\n",
+                kind,
+                error,
+                nxt="agentself note set --help",
+            )
+        status = client.note_set(args.name, value)
+        payload = {"name": args.name, "status": status}
+        if _as_json(args):
+            return _emit_ok(args, payload, redact=False)
+        sys.stdout.write(status + "\n")
+        return 0
+    if verb == "get":
+        value = client.note_get(args.name)
+        if _as_json(args):
+            return _emit_ok(args, {"name": args.name, "value": value}, redact=False)
+        if value.endswith("\r\n"):
+            value = value[:-2] + "\n"
+        elif value.endswith("\r"):
+            value = value[:-1] + "\n"
+        elif not value.endswith("\n"):
+            value += "\n"
+        sys.stdout.write(value)
+        return 0
+    if verb == "list":
+        names = client.note_list()
+        if _as_json(args):
+            return _emit_ok(args, {"names": names}, redact=False)
+        for name in names:
+            sys.stdout.write(name + "\n")
+        return 0
+    if verb == "exists":
+        found = client.note_exists(args.name)
+        if not found:
+            return _fail(
+                args,
+                3,
+                "missing\n",
+                "missing",
+                nxt="agentself note list",
+                extra={"name": args.name, "exists": False},
+            )
+        if _as_json(args):
+            return _emit_ok(args, {"name": args.name, "exists": True}, redact=False)
+        sys.stdout.write("yes\n")
+        return 0
+    if verb == "delete":
+        client.note_delete(args.name)
+        if _as_json(args):
+            return _emit_ok(args, {"name": args.name}, redact=False)
+        sys.stdout.write("ok\n")
+        return 0
+    return 1
+
+
 def _email(client, args) -> int:
     if args.email_command == "show":
         email = client.identity().get("email")
@@ -1704,6 +1774,8 @@ def _channel_next(args) -> str:
         return "agentself backends wallet"
     if command == "secret":
         return "agentself secret --help"
+    if command == "note":
+        return "agentself note --help"
     return "agentself --help"
 
 
@@ -1738,6 +1810,11 @@ def _secret_value_error(args, err: str) -> int:
 
 def _default_json_next(args, error: str) -> str:
     if error == "missing":
+        note_verb = getattr(args, "note_command", None)
+        if note_verb == "set":
+            return "agentself note set --help"
+        if note_verb in ("get", "delete", "list", "exists"):
+            return "agentself note list"
         verb = getattr(args, "secret_command", None)
         if verb == "create":
             return "agentself secret create --help"
@@ -1823,6 +1900,21 @@ def _secret_from_args(args) -> tuple[str | None, str | None]:
         return read_stdin_text(), None
     except UnicodeDecodeError:
         return None, "file"
+
+
+def _note_from_args(args) -> tuple[str | None, str | None]:
+    value = args.value
+    path = (args.from_file or "").strip()
+    if value is not None and path:
+        return None, "value and --file"
+    if path:
+        try:
+            return load_value_file(path, strip_newline=False), None
+        except (OSError, UnicodeDecodeError):
+            return None, "file"
+    if value is None:
+        return None, "need a value"
+    return value, None
 
 
 def _message_from_args(args) -> tuple[str | None, str | None]:

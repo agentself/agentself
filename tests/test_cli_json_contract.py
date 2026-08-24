@@ -152,6 +152,7 @@ def test_featured_parser_matches_golden_commands():
     subs = action.choices
     for group, dest in (
         ("secret", "secret_command"),
+        ("note", "note_command"),
         ("email", "email_command"),
         ("wallet", "wallet_command"),
     ):
@@ -323,6 +324,31 @@ def test_json_secrets_and_missing(tmp_path):
     )
     assert "protected" in protected["reason"]
     assert protected["next"] == "agentself secret list"
+
+
+def test_json_notes_contract(tmp_path):
+    _vault, env, _started = _init(tmp_path)
+    set_result = assert_ok(
+        run_cli(["--json", "note", "set", "handoff", "next action"], env),
+        "note_set",
+    )
+    assert set_result == {
+        "ok": True,
+        "name": "handoff",
+        "status": "created",
+    }
+    got = assert_ok(run_cli(["--json", "note", "get", "handoff"], env), "note_get")
+    assert got == {"ok": True, "name": "handoff", "value": "next action"}
+    listed = assert_ok(run_cli(["--json", "note", "list"], env), "note_list")
+    assert listed == {"ok": True, "names": ["handoff"]}
+    exists = assert_ok(
+        run_cli(["--json", "note", "exists", "handoff"], env), "note_exists"
+    )
+    assert exists == {"ok": True, "name": "handoff", "exists": True}
+    deleted = assert_ok(
+        run_cli(["--json", "note", "delete", "handoff"], env), "note_write"
+    )
+    assert deleted == {"ok": True, "name": "handoff"}
 
 
 def test_json_email_connect_without_token_is_missing(tmp_path):
