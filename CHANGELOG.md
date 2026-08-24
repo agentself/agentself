@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0a5 - 2026-08-24
+
 - Mail list/receive results now include stable compact refs backed by private,
   identity-scoped state; receive and mark accept either a ref or provider ID.
 - `email find` searches From, To, and Subject using header-only mailbox listing,
