@@ -8,8 +8,8 @@ before running `init`.
 `AGENTSELF_IDENTITY_DIR` is the identity boundary.
 
 - Use the same directory for sequential work that must keep the same wallet,
-  encrypted secrets, email setup, and local acted-mail state. Avoid concurrent
-  writers to one directory.
+  encrypted secrets, non-secret notes, email setup, and local acted-mail state.
+  Avoid concurrent writers to one directory.
 - Use a distinct directory and `agentself init` when agents or tasks should
   have separate custody. This creates a different wallet.
 - Use `backup` and `restore` to move or clone the same identity into a distinct
@@ -42,12 +42,19 @@ Commands are designed to report `next`; follow that field rather than guessing.
 For interrupted email setup, use [email-connect.md](email-connect.md). For mail
 task state, use [mail.md](mail.md).
 
-When a short-lived handoff note is useful, create a local file ending in
-`*.notes`. It may contain only non-secret context such as public addresses,
-message IDs, command outcomes, and the next action. Never put credentials,
-OTPs, private keys, secret values, or message bodies in it. Delete it when the
-handoff is complete. This is only a filename convention; agentself has no note
-command.
+Use the identity's first-class note channel for non-secret handoff context:
+
+```bash
+agentself note set handoff --file PATH
+agentself --json note list
+agentself --json note get handoff
+```
+
+`note set` creates or replaces the note, so retrying a handoff write is safe.
+Notes are printable by default and may contain public addresses, message IDs,
+command outcomes, and the next action. Never put credentials, OTPs, private
+keys, secret values, or mail bodies in a note. Delete completed context with
+`agentself note delete handoff`.
 
 ## Backup and restore
 
@@ -57,8 +64,9 @@ Back up the complete identity to an empty protected destination:
 agentself --json backup PATH
 ```
 
-The copy includes config, wallet/age key material, encrypted secrets, mail
-cache, and acted-mail state. The age key remains plaintext on the host.
+The copy includes config, wallet/age key material, encrypted secrets,
+non-secret notes, mail cache, and acted-mail state. The age key remains
+plaintext on the host.
 `--force` replaces a non-empty destination, so use it only after verifying the
 path.
 

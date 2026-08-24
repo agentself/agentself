@@ -73,6 +73,21 @@
   "secret_exists": {
     "exact": ["ok", "name", "exists"]
   },
+  "note_set": {
+    "exact": ["ok", "name", "status"]
+  },
+  "note_get": {
+    "exact": ["ok", "name", "value"]
+  },
+  "note_list": {
+    "exact": ["ok", "names"]
+  },
+  "note_write": {
+    "exact": ["ok", "name"]
+  },
+  "note_exists": {
+    "exact": ["ok", "name", "exists"]
+  },
   "email_connect": {
     "required": ["ok"],
     "allowed": [

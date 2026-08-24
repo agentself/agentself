@@ -6,6 +6,8 @@
   identity-scoped state; receive and mark accept either a ref or provider ID.
 - `email find` searches From, To, and Subject using header-only mailbox listing,
   with the existing read-state and acted-state filters.
+- Added identity-local, non-secret notes for printable cross-agent handoff
+  context. `note set` is an idempotent upsert, and backup/restore carries notes.
 - AgentMail setup now offers an existing-key route and an explicitly authorized,
   resumable signup/OTP route without exposing the generated key.
 - Email messages have independent local acted state, with mark/unmark and safe

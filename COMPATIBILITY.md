@@ -25,3 +25,8 @@ state while retaining provider read state in `status`.
 Mail items retain the provider `id`; compact identity-local `ref` values are an
 additive convenience. Their private mapping is copied by backup/restore, while
 its on-disk filename layout is not a compatibility promise.
+
+`note` is a public CLI command group in schema 1. Note values are deliberately
+non-secret and may appear in human or JSON output. The identity-local notes
+directory is copied by whole-identity backup/restore, but its undocumented
+filename layout is not a compatibility promise.

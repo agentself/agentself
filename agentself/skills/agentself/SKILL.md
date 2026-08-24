@@ -40,6 +40,10 @@ agentself --json show
 
 For secrets, prefer files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Plaintext stdout requires explicit `--print`.
 
+For printable cross-agent context, use `note set NAME --file PATH` and
+`note get NAME`. Notes are non-secret: never put credentials, OTPs, private
+keys, secret values, or mail bodies in them.
+
 ## Open the relevant workflow
 
 - Connecting or recovering email setup: [references/email-connect.md](references/email-connect.md)

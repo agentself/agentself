@@ -33,6 +33,7 @@ from agentself.internal.custody.errors import (
     ChannelFailure,
     EmailSendNotReady,
     HostToolMissing,
+    MissingNote,
     MissingSecret,
     NoGas,
     ProtectedName,
@@ -56,6 +57,7 @@ from agentself.internal.names import (
     is_reserved_secret_name,
     require_safe_token,
 )
+from agentself.internal.notes import NoteMissing, NoteStorage
 from agentself.internal.registry import (
     RegistryError,
     RegistryFormatError,
@@ -149,6 +151,7 @@ class CustodyManager:
         self._wallet_backend = wallet_backend or "base"
         self._acted_mail = ActedMailState(Path(vault_root))
         self._mail_refs = MailRefState(Path(vault_root))
+        self._notes = NoteStorage(Path(vault_root))
         # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed_store_bindings = (
             frozenset(allowed_store_bindings)
@@ -302,6 +305,54 @@ class CustodyManager:
     ) -> builtins.list[str]:
         identity = self._require_identity(caller, "protected_names", None)
         return sorted(self._protected_secret_names(identity, "protected_names"))
+
+    def note_set(self, caller: BoundCaller, name: str, value: str) -> str:
+        identity = self._require_identity(caller, "note_set", name)
+        try:
+            status = self._notes.set(identity.id, name, value)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_set", identity.id, name, exc)
+        self._log.record("note_set", identity.id, name, "ok")
+        return status
+
+    def note_get(self, caller: BoundCaller, name: str) -> str:
+        identity = self._require_identity(caller, "note_get", name)
+        try:
+            value = self._notes.get(identity.id, name)
+        except NoteMissing:
+            self._missing_note("note_get", identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_get", identity.id, name, exc)
+        self._log.record("note_get", identity.id, name, "ok")
+        return value
+
+    def note_list(self, caller: BoundCaller) -> builtins.list[str]:
+        identity = self._require_identity(caller, "note_list", None)
+        try:
+            names = self._notes.list(identity.id)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_list", identity.id, None, exc)
+        self._log.record("note_list", identity.id, None, "ok")
+        return names
+
+    def note_exists(self, caller: BoundCaller, name: str) -> bool:
+        identity = self._require_identity(caller, "note_exists", name)
+        try:
+            found = self._notes.exists(identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_exists", identity.id, name, exc)
+        self._log.record("note_exists", identity.id, name, "ok" if found else "missing")
+        return found
+
+    def note_delete(self, caller: BoundCaller, name: str) -> None:
+        identity = self._require_identity(caller, "note_delete", name)
+        try:
+            self._notes.delete(identity.id, name)
+        except NoteMissing:
+            self._missing_note("note_delete", identity.id, name)
+        except (OSError, UnicodeError) as exc:
+            self._fail_store("note_delete", identity.id, name, exc)
+        self._log.record("note_delete", identity.id, name, "ok")
 
     def email_connect(
         self,
@@ -1010,6 +1061,12 @@ class CustodyManager:
     def _missing(self, operation: str, identity_id: str, name: str | None) -> NoReturn:
         self._log.record(operation, identity_id, name, "missing")
         raise MissingSecret("missing") from None
+
+    def _missing_note(
+        self, operation: str, identity_id: str, name: str | None
+    ) -> NoReturn:
+        self._log.record(operation, identity_id, name, "missing")
+        raise MissingNote("missing") from None
 
     def _fail_mailbox(
         self, operation: str, identity_id: str, exc: BaseException

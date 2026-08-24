@@ -8,7 +8,9 @@ from agentself.host import CHANNELS, ENV_IDENTITY_DIR, close_match
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
-_FEATURED = "{init,show,backends,diagnose,secret,email,wallet,backup,restore,install}"
+_FEATURED = (
+    "{init,show,backends,diagnose,secret,note,email,wallet,backup,restore,install}"
+)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -143,6 +145,23 @@ def _add_mail_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_note_write_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("name", metavar="NAME", help="Note name")
+    parser.add_argument(
+        "value",
+        nargs="?",
+        metavar="VALUE",
+        help="Non-secret note text",
+    )
+    parser.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Read exact UTF-8 text and newlines from a file; drops a leading BOM",
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     json_parent = argparse.ArgumentParser(add_help=False)
     _add_json_flag(json_parent)
@@ -151,7 +170,8 @@ def _parser() -> argparse.ArgumentParser:
         usage="%(prog)s [--json] [--version] [COMMAND ...]",
         formatter_class=_HELP,
         description=(
-            "Local identity for an agent: wallet, secrets, and optional email.\n"
+            "Local identity for an agent: wallet, secrets, non-secret notes, "
+            "and optional email.\n"
             "\n"
             "No command prints the current identity.\n"
             "Use agentself <command> --help to drill in.\n"
@@ -171,6 +191,7 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself diagnose\n"
             "  agentself --json show\n"
             "  agentself secret create NAME VALUE\n"
+            "  agentself note set NAME VALUE\n"
             "  agentself wallet address\n"
             "  agentself install --skills\n"
             "\n"
@@ -414,6 +435,91 @@ def _parser() -> argparse.ArgumentParser:
         epilog="Examples:\n  agentself secret exists NAME\n  agentself --json secret exists NAME",
     )
     exists_p.add_argument("name", metavar="NAME", help="Secret name")
+
+    note = _cmd(
+        sub,
+        "note",
+        json_parent,
+        help="Non-secret identity notes for agent handoff",
+        description=(
+            "Non-secret identity notes for printable agent handoff context. "
+            "Notes are stored in this identity and included by backup/restore. "
+            "set is an idempotent upsert: it creates or replaces NAME. "
+            "Never store credentials, OTPs, private keys, secret values, or mail bodies."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself note set handoff 'next: run tests'\n"
+            "  agentself note set handoff --file PATH\n"
+            "  agentself note get handoff\n"
+            "  agentself --json note list\n"
+            "\n"
+            "Notes are non-secret and printable. Use agentself secret for secrets."
+        ),
+    )
+    note_sub = note.add_subparsers(
+        dest="note_command",
+        required=True,
+        metavar="{set,get,list,delete,exists}",
+        parser_class=_Parser,
+        prog="agentself note",
+    )
+    note_set = _cmd(
+        note_sub,
+        "set",
+        json_parent,
+        help="Create or replace a non-secret note",
+        description=(
+            "Idempotent upsert of a non-secret note. Provide VALUE or --file PATH, "
+            "but not both. --file drops a leading UTF-8 BOM and otherwise preserves "
+            "UTF-8 text bytes and newlines exactly. Never store credentials, OTPs, "
+            "private keys, secret values, or mail bodies."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself note set handoff 'next: run tests'\n"
+            "  agentself note set handoff --file PATH\n"
+            "  agentself --json note set handoff VALUE"
+        ),
+    )
+    _add_note_write_args(note_set)
+    note_get = _cmd(
+        note_sub,
+        "get",
+        json_parent,
+        help="Print a non-secret note",
+        description=(
+            "Print a non-secret note value. Notes are printable by default. "
+            "Never use notes for credentials, OTPs, private keys, secret values, "
+            "or mail bodies."
+        ),
+        epilog="Examples:\n  agentself note get handoff\n  agentself --json note get handoff",
+    )
+    note_get.add_argument("name", metavar="NAME", help="Note name")
+    _cmd(
+        note_sub,
+        "list",
+        json_parent,
+        help="List non-secret note names",
+        epilog="Examples:\n  agentself note list\n  agentself --json note list",
+    )
+    note_delete = _cmd(
+        note_sub,
+        "delete",
+        json_parent,
+        help="Delete a non-secret note",
+        epilog="Examples:\n  agentself note delete handoff",
+    )
+    note_delete.add_argument("name", metavar="NAME", help="Note name")
+    note_exists = _cmd(
+        note_sub,
+        "exists",
+        json_parent,
+        help="Check whether a non-secret note exists",
+        description="Exit 0 if the note exists, 3 if it is missing.",
+        epilog="Examples:\n  agentself note exists handoff",
+    )
+    note_exists.add_argument("name", metavar="NAME", help="Note name")
 
     email = _cmd(
         sub,
@@ -764,7 +870,7 @@ def _parser() -> argparse.ArgumentParser:
         json_parent,
         help="Copy the identity directory to PATH",
         description=(
-            "Copy the whole identity directory (config, age key, secrets, mail cache). "
+            "Copy the whole identity directory (config, age key, secrets, notes, mail cache). "
             "Refuses if PATH exists and is not empty, unless --force. "
             "The live age key stays plaintext on the host."
         ),
