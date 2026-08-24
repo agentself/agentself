@@ -8,6 +8,8 @@ allowed-tools: Bash(agentself:*)
 
 CLI identity for an agent. No MCP server.
 
+Requires the `agentself` CLI. If unavailable, install it with `uv tool install agentself` or `pipx install agentself`, then run the version check below.
+
 ## Start safely
 
 Do not guess flags or expose values in logs, arguments, or chat.
