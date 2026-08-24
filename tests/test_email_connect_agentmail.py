@@ -238,6 +238,50 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert exists.returncode == 3
 
 
+def test_agentmail_menu_connect_does_not_persist_continuation(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    start = run_cli(["--json", "init"], env)
+    assert start.returncode == 0, start.stderr
+    apply_cli_env(monkeypatch, env)
+    _patch_agentmail(monkeypatch, Http())
+    continuation = (
+        vault / "identities" / "agent" / "secrets" / "internal.email.continuation.sops"
+    )
+
+    assert main(["--json", "email", "connect"]) == 3
+    first = json.loads(capsys.readouterr().out)
+    assert first["option"]["name"] == "setup_method"
+    assert not continuation.is_file()
+
+    assert main(["--json", "email", "connect"]) == 3
+    second = json.loads(capsys.readouterr().out)
+    assert second["option"]["name"] == "setup_method"
+    assert not continuation.is_file()
+
+    method = value_file(tmp_path, "existing_credential", "method.txt")
+    assert (
+        main(
+            [
+                "--json",
+                "email",
+                "connect",
+                "--continue",
+                "--state",
+                first["state"],
+                "--result-file",
+                method,
+            ]
+        )
+        == 3
+    )
+    advanced = json.loads(capsys.readouterr().out)
+    assert advanced["option"]["name"] == "credential"
+    assert not continuation.is_file()
+
+
 def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
     tmp_path, monkeypatch, capsys
 ) -> None:
@@ -247,6 +291,9 @@ def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
     assert start.returncode == 0, start.stderr
     apply_cli_env(monkeypatch, env)
     generated = "am_generated_api_key_do_not_leak"
+    continuation = (
+        vault / "identities" / "agent" / "secrets" / "internal.email.continuation.sops"
+    )
     inbox_id = "inb_signed_up"
     http = Http()
     http.on_post(
@@ -276,6 +323,7 @@ def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
         "existing_credential",
         "create_account",
     ]
+    assert not continuation.is_file()
 
     create = value_file(tmp_path, "create_account", "method.txt")
     assert (
@@ -297,6 +345,7 @@ def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
     outputs.append(captured.out + captured.err)
     email_step = json.loads(captured.out)
     assert email_step["option"]["name"] == "human_email"
+    assert not continuation.is_file()
 
     human_email = value_file(tmp_path, "owner@example.com", "human-email.txt")
     assert (
@@ -319,9 +368,40 @@ def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
     otp_step = json.loads(captured.out)
     assert otp_step["option"]["name"] == "otp"
     assert otp_step["option"]["sensitive"] is True
-    continuation = (
-        vault / "identities" / "agent" / "secrets" / "internal.email.continuation.sops"
+    assert continuation.is_file()
+    assert generated.encode() not in continuation.read_bytes()
+    assert generated not in otp_step.get("state", "")
+    assert generated not in json.dumps(otp_step)
+
+    assert main(["--json", "email", "connect"]) == 3
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    menu_after_otp = json.loads(captured.out)
+    assert menu_after_otp["option"]["name"] == "setup_method"
+    assert continuation.is_file()
+    assert generated.encode() not in continuation.read_bytes()
+    assert generated not in json.dumps(menu_after_otp)
+
+    method_again = value_file(tmp_path, "existing_credential", "method-after-otp.txt")
+    assert (
+        main(
+            [
+                "--json",
+                "email",
+                "connect",
+                "--continue",
+                "--state",
+                menu_after_otp["state"],
+                "--result-file",
+                method_again,
+            ]
+        )
+        == 3
     )
+    captured = capsys.readouterr()
+    outputs.append(captured.out + captured.err)
+    after_menu = json.loads(captured.out)
+    assert after_menu["option"]["name"] == "credential"
     assert continuation.is_file()
     assert generated.encode() not in continuation.read_bytes()
 

@@ -41,6 +41,7 @@ tokens/
 .claude/logs/
 .cursor/
 .playwright-mcp/
+worktrees/
 
 # os
 .DS_Store

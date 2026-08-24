@@ -61,6 +61,19 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     assert "needs: ci" in publish or "needs: [ci" in publish
 
 
+def test_changelog_and_release_fences_are_balanced() -> None:
+    for name in ("CHANGELOG.md", "RELEASE.md"):
+        path = PROJECT_ROOT / name
+        lines = path.read_text(encoding="utf-8").splitlines()
+        fences = 0
+        for line in lines:
+            assert line != "```n", path
+            assert not line.startswith("```n"), path
+            if line.startswith("```"):
+                fences += 1
+        assert fences % 2 == 0, (name, fences)
+
+
 def test_test_workflow_does_not_double_run_same_repo_prs() -> None:
     """push on every branch plus pull_request runs the matrix twice."""
 

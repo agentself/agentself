@@ -240,6 +240,24 @@ def test_cli_find_help_ref_syntax_and_unknown_ref_json(tmp_path):
     payload = json.loads(refused.stdout)
     assert payload["error"] == "refused"
     assert payload["reason"] == "unknown mail ref"
+    assert payload["next"] == "agentself email list"
+    received = run_cli(["--json", "email", "receive", unknown], env)
+    assert received.returncode == 2
+    received_payload = json.loads(received.stdout)
+    assert received_payload["error"] == "refused"
+    assert received_payload["reason"] == "unknown mail ref"
+    assert received_payload["next"] == "agentself email list"
+    human = run_cli(["email", "mark", unknown, "acted"], env)
+    assert human.returncode == 2
+    assert "next: agentself email list" in human.stderr
+    human_receive = run_cli(["email", "receive", unknown], env)
+    assert human_receive.returncode == 2
+    assert "next: agentself email list" in human_receive.stderr
+    blank = run_cli(["--json", "email", "find", " "], env)
+    assert blank.returncode == 2
+    blank_payload = json.loads(blank.stdout)
+    assert blank_payload["error"] == "refused"
+    assert blank_payload["next"] == "agentself backends email"
     assert MAIL_REF_PATTERN == r"m[1-9][0-9]{0,11}"
 
 

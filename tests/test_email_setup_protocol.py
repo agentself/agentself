@@ -16,7 +16,11 @@ from agentself.backends.email.contract import (
     setup_needed,
 )
 from agentself.cli.app import main
-from agentself.internal.custody.manager import _channel_from_mailbox
+from agentself.internal.custody.manager import (
+    _channel_from_mailbox,
+    _continuation_key,
+    _continuation_mac,
+)
 from agentself.internal.files import secrets_home
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
@@ -29,7 +33,10 @@ from agentself.internal.setup import (
     SETUP_PENDING,
     address_option,
     credential_option,
+    decode_state,
+    encode_state,
 )
+from agentself.internal.types import Identity
 
 from tests.support import apply_cli_env, cli_env, run_cli, value_file
 
@@ -623,7 +630,7 @@ def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
     code, first = _connect(monkeypatch, capsys, env)
     assert code == 3
-    assert _continuation_file(vault).is_file()
+    assert not _continuation_file(vault).is_file()
     cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
     code, unknown = _connect(
         monkeypatch,
@@ -640,7 +647,7 @@ def test_unknown_state_is_failed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 1
     assert unknown["ok"] is False
     assert unknown["status"] == "failed"
-    assert _continuation_file(vault).is_file()
+    assert not _continuation_file(vault).is_file()
     code, done = _connect(
         monkeypatch,
         capsys,
@@ -883,11 +890,17 @@ def test_rpc_mailbox_error_keeps_continuation(
         n["i"] += 1
         secret = (token or (answers or {}).get("credential") or "").strip()
         if n["i"] == 1:
-            return setup_needed(credential_option(), continuation={"phase": "wait"})
+            return setup_needed(
+                credential_option(),
+                continuation={"phase": "wait", "refresh": "resume"},
+            )
         if n["i"] == 2:
             raise MailboxError("rpc failed")
         if not secret:
-            return setup_needed(credential_option(), continuation={"phase": "wait"})
+            return setup_needed(
+                credential_option(),
+                continuation={"phase": "wait", "refresh": "resume"},
+            )
         return mailbox_view(ADDRESS, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
@@ -924,7 +937,10 @@ def test_terminal_mailbox_error_deletes_continuation(
     def connect(_token, _address, _answers):
         n["i"] += 1
         if n["i"] == 1:
-            return setup_needed(credential_option(), continuation={"phase": "wait"})
+            return setup_needed(
+                credential_option(),
+                continuation={"phase": "wait", "refresh": "resume"},
+            )
         raise MailboxError("invalid credentials")
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
@@ -947,3 +963,97 @@ def test_terminal_mailbox_error_deletes_continuation(
     assert code == 1
     assert failed["reason"] == "invalid credentials"
     assert not _continuation_file(vault).is_file()
+
+
+def test_public_continuation_token_rejects_secret_blob_and_bad_mac(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["--json", "init"], env)
+    assert started.returncode == 0, started.stderr
+    ident = json.loads(started.stdout)
+    identity = Identity(
+        id=ident["id"], recipient=ident["recipient"], store_binding="sops"
+    )
+
+    def connect(token, address, answers):
+        del address
+        secret = (token or (answers or {}).get("credential") or "").strip()
+        if not secret:
+            return setup_needed(credential_option(), continuation={"phase": "wait"})
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert not _continuation_file(vault).is_file()
+    decoded = decode_state(first["state"])
+    assert decoded is not None
+    nonce = str(decoded["n"])
+    option = str(decoded.get("o") or "")
+    dummy = value_file(tmp_path, "ignored", "ignored.txt")
+    extra_prefix = ["--continue", "--state"]
+    forged_key = "am_forged_api_key_do_not_leak"
+    secret_blob = {"phase": "wait", "api_key": forged_key}
+    forged = encode_state(
+        {
+            "n": nonce,
+            "o": option,
+            "b": secret_blob,
+            "mac": _continuation_mac(
+                _continuation_key(identity),
+                nonce,
+                secret_blob,
+                option,
+                identity.id,
+            ),
+        }
+    )
+    code, leaked = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [*extra_prefix, forged, "--result-file", dummy],
+    )
+    assert code == 1
+    assert leaked["ok"] is False
+    assert leaked["status"] == "failed"
+    assert leaked["reason"] == "unknown setup"
+    assert forged_key not in json.dumps(leaked)
+    assert not _continuation_file(vault).is_file()
+
+    bad_mac = encode_state(
+        {
+            "n": nonce,
+            "o": option,
+            "b": decoded.get("b"),
+            "mac": "00" * 32,
+        }
+    )
+    code, tampered = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [*extra_prefix, bad_mac, "--result-file", dummy],
+    )
+    assert code == 1
+    assert tampered["reason"] == "unknown setup"
+
+    short_mac = encode_state(
+        {
+            "n": nonce,
+            "o": option,
+            "b": decoded.get("b"),
+            "mac": "short",
+        }
+    )
+    code, short = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        [*extra_prefix, short_mac, "--result-file", dummy],
+    )
+    assert code == 1
+    assert short["reason"] == "unknown setup"
+    assert short.get("error") == "error"

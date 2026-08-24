@@ -61,7 +61,12 @@ from agentself.internal.setup import (
     continue_command,
     setup_status_of,
 )
-from agentself.internal.text import UTF8_BOM, sha256_text, strip_one_trailing_newline
+from agentself.internal.text import (
+    UTF8_BOM,
+    sha256_text,
+    strip_one_trailing_newline,
+    utf8_bytes,
+)
 from agentself.local import (
     DEFAULT_IDENTITY,
     IdentityStateError,
@@ -209,7 +214,8 @@ def main(argv: list[str] | None = None) -> int:
         detail = str(exc).strip() or "refused"
         if detail == "refused":
             return _fail(args, 2, "refused\n", "refused")
-        return _fail(args, 2, f"refused: {detail}\n", "refused", detail)
+        nxt = "agentself email list" if detail == "unknown mail ref" else None
+        return _fail(args, 2, f"refused: {detail}\n", "refused", detail, nxt=nxt)
     except CannotAuthorize:
         return _fail(
             args,
@@ -267,14 +273,18 @@ def _bundled_skill() -> Path:
     return Path(__file__).resolve().parent.parent / "skills" / "agentself" / "SKILL.md"
 
 
-def _copy_skill_tree(src_dir: Path, dest_dir: Path) -> Path:
+def _copy_skill_tree(src_dir: Path, dest_dir: Path) -> list[str]:
     """Copy packaged skill files without following links in either tree."""
-    entries = sorted(src_dir.rglob("*"))
+    # Path sort is case-insensitive on Windows; posix keeps SKILL.md first.
+    entries = sorted(
+        src_dir.rglob("*"), key=lambda path: path.relative_to(src_dir).as_posix()
+    )
     if not entries:
         raise OSError("skill not packaged")
     dest_dir.mkdir(parents=True, exist_ok=True)
     if dest_dir.is_symlink():
         raise OSError("refusing linked skill destination")
+    copied: list[str] = []
     for src in entries:
         if src.is_symlink():
             raise OSError("refusing linked packaged skill path")
@@ -291,7 +301,10 @@ def _copy_skill_tree(src_dir: Path, dest_dir: Path) -> Path:
         if dest.is_symlink():
             raise OSError("refusing linked skill destination")
         shutil.copyfile(src, dest)
-    return dest_dir / "SKILL.md"
+        copied.append(str(dest))
+    if str(dest_dir / "SKILL.md") not in copied:
+        raise OSError("skill not packaged")
+    return copied
 
 
 def _install(args) -> int:
@@ -394,11 +407,11 @@ def _install_skills(args, requested: str) -> tuple[list[str], int | None]:
     dest_root = Path.home() if args.global_install else Path.cwd()
     dest_dir = dest_root / rel
     try:
-        dest = _copy_skill_tree(src.parent, dest_dir)
+        paths = _copy_skill_tree(src.parent, dest_dir)
     except OSError as exc:
         detail = str(exc).strip() or "could not install skill"
         return [], _fail(args, 1, f"error: {detail}\n", "error", detail)
-    return [str(dest)], None
+    return paths, None
 
 
 def _backends(args) -> int:
@@ -1274,6 +1287,29 @@ def _secret(client, args) -> int:
     return 1
 
 
+def _write_human_plaintext(value: str) -> None:
+    if value.endswith("\r\n"):
+        value = value[:-2] + "\n"
+    elif value.endswith("\r"):
+        value = value[:-1] + "\n"
+    elif not value.endswith("\n"):
+        value += "\n"
+    data = utf8_bytes(value)
+    buf = getattr(sys.stdout, "buffer", None)
+    if buf is None:
+        sys.stdout.write(value)
+        return
+    try:
+        buf.write(data)
+    except (AttributeError, OSError, ValueError):
+        sys.stdout.write(value)
+        return
+    try:
+        buf.flush()
+    except (AttributeError, OSError, ValueError):
+        return
+
+
 def _secret_get(client, args) -> int:
     name = args.name
     path = (args.to_file or "").strip()
@@ -1316,13 +1352,7 @@ def _secret_get(client, args) -> int:
         return 0
     if _as_json(args):
         return _emit_ok(args, {"name": name, "value": value}, redact=False)
-    if value.endswith("\r\n"):
-        value = value[:-2] + "\n"
-    elif value.endswith("\r"):
-        value = value[:-1] + "\n"
-    elif not value.endswith("\n"):
-        value += "\n"
-    sys.stdout.write(value)
+    _write_human_plaintext(value)
     return 0
 
 
@@ -1352,13 +1382,7 @@ def _note(client, args) -> int:
         value = client.note_get(args.name)
         if _as_json(args):
             return _emit_ok(args, {"name": args.name, "value": value}, redact=False)
-        if value.endswith("\r\n"):
-            value = value[:-2] + "\n"
-        elif value.endswith("\r"):
-            value = value[:-1] + "\n"
-        elif not value.endswith("\n"):
-            value += "\n"
-        sys.stdout.write(value)
+        _write_human_plaintext(value)
         return 0
     if verb == "list":
         names = client.note_list()

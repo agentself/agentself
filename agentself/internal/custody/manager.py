@@ -841,14 +841,16 @@ class CustodyManager:
         mac = _continuation_mac(
             _continuation_key(identity), nonce, blob, option, identity.id
         )
-        envelope = {"nonce": nonce, "blob": blob, "option": option, "mac": mac}
-        self._store_put(
-            identity,
-            EMAIL_CONTINUATION_NAME,
-            json.dumps(envelope, sort_keys=True, separators=(",", ":")),
-            "email_connect",
-        )
-        return encode_state({"n": nonce})
+        if not _public_continuation_blob(blob):
+            envelope = {"nonce": nonce, "blob": blob, "option": option, "mac": mac}
+            self._store_put(
+                identity,
+                EMAIL_CONTINUATION_NAME,
+                json.dumps(envelope, sort_keys=True, separators=(",", ":")),
+                "email_connect",
+            )
+            return encode_state({"n": nonce})
+        return encode_state({"n": nonce, "o": option, "b": blob, "mac": mac})
 
     def _load_email_continuation(
         self, identity: Identity, token: str
@@ -859,6 +861,27 @@ class CustodyManager:
         nonce = str(decoded.get("n") or "").strip()
         if not nonce:
             return None
+        if any(key in decoded for key in ("o", "b", "mac")):
+            option = str(decoded.get("o") or "")
+            blob = decoded.get("b")
+            mac = decoded.get("mac")
+            if not isinstance(mac, str) or not mac:
+                return None
+            if not _public_continuation_blob(blob):
+                return None
+            expected = _continuation_mac(
+                _continuation_key(identity),
+                nonce,
+                blob,
+                option,
+                identity.id,
+            )
+            try:
+                if not hmac.compare_digest(mac, expected):
+                    return None
+            except (TypeError, ValueError):
+                return None
+            return blob, option
         raw = self._optional_secret_value(
             identity, EMAIL_CONTINUATION_NAME, "email_connect"
         )
@@ -882,7 +905,10 @@ class CustodyManager:
             option,
             identity.id,
         )
-        if not hmac.compare_digest(mac, expected):
+        try:
+            if not hmac.compare_digest(mac, expected):
+                return None
+        except (TypeError, ValueError):
             return None
         return stored.get("blob"), option
 
@@ -1094,6 +1120,19 @@ class CustodyManager:
         if isinstance(exc, RegistryFormatError):
             raise StoreFailure(str(exc)) from None
         raise StoreFailure("store error", name=name) from None
+
+
+def _public_continuation_blob(blob: object) -> bool:
+    if blob is None:
+        return True
+    if not isinstance(blob, dict):
+        return False
+    for key, value in blob.items():
+        if key not in {"phase", "status"}:
+            return False
+        if not isinstance(value, str) or len(value) > 64:
+            return False
+    return True
 
 
 def _continuation_key(identity: Identity) -> bytes:
