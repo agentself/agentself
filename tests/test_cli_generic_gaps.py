@@ -129,13 +129,13 @@ def test_secret_create_from_dir_skips_wallet_key_without_unsafe(tmp_path: Path) 
     assert run_cli(["--json", "init"], env).returncode == 0
     folder = tmp_path / "secrets"
     folder.mkdir()
-    (folder / "api.token").write_text("token-one\n", encoding="utf-8")
-    (folder / "other.secret").write_text("token-two\n", encoding="utf-8")
-    (folder / "wallet.key").write_text(generate_secp256k1() + "\n", encoding="utf-8")
-    (folder / ".junk").write_text("hidden\n", encoding="utf-8")
+    (folder / "api.token").write_bytes(b"token-one\n")
+    (folder / "other.secret").write_bytes(b"token-two\n")
+    (folder / "wallet.key").write_bytes((generate_secp256k1() + "\n").encode("ascii"))
+    (folder / ".junk").write_bytes(b"hidden\n")
     nested = folder / "nested"
     nested.mkdir()
-    (nested / "skip.me").write_text("nested\n", encoding="utf-8")
+    (nested / "skip.me").write_bytes(b"nested\n")
     proc = run_cli(["--json", "secret", "create", "--from-dir", str(folder)], env)
     assert proc.returncode == 0, proc.stderr
     data = json.loads(proc.stdout)
