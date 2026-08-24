@@ -34,6 +34,16 @@ class CustodyManager(Protocol):
 
     def protected_secret_names(self, caller: BoundCaller) -> builtins.list[str]: ...
 
+    def note_set(self, caller: BoundCaller, name: str, value: str) -> str: ...
+
+    def note_get(self, caller: BoundCaller, name: str) -> str: ...
+
+    def note_list(self, caller: BoundCaller) -> builtins.list[str]: ...
+
+    def note_exists(self, caller: BoundCaller, name: str) -> bool: ...
+
+    def note_delete(self, caller: BoundCaller, name: str) -> None: ...
+
     def email_send(
         self, caller: BoundCaller, to: str, subject: str, body: str
     ) -> None: ...
@@ -135,6 +145,26 @@ class Client:
     def protected_secret_names(self) -> builtins.list[str]:
         caller = self._require_caller()
         return self._manager.protected_secret_names(caller)
+
+    def note_set(self, name: str, value: str) -> str:
+        caller = self._require_caller()
+        return self._manager.note_set(caller, name, value)
+
+    def note_get(self, name: str) -> str:
+        caller = self._require_caller()
+        return self._manager.note_get(caller, name)
+
+    def note_list(self) -> builtins.list[str]:
+        caller = self._require_caller()
+        return self._manager.note_list(caller)
+
+    def note_exists(self, name: str) -> bool:
+        caller = self._require_caller()
+        return self._manager.note_exists(caller, name)
+
+    def note_delete(self, name: str) -> None:
+        caller = self._require_caller()
+        self._manager.note_delete(caller, name)
 
     def email_send(self, to: str, subject: str, body: str) -> None:
         caller = self._require_caller()
