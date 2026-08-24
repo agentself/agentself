@@ -79,11 +79,16 @@ otherwise preserves UTF-8 bytes and newlines. Notes are included in identity
 backup/restore. Never put credentials, OTPs, private keys, secret values, or
 mail bodies in notes.
 
-`email receive` prints headers and `new`/`seen` status without bodies. `acted`
-is independent local task state: use `email mark ID acted|unacted` and filter
-with `email list --acted|--unacted`. Fetch a specific body into a private file
-with `email receive ID --file PATH`. Bodies can contain API keys and login
-links; `--print` is an explicit unsafe choice.
+`email list`, `email find QUERY`, and default `email receive` print headers and
+`new`/`seen` status without bodies. Surfaced messages include the raw provider
+`id` and a stable compact identity-local `ref` such as `m1`.
+Use the ref with `email receive REF --file PATH` or
+`email mark REF acted|unacted`; raw provider IDs remain accepted. `acted` is
+independent local task state. The compact syntax is reserved: an unknown
+matching ref is refused instead of being sent to a provider. Acted state can be
+filtered with `email list --acted|--unacted` or the same flags on `email find`.
+Bodies can contain API keys and login links; `--print` is an explicit unsafe
+choice.
 
 ## Backends & configuration
 

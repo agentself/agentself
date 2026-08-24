@@ -1416,7 +1416,7 @@ def _email(client, args) -> int:
             return _emit_ok(args, payload)
         sys.stdout.write(args.mark_state + "\n")
         return 0
-    if args.email_command in ("receive", "list"):
+    if args.email_command in ("receive", "list", "find"):
         if (
             args.email_command == "receive"
             and (args.body_file or "").strip()
@@ -1425,10 +1425,10 @@ def _email(client, args) -> int:
             return _fail(
                 args,
                 2,
-                "refused: --file requires a message ID\n",
+                "refused: --file requires a message ref or ID\n",
                 "refused",
-                "--file requires a message ID",
-                nxt="agentself email receive ID --file PATH",
+                "--file requires a message ref or ID",
+                nxt="agentself email receive REF --file PATH",
             )
         messages = (
             client.email_receive(
@@ -1436,7 +1436,13 @@ def _email(client, args) -> int:
                 include_body=bool(args.body_file or args.print_body),
             )
             if args.email_command == "receive"
-            else client.email_list(status=args.status, acted=args.acted_filter)
+            else (
+                client.email_find(
+                    args.query, status=args.status, acted=args.acted_filter
+                )
+                if args.email_command == "find"
+                else client.email_list(status=args.status, acted=args.acted_filter)
+            )
         )
         if args.email_command == "receive":
             file_error = _prepare_received_messages(messages, args)

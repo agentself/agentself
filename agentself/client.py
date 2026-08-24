@@ -64,6 +64,15 @@ class CustodyManager(Protocol):
         acted: bool | None = None,
     ) -> builtins.list[dict[str, object]]: ...
 
+    def email_find(
+        self,
+        caller: BoundCaller,
+        query: str,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+    ) -> builtins.list[dict[str, object]]: ...
+
     def email_mark(
         self, caller: BoundCaller, message_id: str, *, acted: bool
     ) -> bool: ...
@@ -186,6 +195,16 @@ class Client:
     ) -> builtins.list[dict[str, object]]:
         caller = self._require_caller()
         return self._manager.email_list(caller, status=status, acted=acted)
+
+    def email_find(
+        self,
+        query: str,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+    ) -> builtins.list[dict[str, object]]:
+        caller = self._require_caller()
+        return self._manager.email_find(caller, query, status=status, acted=acted)
 
     def email_mark(self, message_id: str, *, acted: bool) -> bool:
         caller = self._require_caller()

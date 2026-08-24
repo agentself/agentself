@@ -120,6 +120,31 @@ def _add_secret_write_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_mail_filters(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--status",
+        choices=("new", "seen"),
+        default=None,
+        help="Keep messages with this backend read state",
+    )
+    acted_filter = parser.add_mutually_exclusive_group()
+    acted_filter.add_argument(
+        "--acted",
+        dest="acted_filter",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Keep messages marked acted",
+    )
+    acted_filter.add_argument(
+        "--unacted",
+        dest="acted_filter",
+        action="store_const",
+        const=False,
+        help="Keep messages not marked acted",
+    )
+
+
 def _add_note_write_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("name", metavar="NAME", help="Note name")
     parser.add_argument(
@@ -506,14 +531,15 @@ def _parser() -> argparse.ArgumentParser:
             "connect runs a generic, resumable setup. "
             "Backends publish required inputs through agentself backends email. "
             "Send without credentials fails closed. receive prints headers only; "
-            "fetch a body by ID with receive ID --file PATH."
+            "find searches safe headers only. Fetch a body by ref with "
+            "receive REF --file PATH."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email connect\n"
             "  agentself email show\n"
             "  agentself --json email receive\n"
-            "  agentself email receive ID --file PATH\n"
+            "  agentself email receive REF --file PATH\n"
             "  agentself backends email\n"
             "\n"
             "Use agentself email <command> --help to drill in."
@@ -522,7 +548,7 @@ def _parser() -> argparse.ArgumentParser:
     email_sub = email.add_subparsers(
         dest="email_command",
         required=True,
-        metavar="{connect,show,send,receive,list,mark}",
+        metavar="{connect,show,send,receive,list,find,mark}",
         parser_class=_Parser,
         prog="agentself email",
     )
@@ -603,25 +629,26 @@ def _parser() -> argparse.ArgumentParser:
         email_sub,
         "receive",
         json_parent,
-        help="Receive new mail, or fetch one id again",
+        help="Receive new mail, or fetch one ref or provider id",
         description=(
-            "Receive new mail, or fetch one id again even if already received. "
+            "Receive new mail, or fetch one ref or provider id again. "
             "Headers and new/seen status are safe by default; bodies may contain "
-            "credentials and are omitted unless --file or --print is explicit."
+            "credentials and are omitted unless --file or --print is explicit. "
+            "Stored refs use reserved syntax like m1; unknown refs are refused."
         ),
         epilog=(
             "Examples:\n"
             "  agentself email receive\n"
-            "  agentself email receive ID --file PATH\n"
-            "  agentself email receive ID --print\n"
+            "  agentself email receive REF --file PATH\n"
+            "  agentself email receive REF --print\n"
             "  agentself --json email receive"
         ),
     )
     email_receive.add_argument(
         "message_id",
         nargs="?",
-        metavar="ID",
-        help="Fetch this id again even if already received",
+        metavar="REF_OR_ID",
+        help="Fetch this stored short ref or provider id again",
     )
     body_output = email_receive.add_mutually_exclusive_group()
     body_output.add_argument(
@@ -629,7 +656,7 @@ def _parser() -> argparse.ArgumentParser:
         dest="body_file",
         default="",
         metavar="PATH",
-        help="Write one message body to a private file; requires ID",
+        help="Write one message body to a private file; requires a ref or id",
     )
     body_output.add_argument(
         "--print",
@@ -653,45 +680,48 @@ def _parser() -> argparse.ArgumentParser:
             "  agentself --json email list --acted"
         ),
     )
-    email_list.add_argument(
-        "--status",
-        choices=("new", "seen"),
-        default=None,
-        help="Keep messages with this backend read state",
+    _add_mail_filters(email_list)
+    email_find = _cmd(
+        email_sub,
+        "find",
+        json_parent,
+        help="Find inbound message headers",
+        description=(
+            "Find a non-empty case-insensitive substring in From, To, or Subject. "
+            "Uses header-only listing and never fetches or searches message bodies. "
+            "Filter backend read state with --status, or independent local task "
+            "state with --acted/--unacted."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself email find invoice\n"
+            "  agentself email find sender@example.com --status new --unacted\n"
+            "  agentself --json email find urgent"
+        ),
     )
-    acted_filter = email_list.add_mutually_exclusive_group()
-    acted_filter.add_argument(
-        "--acted",
-        dest="acted_filter",
-        action="store_const",
-        const=True,
-        default=None,
-        help="Keep messages marked acted",
-    )
-    acted_filter.add_argument(
-        "--unacted",
-        dest="acted_filter",
-        action="store_const",
-        const=False,
-        help="Keep messages not marked acted",
-    )
+    email_find.add_argument("query", metavar="QUERY", help="Non-empty header substring")
+    _add_mail_filters(email_find)
     email_mark = _cmd(
         email_sub,
         "mark",
         json_parent,
         help="Mark a message acted or unacted",
         description=(
-            "Set independent local task state for a provider message ID. "
+            "Set independent local task state for a stored short ref or provider ID. "
             "This does not change the backend new/seen status."
         ),
         epilog=(
             "Examples:\n"
-            "  agentself email mark ID acted\n"
-            "  agentself email mark ID unacted\n"
-            "  agentself --json email mark ID acted"
+            "  agentself email mark REF acted\n"
+            "  agentself email mark REF unacted\n"
+            "  agentself --json email mark REF acted"
         ),
     )
-    email_mark.add_argument("message_id", metavar="ID", help="Provider message ID")
+    email_mark.add_argument(
+        "message_id",
+        metavar="REF_OR_ID",
+        help="Stored short ref or provider message ID",
+    )
     email_mark.add_argument(
         "mark_state",
         choices=("acted", "unacted"),
