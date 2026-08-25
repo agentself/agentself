@@ -2,40 +2,21 @@
 
 ## Unreleased
 
-- 0.2.0 is a clean CLI break (`cli: 2`). Default success and failure emit one
-  compact JSON object on stdout. Exit 0 success, 1 error, 2 refused, 3 missing.
-  stderr is empty for handled outcomes. Only `--help` emits text. Bare
-  invocation is JSON `show`. `--version` JSON includes `"cli": 2`. Prompting,
-  TTY detection, human renderers, and `--print` are removed. `--json` remains a
-  hidden no-op alias. Identity `format_version` stays 1; no migration.
-- `--raw` is allowlisted for `wallet address`, `wallet show`,
-  `wallet authorize`, `secret get`, `note get`, and `email receive`. It writes
-  exact stored bytes with no JSON and no added newline. Unsupported `--raw` is
-  a JSON refusal, exit 2.
+- 0.2.0 is a CLI break (`cli: 2`). Commands print one JSON object. Exit 0
+  success, 1 error, 2 refused, 3 missing. Only `--help` is text. `--json` is
+  a hidden no-op. Identity `format_version` stays 1.
+- `--raw` writes exact command output bytes for `wallet address`,
+  `wallet show`, `wallet authorize`, `secret get`, `note get`, and
+  `email receive`. Unsupported `--raw` is a JSON refusal, exit 2.
 - Stdin is never implicit. Use `--file -`, `--result-file -`, or
   `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
-- Email connect never prompts. Continue with
-  `email connect --continue --state STATE --result-file PATH`.
-  Setup option metadata no longer includes `prompt`.
-- Pull-request CI skips macOS and the extra Windows Python, cancels superseded
-  runs, and caches pip. Host-tool checksums must be exactly 64 hex digits so a
-  macOS digest typo fails on Linux. The full OS matrix still runs on `main`
-  and tags.
-- `init --wallet-key-file PATH` seals an existing hex key as `wallet.key`
-  on first init. Replacing it on an existing identity still needs `--unsafe`.
+- `email connect` never prompts. Continue with
+  `--continue --state STATE --result-file PATH`.
+- `init --wallet-key-file PATH` seals an existing hex key on first init.
 - `secret create --from-dir DIR` and repeated `--from-files NAME=PATH`
-  import many secrets. JSON reports `created`, `unchanged`, and `refused`
-  names only. `wallet.key` is refused without `--unsafe`.
-- Default `backends` is a compact catalog. Option essays are on
-  `backends CHANNEL BACKEND`. `backends CHANNEL` lists backends without
-  option help.
-- `agentself commands` lists featured verbs with `name`, `args`, and `next`,
-  plus grouped raw capabilities.
-- `email connect` next-step objects are compact: `status`, option
-  `name`, `choices` when present, and `next`.
-- Skill and `wallet authorize --help` state that signing is
-  `wallet authorize --file PATH` and that the output is the signature
-  to attach, not a send.
+  import many secrets. `wallet.key` is refused without `--unsafe`.
+- `backends` and `commands` are compact catalogs. Option essays are on
+  `backends CHANNEL BACKEND`.
 
 ## 0.1.0 - 2026-08-24
 
