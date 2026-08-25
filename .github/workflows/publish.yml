@@ -17,8 +17,13 @@ permissions:
   contents: read
 
 jobs:
+  # Reusable workflows cannot request more than the caller grants.
+  # test.yml needs actions: write for setup-python's pip cache.
   ci:
     uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
+      actions: write
 
   verify-dist:
     needs: ci
