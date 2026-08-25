@@ -407,7 +407,7 @@ def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
     exported = json.loads(captured.out)["messages"][0]
     assert "body" not in exported
     assert exported["body_file"] == str(body_file)
-    assert exported["body_bytes"] == len("full good".encode("utf-8"))
+    assert exported["body_bytes"] == len(b"full good")
     assert isinstance(exported["body_bytes"], int)
     assert isinstance(exported["body_sha256"], str)
     assert body_file.read_text(encoding="utf-8") == "full good"
