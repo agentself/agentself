@@ -28,10 +28,6 @@ ENV_TOOLS_DIR = "AGENTSELF_TOOLS"
 # age's own variable. Not product-prefixed.
 ENV_AGE_KEY_FILE = "AGE_KEY_FILE"
 
-_WALLET_LIVE_VERBS = ("show", "address", "balance", "authorize", "send", "verify")
-_MAIL_VERBS = ("connect", "show", "send", "receive", "list", "find", "mark")
-_STORE_VERBS = ("create", "get", "update", "list", "delete")
-
 
 class UnknownBind(ValueError):
     def __init__(self, channel: str, value: str = "") -> None:
@@ -45,7 +41,6 @@ class Bind:
     name: str
     summary: str
     live: bool = False
-    verbs: tuple[str, ...] = ()
     custody: str = ""
     network: str = ""
     asset: str = ""
@@ -60,12 +55,14 @@ class Bind:
             "live": self.live,
         }
 
-    def as_json(self, *, options: bool = True) -> dict[str, object]:
+    def as_json(
+        self, *, verbs: tuple[str, ...], options: bool = True
+    ) -> dict[str, object]:
         payload: dict[str, object] = {
             "name": self.name,
             "summary": self.summary,
             "live": self.live,
-            "verbs": list(self.verbs),
+            "verbs": list(verbs),
             "custody": self.custody,
             "network": self.network,
             "asset": self.asset,
@@ -78,6 +75,8 @@ class Bind:
 @dataclass(frozen=True)
 class Channel:
     name: str
+    command_group: str
+    next: str
     env: str | None
     config_key: str | None
     default: str
@@ -100,6 +99,8 @@ class Channel:
 CHANNELS: dict[str, Channel] = {
     "wallet": Channel(
         name="wallet",
+        command_group="wallet",
+        next="agentself wallet address",
         env=ENV_WALLET_BACKEND,
         config_key="wallet_backend",
         default="base",
@@ -108,7 +109,6 @@ CHANNELS: dict[str, Channel] = {
                 "base",
                 "USDC destination on Base",
                 live=True,
-                verbs=_WALLET_LIVE_VERBS,
                 custody="eoa-key",
                 network="base",
                 asset="USDC",
@@ -117,7 +117,6 @@ CHANNELS: dict[str, Channel] = {
                 "ethereum",
                 "USDC destination on Ethereum",
                 live=True,
-                verbs=_WALLET_LIVE_VERBS,
                 custody="eoa-key",
                 network="ethereum",
                 asset="USDC",
@@ -135,6 +134,8 @@ CHANNELS: dict[str, Channel] = {
     ),
     "email": Channel(
         name="email",
+        command_group="email",
+        next="agentself email connect",
         env=ENV_EMAIL_BACKEND,
         config_key="email_backend",
         default="agentmail",
@@ -143,7 +144,6 @@ CHANNELS: dict[str, Channel] = {
                 "agentmail",
                 "HTTP inbox. Connect provisions or selects an owned address",
                 live=True,
-                verbs=_MAIL_VERBS,
                 custody="none",
                 network="agentmail",
                 options=AGENTMAIL_OPTIONS,
@@ -152,7 +152,6 @@ CHANNELS: dict[str, Channel] = {
                 "imap",
                 "IMAP receive plus SMTP send. Hosts default to imap./smtp. of the address domain",
                 live=True,
-                verbs=_MAIL_VERBS,
                 custody="none",
                 network="imap-smtp",
                 options=IMAP_OPTIONS,
@@ -165,6 +164,8 @@ CHANNELS: dict[str, Channel] = {
     ),
     "store": Channel(
         name="store",
+        command_group="secret",
+        next="agentself secret list",
         env=None,
         config_key=None,
         default="sops",
@@ -173,7 +174,6 @@ CHANNELS: dict[str, Channel] = {
                 "sops",
                 "age files on this computer",
                 live=False,
-                verbs=_STORE_VERBS,
                 custody="age-files",
                 tools=tuple(tool.name for tool in store_required_tools("sops")),
                 installable_tools=tuple(
@@ -186,7 +186,6 @@ CHANNELS: dict[str, Channel] = {
                 "pass",
                 "gpg password store",
                 live=False,
-                verbs=_STORE_VERBS,
                 custody="gpg-pass",
                 tools=tuple(tool.name for tool in store_required_tools("pass")),
             ),
@@ -234,17 +233,25 @@ def unknown_bind(channel: str, value: str) -> str | None:
 
 
 def backends_payload(
-    channel: str | None = None, backend: str | None = None
+    command_verbs: dict[str, tuple[str, ...]],
+    channel: str | None = None,
+    backend: str | None = None,
 ) -> dict[str, object]:
     if backend:
         spec = CHANNELS[channel or ""]
         item = bind_of(spec.name, backend)
         if item is None:
             raise UnknownBind(spec.name, backend)
-        return {"ok": True, "channel": _channel_json(spec, binds=(item,), options=True)}
+        return {
+            "ok": True,
+            "channel": _channel_json(spec, command_verbs, binds=(item,), options=True),
+        }
     if channel:
         spec = CHANNELS[channel]
-        return {"ok": True, "channel": _channel_json(spec, options=False)}
+        return {
+            "ok": True,
+            "channel": _channel_json(spec, command_verbs, options=False),
+        }
     return {
         "ok": True,
         "prefix": ENV_PREFIX,
@@ -258,6 +265,8 @@ def backends_payload(
 def _channel_catalog(spec: Channel) -> dict[str, object]:
     return {
         "name": spec.name,
+        "command_group": spec.command_group,
+        "next": spec.next,
         "note": spec.note,
         "backends": [item.as_summary() for item in spec.binds],
     }
@@ -265,6 +274,7 @@ def _channel_catalog(spec: Channel) -> dict[str, object]:
 
 def _channel_json(
     spec: Channel,
+    command_verbs: dict[str, tuple[str, ...]],
     *,
     binds: tuple[Bind, ...] | None = None,
     options: bool = True,
@@ -272,12 +282,17 @@ def _channel_json(
     items = binds if binds is not None else spec.binds
     return {
         "name": spec.name,
+        "command_group": spec.command_group,
+        "next": spec.next,
         "env": spec.env,
         "flag": spec.flag,
         "config": spec.config_key,
         "default": spec.default,
         "note": spec.note,
-        "backends": [item.as_json(options=options) for item in items],
+        "backends": [
+            item.as_json(verbs=command_verbs[spec.command_group], options=options)
+            for item in items
+        ],
     }
 
 

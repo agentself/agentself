@@ -10,6 +10,7 @@ from agentself.backends.store.contract import StoreAccess
 from agentself.backends.store.factory import StoreAccessFactory
 from agentself.backends.wallet.contract import WalletAccess
 from agentself.backends.wallet.factory import WalletAccessFactory
+from agentself.cli.registry import command_verbs
 from agentself.host import CHANNELS
 from agentself.internal.log import MemoryLog
 
@@ -45,6 +46,13 @@ def test_store_catalog_tools_match_runtime_requirements(tmp_path):
             tuple(tool.name for tool in runtime if tool.installable)
             == bind.installable_tools
         )
+
+
+def test_backend_command_groups_are_real_registry_namespaces():
+    groups = command_verbs()
+    for channel in CHANNELS.values():
+        assert channel.command_group in groups
+        assert groups[channel.command_group]
 
 
 def test_diagnose_agentmail_token_canary_is_absent(tmp_path):

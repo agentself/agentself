@@ -9,7 +9,12 @@ from typing import cast
 from agentself import __version__
 from agentself.cli.outcomes import CliFailure, CliOutcome, CliRaw, CliSuccess
 from agentself.cli.parser import _parser
-from agentself.cli.registry import CommandSpec, commands_payload, spec_for
+from agentself.cli.registry import (
+    CommandSpec,
+    command_recovery,
+    commands_payload,
+    spec_for,
+)
 from agentself.cli.runtime import (
     INSTALL_TOOLS_NEXT,
     bind_error,
@@ -81,6 +86,18 @@ def main(argv: list[str] | None = None) -> int:
     if _has_flag(raw, "--version"):
         return _render(_version())
     as_raw = _has_flag(raw, "--raw")
+    recovery = command_recovery(raw)
+    if recovery is not None:
+        reason, recovery_next = recovery
+        return _render(
+            fail(
+                argparse.Namespace(as_raw=as_raw),
+                2,
+                "refused",
+                reason,
+                nxt=recovery_next,
+            )
+        )
     parser = _parser()
     try:
         args = cast(CommandArguments, parser.parse_args(raw))

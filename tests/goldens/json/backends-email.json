@@ -2,6 +2,8 @@
   "ok": true,
   "channel": {
     "name": "email",
+    "command_group": "email",
+    "next": "agentself email connect",
     "env": "AGENTSELF_EMAIL_BACKEND",
     "flag": "--email",
     "config": "email_backend",

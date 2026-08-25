@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentself.cli.outcomes import CliOutcome, CliSuccess
-from agentself.cli.registry import commands_payload
+from agentself.cli.registry import command_verbs, commands_payload
 from agentself.cli.runtime import fail
 from agentself.host import CHANNELS, backends_payload, unknown_bind
 
@@ -36,4 +36,4 @@ def list_backends(args, _vault: Path) -> CliOutcome:
                 bind_err,
                 nxt=f"agentself backends {channel}",
             )
-    return CliSuccess(backends_payload(channel, backend))
+    return CliSuccess(backends_payload(command_verbs(), channel, backend))

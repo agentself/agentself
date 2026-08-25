@@ -231,7 +231,7 @@ def _store_list_refused(proc) -> dict:
     data = json.loads(proc.stdout)
     assert data["ok"] is False
     assert data["error"] == "refused"
-    assert data["reason"] == "store is the secret backend, not a command"
+    assert data["reason"] == "store maps to the secret command group"
     assert data["next"] == "agentself secret list"
     assert "restore" not in blob.lower()
     assert "did you mean" not in data["reason"]
@@ -247,19 +247,64 @@ def test_unknown_store_list_points_to_secret_list(tmp_path: Path) -> None:
         assert data["next"] == "agentself secret list"
 
 
-def test_commands_still_feature_secret_list(tmp_path: Path) -> None:
+def test_discovery_maps_store_to_registry_derived_secret_commands(
+    tmp_path: Path,
+) -> None:
     env = cli_env(tmp_path / "vault")
-    proc = run_cli(["commands"], env)
-    assert proc.returncode == 0, proc.stderr
-    data = json.loads(proc.stdout)
-    names = [item["name"] for item in data["commands"]]
+    commands_proc = run_cli(["commands"], env)
+    assert commands_proc.returncode == 0, commands_proc.stderr
+    commands = json.loads(commands_proc.stdout)
+    names = [item["name"] for item in commands["commands"]]
     assert "secret" in names
-    secret = next(item for item in data["commands"] if item["name"] == "secret")
-    assert "list" in secret["args"]
+    assert "secret list" not in names
+    secret = next(item for item in commands["commands"] if item["name"] == "secret")
     assert secret["next"] == "agentself secret list"
-    assert "secret list" in names
-    leaf = next(item for item in data["commands"] if item["name"] == "secret list")
-    assert leaf["next"] == "agentself secret list"
-    blob = json.dumps(data)
+
+    backends_proc = run_cli(["backends", "store"], env)
+    assert backends_proc.returncode == 0, backends_proc.stderr
+    store = json.loads(backends_proc.stdout)["channel"]
+    assert store["command_group"] == "secret"
+    assert store["next"] == "agentself secret list"
+    for backend in store["backends"]:
+        assert backend["verbs"] == secret["args"]
+        assert "exists" in backend["verbs"]
+    blob = json.dumps(commands) + json.dumps(store)
     assert "value" not in blob
     assert "AGE-SECRET-KEY" not in blob
+
+
+def test_known_command_intents_have_safe_exact_recovery(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    cases = (
+        (["stores", "list"], "agentself secret list"),
+        (["sops", "list"], "agentself secret list"),
+        (["pass", "list"], "agentself secret list"),
+        (["agentmail", "list"], "agentself email list"),
+        (["base", "address"], "agentself wallet address"),
+        (["doctor"], "agentself diagnose"),
+        (["whoami"], "agentself show"),
+        (["start"], "agentself init"),
+        (["wallet", "sign"], "agentself wallet authorize --help"),
+        (["secret", "read"], "agentself secret get --help"),
+        (["secret", "set"], "agentself secret --help"),
+        (["email", "remove"], "agentself email --help"),
+        (["note", "create"], "agentself note set --help"),
+        (["note", "update"], "agentself note set --help"),
+    )
+    for args, nxt in cases:
+        proc = run_cli(args, env)
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        data = json.loads(proc.stdout)
+        assert data["next"] == nxt
+        assert "did you mean" not in data["reason"]
+        assert "restore" not in proc.stdout.lower()
+
+
+def test_fuzzy_recovery_never_suggests_mutating_commands(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    for args in (["remove"], ["secret", "udpate"], ["email", "snd"]):
+        proc = run_cli(args, env)
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        data = json.loads(proc.stdout)
+        assert "did you mean" not in data["reason"]
+        assert "restore" not in proc.stdout.lower()

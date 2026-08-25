@@ -27,7 +27,6 @@ def _patch_memory_catalog(monkeypatch) -> None:
         "memory",
         "in-memory test store",
         live=False,
-        verbs=store.binds[0].verbs,
         tools=(),
         installable_tools=(),
     )
@@ -36,6 +35,8 @@ def _patch_memory_catalog(monkeypatch) -> None:
         "store",
         Channel(
             name=store.name,
+            command_group=store.command_group,
+            next=store.next,
             env=store.env,
             config_key=store.config_key,
             default=store.default,

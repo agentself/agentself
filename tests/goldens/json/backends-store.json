@@ -2,6 +2,8 @@
   "ok": true,
   "channel": {
     "name": "store",
+    "command_group": "secret",
+    "next": "agentself secret list",
     "env": null,
     "flag": "--store",
     "config": null,
@@ -17,7 +19,8 @@
           "get",
           "update",
           "list",
-          "delete"
+          "delete",
+          "exists"
         ],
         "custody": "age-files",
         "network": "",
@@ -32,7 +35,8 @@
           "get",
           "update",
           "list",
-          "delete"
+          "delete",
+          "exists"
         ],
         "custody": "gpg-pass",
         "network": "",

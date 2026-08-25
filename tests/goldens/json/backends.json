@@ -7,6 +7,8 @@
   "channels": [
     {
       "name": "wallet",
+      "command_group": "wallet",
+      "next": "agentself wallet address",
       "note": "RPC override: AGENTSELF_ETH_RPC_URL",
       "backends": [
         {
@@ -23,6 +25,8 @@
     },
     {
       "name": "email",
+      "command_group": "email",
+      "next": "agentself email connect",
       "note": "email connect does not block init.",
       "backends": [
         {
@@ -39,6 +43,8 @@
     },
     {
       "name": "store",
+      "command_group": "secret",
+      "next": "agentself secret list",
       "note": "Recorded on the identity at init. Not an env override.",
       "backends": [
         {

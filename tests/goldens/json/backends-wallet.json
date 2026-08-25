@@ -2,6 +2,8 @@
   "ok": true,
   "channel": {
     "name": "wallet",
+    "command_group": "wallet",
+    "next": "agentself wallet address",
     "env": "AGENTSELF_WALLET_BACKEND",
     "flag": "--wallet",
     "config": "wallet_backend",
@@ -17,8 +19,8 @@
           "address",
           "balance",
           "authorize",
-          "send",
-          "verify"
+          "verify",
+          "send"
         ],
         "custody": "eoa-key",
         "network": "base",
@@ -33,8 +35,8 @@
           "address",
           "balance",
           "authorize",
-          "send",
-          "verify"
+          "verify",
+          "send"
         ],
         "custody": "eoa-key",
         "network": "ethereum",

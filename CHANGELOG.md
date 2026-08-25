@@ -20,9 +20,9 @@
   `list`/`receive` have not stored.
 - `backends` and `commands` are compact catalogs. Option essays are on
   `backends CHANNEL BACKEND`.
-- Unknown top-level `store` (including `store list`) is a JSON refusal
-  whose `next` is `agentself secret list`. `store` is the secret backend,
-  not a verb. Skill common path lists names with `secret list`.
+- Backend discovery names each canonical command group and derives its verbs
+  from the command registry. Mistaken backend commands and known legacy terms
+  return safe exact `next` steps without suggesting mutating commands.
 
 ## 0.1.0 - 2026-08-24
 

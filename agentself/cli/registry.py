@@ -697,16 +697,106 @@ def spec_for(path: Sequence[str]) -> CommandSpec | None:
     return None
 
 
+def command_verbs() -> dict[str, tuple[str, ...]]:
+    groups = {spec.path[0] for spec in COMMANDS if spec.handler is None}
+    return {
+        group: tuple(
+            spec.path[1]
+            for spec in COMMANDS
+            if len(spec.path) == 2 and spec.path[0] == group
+        )
+        for group in groups
+    }
+
+
+def command_recovery(argv: Sequence[str]) -> tuple[str, str] | None:
+    tokens: list[str] = []
+    for token in argv:
+        if token == "--":
+            break
+        if token not in ("--json", "--raw"):
+            tokens.append(token)
+    if not tokens or tokens[0].startswith("-"):
+        return None
+    path = tuple(tokens[:2])
+    exact = {
+        ("doctor",): ("doctor is now diagnose", "agentself diagnose"),
+        ("whoami",): ("whoami is now show", "agentself show"),
+        ("start",): ("start is now init", "agentself init"),
+        ("remove",): ("remove is not a command", "agentself commands"),
+        ("print",): ("print is not a command", "agentself commands"),
+        ("set",): ("set needs a resource", "agentself commands"),
+        ("secret", "read"): (
+            "secret read is now secret get",
+            "agentself secret get --help",
+        ),
+        ("secret", "set"): (
+            "secret set is ambiguous; use create or update",
+            "agentself secret --help",
+        ),
+        ("email", "remove"): (
+            "email remove is not a command",
+            "agentself email --help",
+        ),
+        ("wallet", "sign"): (
+            "wallet sign is now wallet authorize",
+            "agentself wallet authorize --help",
+        ),
+        ("note", "create"): (
+            "note create is now note set",
+            "agentself note set --help",
+        ),
+        ("note", "update"): (
+            "note update is now note set",
+            "agentself note set --help",
+        ),
+    }
+    recovery = exact.get(path) or exact.get(path[:1])
+    if recovery is not None:
+        return recovery
+
+    aliases = {
+        "mail": "email",
+        "notes": "note",
+        "secrets": "secret",
+        "stores": "secret",
+    }
+    group = aliases.get(tokens[0])
+    default_next = f"agentself {group} --help" if group is not None else ""
+    if group is None:
+        # store is the secret backend, not a verb. Do not hint restore.
+        for channel in CHANNELS.values():
+            if tokens[0] == channel.name and channel.command_group != channel.name:
+                group = channel.command_group
+                default_next = channel.next
+                break
+            if tokens[0] in channel.names:
+                group = channel.command_group
+                default_next = channel.next
+                break
+    if group is None:
+        return None
+
+    verbs = command_verbs()[group]
+    verb = tokens[1] if len(tokens) > 1 and tokens[1] in verbs else ""
+    spec = spec_for((group, verb)) if verb else None
+    if spec is not None and spec.next:
+        default_next = spec.next
+    elif verb in {"address", "balance", "list", "show"}:
+        default_next = f"agentself {group} {verb}"
+    return f"{tokens[0]} maps to the {group} command group", default_next
+
+
 def commands_payload() -> dict[str, object]:
+    verbs = command_verbs()
     featured = [
         {
-            "name": spec.path[0] if len(spec.path) == 1 else " ".join(spec.path),
-            "args": list(spec.args or ()),
+            "name": spec.path[0],
+            "args": list(verbs.get(spec.path[0], spec.args or ())),
             "next": spec.next or "",
         }
         for spec in COMMANDS
-        if spec.args is not None
-        and (len(spec.path) == 1 or spec.path == ("secret", "list"))
+        if len(spec.path) == 1 and spec.args is not None
     ]
     raw: dict[str, list[str]] = {}
     for spec in COMMANDS:
