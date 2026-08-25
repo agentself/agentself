@@ -591,6 +591,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Mark a message acted or unacted",
         f"{_H}.email:mark_email",
         configure_email_mark,
+        description=(
+            "Unknown compact refs and provider IDs that list/receive have not "
+            "stored are refused."
+        ),
         epilog="Examples:\n  agentself email mark REF acted",
     ),
     CommandSpec(

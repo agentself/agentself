@@ -38,10 +38,23 @@ def create_secret(args, vault: Path) -> CliOutcome:
             nxt="agentself secret create NAME --unsafe",
         )
     access = client(vault)
-    unchanged = access.create(args.name, value)
-    payload: dict[str, object] = {"name": args.name}
+    try:
+        unchanged = access.create(args.name, value)
+    except Refused:
+        return fail(
+            args,
+            2,
+            "refused",
+            nxt="agentself secret update NAME",
+        )
     if unchanged:
-        payload["unchanged"] = True
+        return fail(
+            args,
+            2,
+            "refused",
+            nxt="agentself secret update NAME",
+        )
+    payload: dict[str, object] = {"name": args.name}
     return CliSuccess(payload)
 
 

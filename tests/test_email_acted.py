@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from agentself.internal.files import identity_home
+from agentself.internal.mail_state import MailRefState
 
 from tests.support import build_app, cli_env, init_identity, run_cli
 
@@ -97,6 +98,7 @@ def test_mark_unmark_filters_and_headers_only(vault, monkeypatch):
 def test_acted_state_is_backend_neutral_private_and_path_safe(vault, monkeypatch):
     app, factory = _ready_app(vault, monkeypatch)
     message_id = "provider/id@example"
+    app.client.email_list()
     app.client.email_mark(message_id, acted=True)
 
     digest = hashlib.sha256(message_id.encode()).hexdigest()
@@ -125,6 +127,7 @@ def test_cli_mark_json_and_backup_restore_marker(tmp_path):
     env = cli_env(vault)
     initialized = run_cli(["--json", "init"], env)
     assert initialized.returncode == 0, initialized.stderr
+    MailRefState(vault).remember("agent", "provider/id@example")
 
     marked = run_cli(["--json", "email", "mark", "provider/id@example", "acted"], env)
     assert marked.returncode == 0, marked.stderr

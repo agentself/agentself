@@ -93,7 +93,8 @@ OTPs, private keys, secret values, or mail bodies in notes.
 and `new`/`seen` status without bodies. Surfaced messages include the raw
 provider `id` and a stable compact identity-local `ref` such as `m1`.
 Use the ref with `email receive REF --file PATH` or
-`email mark REF acted|unacted`; raw provider IDs remain accepted. `acted` is
+`email mark REF acted|unacted`; raw provider IDs remain accepted after
+`list` or `receive` has stored them. `acted` is
 independent local task state. The compact syntax is reserved: an unknown
 matching ref is refused instead of being sent to a provider. Acted state can be
 filtered with `email list --acted|--unacted` or the same flags on `email find`.

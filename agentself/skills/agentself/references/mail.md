@@ -9,8 +9,9 @@ agentself email list
 Done when JSON includes `id`, `ref`, and headers, and no body. Refs are short
 identity-local sequence names such as `m1`, `m2`, and `m3`. The syntax
 `m[1-9][0-9]*` is reserved for refs stored by list/receive. If a ref is
-unknown, run `agentself email list`. Mappings are private identity state and
-survive backup/restore.
+unknown, run `agentself email list`. Provider IDs are accepted by `email mark`
+only after list/receive has stored them. Mappings are private identity state
+and survive backup/restore.
 
 Find likely messages without listing and mentally filtering the whole inbox:
 

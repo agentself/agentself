@@ -47,6 +47,7 @@ from agentself.internal.mail_state import (
     ActedMailState,
     MailRefCollision,
     MailRefState,
+    is_mail_ref,
 )
 from agentself.internal.names import (
     EMAIL_ADDRESS_NAME,
@@ -561,6 +562,11 @@ class CustodyManager:
             self._refuse("email_mark", identity.id, None)
         resolved_id = self._resolve_mail_id(identity.id, normalized, "email_mark")
         assert resolved_id is not None
+        if not is_mail_ref(normalized) and not self._mail_refs.known_provider_id(
+            identity.id, resolved_id
+        ):
+            self._log.record("email_mark", identity.id, None, "refused")
+            raise Refused("unknown mail ref") from None
         try:
             self._mail_refs.remember(identity.id, resolved_id)
             self._acted_mail.set(identity.id, resolved_id, acted)

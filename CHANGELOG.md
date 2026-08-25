@@ -14,7 +14,10 @@
   `--continue --state STATE --result-file PATH`.
 - `init --wallet-key-file PATH` seals an existing hex key on first init.
 - `secret create --from-dir DIR` and repeated `--from-files NAME=PATH`
-  import many secrets. `wallet.key` is refused without `--unsafe`.
+  import many secrets. `wallet.key` is refused without `--unsafe`. Named
+  `secret create NAME` refuses if the name exists; use `secret update`.
+- `email mark` refuses unknown compact refs and provider IDs that
+  `list`/`receive` have not stored.
 - `backends` and `commands` are compact catalogs. Option essays are on
   `backends CHANNEL BACKEND`.
 
