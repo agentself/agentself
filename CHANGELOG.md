@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pull-request CI skips macOS and the extra Windows Python, cancels superseded
+  runs, and caches pip. Host-tool checksums must be exactly 64 hex digits so a
+  macOS digest typo fails on Linux. The full OS matrix still runs on `main`
+  and tags.
 - `init --wallet-key-file PATH` seals an existing hex key as `wallet.key`
   on first init. Replacing it on an existing identity still needs `--unsafe`.
 - `secret create --from-dir DIR` and repeated `--from-files NAME=PATH`

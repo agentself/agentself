@@ -3,7 +3,8 @@
 Version, changelog, classifier, and docs live in a PR. Merge to `main`, then
 wait for `test.yml` green on that merge commit (including wheel and sdist).
 
-1. Confirm `main` is clean and CI is green on that merge commit.
+1. Confirm `main` is clean and CI is green on that merge commit, including
+   macOS, both Windows Python versions, and the wheel smoke.
 2. Confirm the single package version in `agentself/__init__.py` matches the
    changelog section.
 3. Confirm the matching section in `CHANGELOG.md` is final.
