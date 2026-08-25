@@ -28,11 +28,11 @@ class _Parser(argparse.ArgumentParser):
 
     def error(self, message: str) -> None:  # type: ignore[override]
         message = redact_secrets(message)
-        nxt = (
-            _SECRET_LIST_NEXT
-            if _unknown_store_command(self.prog, message)
-            else f"{self.prog} --help"
-        )
+        if _unknown_store_command(self.prog, message):
+            message = _STORE_NOT_A_COMMAND
+            nxt = _SECRET_LIST_NEXT
+        else:
+            nxt = f"{self.prog} --help"
         self.exit(
             2,
             json.dumps(

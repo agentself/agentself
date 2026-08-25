@@ -231,9 +231,9 @@ def _store_list_refused(proc) -> dict:
     data = json.loads(proc.stdout)
     assert data["ok"] is False
     assert data["error"] == "refused"
-    assert "secret list" in data["next"]
-    assert "restore" not in data["next"]
-    assert "restore" not in data["reason"]
+    assert data["reason"] == "store is the secret backend, not a command"
+    assert data["next"] == "agentself secret list"
+    assert "restore" not in blob.lower()
     assert "did you mean" not in data["reason"]
     assert "value" not in data
     assert "names" not in data
