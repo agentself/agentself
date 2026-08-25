@@ -213,9 +213,53 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     assert "--raw" in start
     assert "never put the message on argv" in common
     assert "agentself wallet authorize --file PATH" in common
+    assert "secret list" in common
+    assert "store list" not in common
+    assert "agentself store" not in common
     assert "--print" not in body
     assert "authorize --print" not in body
     assert "wallet authorize MESSAGE" not in body
     assert "references/email-connect.md" in text
     assert "references/mail.md" in text
     assert "references/handoff.md" in text
+
+
+def _store_list_refused(proc) -> dict:
+    blob = _blob(proc)
+    assert proc.returncode == 2, blob
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout)
+    assert data["ok"] is False
+    assert data["error"] == "refused"
+    assert "secret list" in data["next"]
+    assert "restore" not in data["next"]
+    assert "restore" not in data["reason"]
+    assert "did you mean" not in data["reason"]
+    assert "value" not in data
+    assert "names" not in data
+    return data
+
+
+def test_unknown_store_list_points_to_secret_list(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    for args in (["store", "list"], ["--json", "store", "list"]):
+        data = _store_list_refused(run_cli(args, env))
+        assert data["next"] == "agentself secret list"
+
+
+def test_commands_still_feature_secret_list(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    proc = run_cli(["commands"], env)
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads(proc.stdout)
+    names = [item["name"] for item in data["commands"]]
+    assert "secret" in names
+    secret = next(item for item in data["commands"] if item["name"] == "secret")
+    assert "list" in secret["args"]
+    assert secret["next"] == "agentself secret list"
+    assert "secret list" in names
+    leaf = next(item for item in data["commands"] if item["name"] == "secret list")
+    assert leaf["next"] == "agentself secret list"
+    blob = json.dumps(data)
+    assert "value" not in blob
+    assert "AGE-SECRET-KEY" not in blob

@@ -260,6 +260,10 @@ def test_json_commands_lists_featured_verbs(tmp_path):
     names = [item["name"] for item in data["commands"]]
     for verb in ("init", "show", "secret", "email", "wallet"):
         assert verb in names
+    assert "secret list" in names
+    secret = next(item for item in data["commands"] if item["name"] == "secret")
+    assert "list" in secret["args"]
+    assert secret["next"] == "agentself secret list"
     for item in data["commands"]:
         assert set(item) == {"name", "args", "next"}
         assert isinstance(item["args"], list)

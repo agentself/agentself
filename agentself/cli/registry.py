@@ -462,6 +462,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("secret", "list"),
         "List secret names. Never print values",
         f"{_H}.secret:list_secrets",
+        args=(),
+        next="agentself secret list",
     ),
     CommandSpec(
         ("secret", "delete"),
@@ -698,12 +700,13 @@ def spec_for(path: Sequence[str]) -> CommandSpec | None:
 def commands_payload() -> dict[str, object]:
     featured = [
         {
-            "name": spec.path[0],
+            "name": spec.path[0] if len(spec.path) == 1 else " ".join(spec.path),
             "args": list(spec.args or ()),
             "next": spec.next or "",
         }
         for spec in COMMANDS
-        if len(spec.path) == 1 and spec.args is not None
+        if spec.args is not None
+        and (len(spec.path) == 1 or spec.path == ("secret", "list"))
     ]
     raw: dict[str, list[str]] = {}
     for spec in COMMANDS:

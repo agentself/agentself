@@ -45,6 +45,8 @@ Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `dia
 
 Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Output is JSON by default; `--raw` emits the signature or authorization token. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
 
+List secret names with `secret list`. Names only; never values. `store` is the backend (sops/pass), not a verb.
+
 For secrets, use files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Default `secret get NAME` is JSON with the value. Use `--raw` when exact bytes are required. `wallet.key` also needs `--unsafe`.
 
 For printable cross-agent context, use `note set NAME --file PATH` and

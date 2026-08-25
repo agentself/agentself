@@ -10,6 +10,14 @@ from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
 _FEATURED = featured_metavar()
+_SECRET_LIST_NEXT = "agentself secret list"
+_STORE_NOT_A_COMMAND = "store is the secret backend, not a command"
+
+
+def _unknown_store_command(prog: str, message: str) -> bool:
+    if prog != "agentself":
+        return False
+    return "invalid choice: 'store'" in message or _STORE_NOT_A_COMMAND in message
 
 
 class _Parser(argparse.ArgumentParser):
@@ -19,8 +27,12 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(status)
 
     def error(self, message: str) -> None:  # type: ignore[override]
-        nxt = f"{self.prog} --help"
         message = redact_secrets(message)
+        nxt = (
+            _SECRET_LIST_NEXT
+            if _unknown_store_command(self.prog, message)
+            else f"{self.prog} --help"
+        )
         self.exit(
             2,
             json.dumps(
@@ -40,12 +52,17 @@ class _Parser(argparse.ArgumentParser):
     def _check_value(self, action, value):
         if action.choices is None or value in action.choices:
             return
+        token = str(value)
+        if token == "store" and action.dest == "command":
+            raise argparse.ArgumentError(action, _STORE_NOT_A_COMMAND)
         listing = getattr(action, "_choices_actions", None)
         shown = [item.dest for item in listing] if listing else list(action.choices)
-        msg = f"invalid choice: {value!r} (choose from {', '.join(map(repr, shown))})"
-        hint = close_match(str(value), shown)
-        if hint:
-            msg += f" (did you mean {hint!r}?)"
+        msg = f"invalid choice: {token!r} (choose from {', '.join(map(repr, shown))})"
+        # store is the secret backend, not a verb. Do not hint restore.
+        if token != "store":
+            hint = close_match(token, shown)
+            if hint:
+                msg += f" (did you mean {hint!r}?)"
         raise argparse.ArgumentError(action, msg)
 
 
