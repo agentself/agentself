@@ -237,14 +237,15 @@ def test_corrupt_config_fails_closed(tmp_path):
         load_config(vault)
     show = run_cli(["show"], env)
     assert show.returncode == 1, show.stderr
-    assert "cannot read config.json" in show.stderr
-    assert "Traceback" not in show.stderr
+    assert show.stderr == ""
+    assert json.loads(show.stdout)["reason"] == "cannot read config.json"
+    assert "Traceback" not in show.stdout
     started = run_cli(["init"], env)
     assert started.returncode == 1, started.stdout + started.stderr
-    assert "cannot read config.json" in started.stderr
+    assert json.loads(started.stdout)["reason"] == "cannot read config.json"
     doctor = run_cli(["diagnose"], env)
     assert doctor.returncode == 1
-    assert "cannot read config.json" in doctor.stderr
+    assert json.loads(doctor.stdout)["reason"] == "cannot read config.json"
 
 
 def test_corrupt_registry_fails_closed(tmp_path):
@@ -254,8 +255,9 @@ def test_corrupt_registry_fails_closed(tmp_path):
     (vault / "registry.json").write_text("{not-json", encoding="utf-8")
     listed = run_cli(["secret", "list"], env)
     assert listed.returncode == 1, listed.stderr
-    assert "cannot read registry.json" in listed.stderr
-    assert "Traceback" not in listed.stderr
+    assert listed.stderr == ""
+    assert json.loads(listed.stdout)["reason"] == "cannot read registry.json"
+    assert "Traceback" not in listed.stdout
     js = run_cli(["--json", "secret", "list"], env)
     data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False

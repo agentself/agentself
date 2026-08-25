@@ -56,7 +56,9 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
     assert "AGE-SECRET-KEY" not in blob
     human = run_cli(["diagnose"], env)
     assert human.returncode == 1, human.stdout + human.stderr
-    assert "initialized: yes" in human.stdout
-    assert "wallet_backend: ethereum" in human.stdout
-    assert "age key file is not usable" in human.stderr
+    assert human.stderr == ""
+    again = json.loads(human.stdout)
+    assert again["initialized"] is True
+    assert again["wallet_backend"] == "ethereum"
+    assert again["reason"] == "age key file is not usable"
     assert "AGE-SECRET-KEY" not in human.stdout + human.stderr

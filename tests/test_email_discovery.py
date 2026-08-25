@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from agentself.cli.app import _email
+from agentself.cli.commands.email import find_email
+from agentself.cli.outcomes import CliSuccess
 from agentself.internal.custody.errors import Refused
 from agentself.internal.files import identity_home
 from agentself.internal.mail_state import (
@@ -249,10 +251,12 @@ def test_cli_find_help_ref_syntax_and_unknown_ref_json(tmp_path):
     assert received_payload["next"] == "agentself email list"
     human = run_cli(["email", "mark", unknown, "acted"], env)
     assert human.returncode == 2
-    assert "next: agentself email list" in human.stderr
+    assert human.stderr == ""
+    assert json.loads(human.stdout)["next"] == "agentself email list"
     human_receive = run_cli(["email", "receive", unknown], env)
     assert human_receive.returncode == 2
-    assert "next: agentself email list" in human_receive.stderr
+    assert human_receive.stderr == ""
+    assert json.loads(human_receive.stdout)["next"] == "agentself email list"
     blank = run_cli(["--json", "email", "find", " "], env)
     assert blank.returncode == 2
     blank_payload = json.loads(blank.stdout)
@@ -261,7 +265,7 @@ def test_cli_find_help_ref_syntax_and_unknown_ref_json(tmp_path):
     assert MAIL_REF_PATTERN == r"m[1-9][0-9]{0,11}"
 
 
-def test_find_json_emits_header_objects_with_ref(capsys):
+def test_find_json_emits_header_objects_with_ref(monkeypatch):
     ref = "m3"
 
     class Client:
@@ -286,7 +290,8 @@ def test_find_json_emits_header_objects_with_ref(capsys):
         acted_filter=False,
         as_json=True,
     )
-    assert _email(Client(), args) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["messages"][0]["ref"] == ref
-    assert "body" not in payload["messages"][0]
+    monkeypatch.setattr("agentself.cli.commands.email.client", lambda _vault: Client())
+    outcome = find_email(args, Path("."))
+    assert isinstance(outcome, CliSuccess)
+    assert outcome.payload["messages"][0]["ref"] == ref
+    assert "body" not in outcome.payload["messages"][0]

@@ -8,13 +8,15 @@ block identity initialization.
 Start with:
 
 ```bash
-agentself --json email connect
+agentself email connect
 ```
 
-On exit 3, read `status`, `option.name`, `option.choices` if present, and
-`next`. Optional `message` and `human_action_required` may also be present.
-Follow the offered choices instead of inventing an address or provider
-procedure. For option essays, run `agentself --json backends email BACKEND`.
+Done when JSON has a connected `address`, or exit 3 with `status`,
+`option.name`, and `next` to continue. Optional `message` and
+`human_action_required` may also be present. Follow the offered `choices`
+instead of inventing an address or provider procedure. For option essays, run
+`agentself backends email BACKEND`. Agents use `help`, `choices`, `sensitive`,
+`action`, `message`, and `human_action_required`.
 
 - **Existing key:** choose `existing_credential` when the user already has a
   key or will create one in the provider console. This does not authorize a
@@ -32,33 +34,29 @@ claimed organization can be attached unless the provider documents it.
 
 ## Continue without leaking answers
 
-`--json` never prompts. Write the one requested answer to a private temporary
-file, then use the exact `state` from the latest response:
+Email connect never prompts. Write the one requested answer to a private
+temporary file, then use the exact `state` from the latest response:
 
 ```bash
-agentself --json email connect --continue --state STATE --result-file PATH
+agentself email connect --continue --state STATE --result-file PATH
 ```
 
-Never put credentials, OTPs, or other sensitive answers in argv, logs, a
-`*.notes` file, or an agent/user chat prompt. Delete temporary answer files
-after use. Do not switch email backends during a continuation.
+`--result-file -` reads stdin when PATH must be stdin. Never put credentials,
+OTPs, or other sensitive answers in argv, logs, a `*.notes` file, or chat.
+Delete temporary answer files after use. Do not switch email backends during a
+continuation.
 
-For a human login handoff, run:
+If JSON includes `human_action_required`, relay the `action` URL and label to
+the user. After they complete that external step, continue with
+`--result-file`. Do not run an interactive prompt or ask them to paste the
+secret into chat. Then verify:
 
 ```bash
-agentself email connect
+agentself email show
 ```
 
-Relay only the displayed link and one instruction: open it and enter or paste
-the requested value into the command's secure prompt. The human should not
-send the value back in chat, create a result file, copy opaque state, or run
-the continuation command. Wait for the command, then verify:
-
-```bash
-agentself --json email show
-```
-
-One validated credential completes discovery; stop searching for alternatives.
+Done when `email show` JSON reports ready. One validated credential completes
+discovery; stop searching for alternatives.
 
 ## Resume an interrupted setup
 
@@ -70,7 +68,7 @@ state or reuse an older token after a later step.
 
 If the latest state was lost, or the provider reports a failed or unknown setup,
 restart with
-`agentself --json email connect`. If the credential cannot be obtained, inspect
+`agentself email connect`. If the credential cannot be obtained, inspect
 `agentself backends email`; change backend only by intentionally reinitializing
 with `init --force --email OTHER`, or stop.
 

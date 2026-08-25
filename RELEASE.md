@@ -19,7 +19,8 @@ wait for `test.yml` green on that merge commit (including wheel and sdist).
    Publishing (OIDC). No API token.
 8. After publish is green, create the GitHub Release from the matching
    changelog section. For 0.1.0, use `## 0.1.0`. **Do not mark 0.1.0 as
-   pre-release.** Verify `agentself --version` is `agentself 0.1.0`.
+   pre-release.** Verify `agentself --version` JSON has the package version
+   and `"cli": 2`.
 
 Create the GitHub release from a notes file
 (`gh release create vVERSION --notes-file PATH`), not an interpolated

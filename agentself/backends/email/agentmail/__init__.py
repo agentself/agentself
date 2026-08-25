@@ -312,7 +312,6 @@ class AgentMailMailboxAccess(MailboxAccess):
                     OPTIONS,
                     "address",
                     required=True,
-                    prompt="Choose the inbox for this identity",
                     type="choice",
                     choices=[
                         str(item.get("email") or "").strip()

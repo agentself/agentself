@@ -98,9 +98,24 @@ def test_note_cli_file_preserves_utf8_and_newlines(tmp_path):
 def test_note_cli_output_contract_and_source_refusal(tmp_path):
     _vault, env = _cli_identity(tmp_path)
     created = run_cli(["note", "set", "handoff", "public context"], env)
-    assert (created.returncode, created.stdout, created.stderr) == (0, "created\n", "")
+    assert created.returncode == 0, created.stderr
+    assert created.stderr == ""
+    assert json.loads(created.stdout) == {
+        "ok": True,
+        "name": "handoff",
+        "status": "created",
+    }
     got = run_cli(["note", "get", "handoff"], env)
-    assert (got.returncode, got.stdout, got.stderr) == (0, "public context\n", "")
+    assert got.returncode == 0, got.stderr
+    assert got.stderr == ""
+    assert json.loads(got.stdout) == {
+        "ok": True,
+        "name": "handoff",
+        "value": "public context",
+    }
+    raw = run_cli(["note", "get", "handoff", "--raw"], env)
+    assert raw.returncode == 0, raw.stderr
+    assert raw.stdout == "public context"
     listed = run_cli(["--json", "note", "list"], env)
     assert json.loads(listed.stdout) == {"ok": True, "names": ["handoff"]}
     exists = run_cli(["--json", "note", "exists", "handoff"], env)
@@ -116,7 +131,19 @@ def test_note_cli_output_contract_and_source_refusal(tmp_path):
         ["--json", "note", "set", "other", "argv", "--file", str(source)], env
     )
     assert clash.returncode == 2
+    assert json.loads(clash.stdout)["error"] == "refused"
     assert json.loads(clash.stdout)["reason"] == "value and --file"
+    missing_file = run_cli(
+        ["--json", "note", "set", "other", "--file", str(tmp_path / "missing.txt")],
+        env,
+    )
+    assert missing_file.returncode == 1
+    assert json.loads(missing_file.stdout)["error"] == "error"
+    assert json.loads(missing_file.stdout)["reason"] == "file"
+    missing_value = run_cli(["--json", "note", "set", "other"], env)
+    assert missing_value.returncode == 3
+    assert json.loads(missing_value.stdout)["error"] == "missing"
+    assert json.loads(missing_value.stdout)["reason"] == "need a value"
 
     deleted = run_cli(["--json", "note", "delete", "handoff"], env)
     assert json.loads(deleted.stdout) == {"ok": True, "name": "handoff"}

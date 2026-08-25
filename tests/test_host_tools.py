@@ -244,15 +244,17 @@ def test_cli_doctor_fetch_off_keeps_age_missing_shape(tmp_path):
     env["PATH"] = str(empty)
     proc = run_cli(["diagnose"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert proc.stderr == "error: age not on PATH\nnext: agentself install --tools\n"
-    js = run_cli(["--json", "diagnose"], env)
-    assert js.returncode == 1
-    data = json.loads(js.stdout or js.stderr)
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout)
     assert data["reason"] == "age not on PATH"
     assert data["next"] == "agentself install --tools"
+    js = run_cli(["--json", "diagnose"], env)
+    assert js.returncode == 1
+    assert json.loads(js.stdout) == data
     init = run_cli(["init"], env)
     assert init.returncode == 1
-    assert "install --tools" in init.stderr
+    assert init.stderr == ""
+    assert json.loads(init.stdout)["next"] == "agentself install --tools"
 
 
 def _plant_host_name(folder: Path, name: str) -> Path:
@@ -299,11 +301,11 @@ def test_diagnose_and_init_ignore_planted_cwd_age_keygen(tmp_path):
     env["PATH"] = str(work) + os.pathsep + str(empty)
     diagnosed = run_cli(["diagnose"], env, cwd=work)
     assert diagnosed.returncode == 1, diagnosed.stdout + diagnosed.stderr
-    assert "age not on PATH" in diagnosed.stderr
+    assert json.loads(diagnosed.stdout)["reason"] == "age not on PATH"
     assert planted.is_file()
     started = run_cli(["init"], env, cwd=work)
     assert started.returncode == 1, started.stdout + started.stderr
-    assert "age not on PATH" in started.stderr
+    assert json.loads(started.stdout)["reason"] == "age not on PATH"
     js = run_cli(["--json", "diagnose"], env, cwd=work)
     data = json.loads(js.stdout or js.stderr)
     assert data["ok"] is False
@@ -321,7 +323,7 @@ def test_diagnose_ignores_cwd_age_keygen_not_on_path(tmp_path):
     env["PATH"] = str(empty)
     proc = run_cli(["diagnose"], env, cwd=work)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "age not on PATH" in proc.stderr
+    assert json.loads(proc.stdout)["reason"] == "age not on PATH"
 
 
 def test_age_keygen_and_pass_spawns_skip_cwd_binary(tmp_path, monkeypatch):

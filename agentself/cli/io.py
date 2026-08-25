@@ -13,7 +13,7 @@ from agentself.internal.text import (
 )
 
 
-def read_stdin_text(*, strip_newline: bool = True) -> str:
+def read_stdin_text(*, strip_newline: bool = True, strip_bom: bool = True) -> str:
     buf = getattr(sys.stdin, "buffer", None)
     if buf is not None:
         try:
@@ -21,15 +21,21 @@ def read_stdin_text(*, strip_newline: bool = True) -> str:
         except Exception:
             raw = None
         if isinstance(raw, (bytes, bytearray)):
-            return decode_utf8_text(bytes(raw), strip_newline=strip_newline)
+            return decode_utf8_text(
+                bytes(raw), strip_newline=strip_newline, strip_bom=strip_bom
+            )
     return decode_utf8_text(
-        sys.stdin.read().encode("utf-8"), strip_newline=strip_newline
+        sys.stdin.read().encode("utf-8"),
+        strip_newline=strip_newline,
+        strip_bom=strip_bom,
     )
 
 
 def load_value_file(
     path: str, *, strip_newline: bool = True, strip_bom: bool = True
 ) -> str:
+    if path == "-":
+        return read_stdin_text(strip_newline=strip_newline, strip_bom=strip_bom)
     return read_text_file(Path(path), strip_newline=strip_newline, strip_bom=strip_bom)
 
 

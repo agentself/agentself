@@ -75,7 +75,7 @@ def test_cli_all_urls_fail_json_error_rpc(tmp_path, monkeypatch, capsys):
         kwargs.setdefault("rpc_opener", opener)
         return real_compose(*args, **kwargs)
 
-    monkeypatch.setattr("agentself.cli.app.compose", wrapped, raising=False)
+    monkeypatch.setattr("agentself.cli.runtime.compose", wrapped, raising=False)
     code = main(["--json", "wallet", "balance"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
@@ -157,7 +157,7 @@ def test_cli_override_rpc_json_error_rpc_no_fallback(tmp_path, monkeypatch, caps
         kwargs.setdefault("rpc_opener", opener)
         return real_compose(*args, **kwargs)
 
-    monkeypatch.setattr("agentself.cli.app.compose", wrapped, raising=False)
+    monkeypatch.setattr("agentself.cli.runtime.compose", wrapped, raising=False)
     code = main(["--json", "wallet", "balance"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err

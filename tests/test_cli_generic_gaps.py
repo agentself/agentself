@@ -30,9 +30,7 @@ def test_init_wallet_key_file_binds_existing_key(tmp_path: Path) -> None:
     assert key[2:] not in blob
     shown = run_cli(["--json", "wallet", "address"], env)
     assert json.loads(shown.stdout)["address"] == data["address"]
-    exported = run_cli(
-        ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-    )
+    exported = run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env)
     assert exported.returncode == 0
     assert json.loads(exported.stdout)["value"] == key
 
@@ -149,7 +147,7 @@ def test_secret_create_from_dir_skips_wallet_key_without_unsafe(tmp_path: Path) 
     listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
     assert "api.token" in listed["names"]
     assert "other.secret" in listed["names"]
-    got = run_cli(["--json", "secret", "get", "api.token", "--print"], env)
+    got = run_cli(["--json", "secret", "get", "api.token"], env)
     assert json.loads(got.stdout)["value"] == "token-one\n"
 
 
@@ -206,17 +204,18 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     start, rest = text.split("## Common path", 1)
     common = rest.split("## Open the relevant workflow", 1)[0]
     body = start + common
-    assert "agentself --json --version" in start
-    assert "agentself --json diagnose" in start
-    assert "agentself --json commands" in start
-    assert "agentself --help" not in start
-    assert "agentself <command> --help" not in start
-    assert "agentself backends\n" not in start
-    assert "agentself --json wallet authorize --file PATH" in common
+    assert "agentself --version" in start
+    assert "agentself diagnose" in start
+    assert '"cli": 2' in start
+    assert "agentself --json --version" not in start
+    assert "agentself --json diagnose" not in start
+    assert "agentself --json commands" not in start
+    assert "--raw" in start
     assert "never put the message on argv" in common
-    assert "Do not `--print` the signature" in common
-    assert "wallet authorize MESSAGE" not in body
+    assert "agentself wallet authorize --file PATH" in common
+    assert "--print" not in body
     assert "authorize --print" not in body
+    assert "wallet authorize MESSAGE" not in body
     assert "references/email-connect.md" in text
     assert "references/mail.md" in text
     assert "references/handoff.md" in text

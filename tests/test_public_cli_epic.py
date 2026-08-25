@@ -36,11 +36,8 @@ def test_install_skills_project_and_global(tmp_path):
     project.mkdir()
     proc = run_cli(["install", "--skills"], env, cwd=project)
     assert proc.returncode == 0, proc.stderr
-    installed_lines = [
-        line[len("installed ") :]
-        for line in proc.stdout.splitlines()
-        if line.startswith("installed ")
-    ]
+    assert proc.stderr == ""
+    installed_lines = json.loads(proc.stdout)["paths"]
     assert _skill_tails(installed_lines) == SKILL_TAILS
     dest = project / ".claude" / "skills" / "agentself" / "SKILL.md"
     assert dest.is_file()
@@ -81,11 +78,11 @@ def test_install_blocked_path_is_one_line_error(tmp_path):
     (tmp_path / ".agents").write_text("blocked", encoding="utf-8")
     proc = run_cli(["install", "--skills=agents"], env, cwd=tmp_path)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "Traceback" not in proc.stderr
+    assert proc.stderr == ""
     assert "Traceback" not in proc.stdout
-    lines = [line for line in proc.stderr.splitlines() if line.strip()]
-    assert len(lines) == 1, proc.stderr
-    assert "error" in proc.stderr.lower()
+    data = json.loads(proc.stdout)
+    assert data["ok"] is False
+    assert data["error"] == "error"
 
     js = run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path)
     assert js.returncode == 1, js.stdout + js.stderr
@@ -126,7 +123,8 @@ def test_backup_restore_roundtrip(tmp_path):
     assert json.loads(backup.stdout)["ok"] is True
     refuse = run_cli(["backup", str(dest)], env)
     assert refuse.returncode == 1, refuse.stdout + refuse.stderr
-    assert "not empty" in refuse.stderr
+    assert refuse.stderr == ""
+    assert "not empty" in json.loads(refuse.stdout)["reason"]
     forced = run_cli(["backup", str(dest), "--force"], env)
     assert forced.returncode == 0, forced.stderr
     restored = tmp_path / "restored"

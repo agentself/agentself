@@ -132,7 +132,7 @@ def test_init_does_not_wipe_future_registry(tmp_path):
     env = cli_env(vault)
     proc = run_cli(["init"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert FUTURE_REGISTRY_MSG in proc.stderr
+    assert FUTURE_REGISTRY_MSG in json.loads(proc.stdout)["reason"]
     assert CANARY not in proc.stdout + proc.stderr
     assert path.read_bytes() == original
     assert not (vault / "identities").exists()
@@ -155,7 +155,7 @@ def test_init_does_not_wipe_future_config(tmp_path):
     env = cli_env(vault)
     proc = run_cli(["init"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert FUTURE_CONFIG_MSG in proc.stderr
+    assert FUTURE_CONFIG_MSG in json.loads(proc.stdout)["reason"]
     assert CANARY not in proc.stdout + proc.stderr
     assert path.read_bytes() == original
     js = run_cli(["--json", "init"], env)

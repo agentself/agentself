@@ -22,22 +22,7 @@ def _probe(script: str, env: dict[str, str] | None = None) -> list[str]:
         + "]\n"
         + "print(json.dumps(sorted(set(heavy))))\n"
     )
-    merged = os.environ.copy()
-    if env:
-        merged.update(env)
-    src = str(PROJECT_ROOT)
-    pythonpath = merged.get("PYTHONPATH", "")
-    merged["PYTHONPATH"] = src + os.pathsep + pythonpath if pythonpath else src
-    proc = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=str(PROJECT_ROOT),
-        env=merged,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    return json.loads(proc.stdout.splitlines()[-1])
+    return _probe_names(code, env)
 
 
 def _run_main(argv: str) -> str:
@@ -69,8 +54,65 @@ def test_client_is_not_a_top_level_public_export():
     )
 
 
+def _runtime(script: str, env: dict[str, str] | None = None) -> list[str]:
+    code = (
+        script.rstrip()
+        + "\n"
+        + "import json, sys\n"
+        + "runtime = [\n"
+        + "    name for name in sys.modules\n"
+        + "    if name.startswith('agentself.cli.commands')\n"
+        + "    or name == 'agentself.compose'\n"
+        + "    or name.startswith('agentself.backends.wallet.base')\n"
+        + "    or name.startswith('agentself.backends.wallet.ethereum')\n"
+        + "    or name.startswith('agentself.backends.email.agentmail')\n"
+        + "    or name == 'web3' or name.startswith('web3.')\n"
+        + "    or name == 'eth_account' or name.startswith('eth_account.')\n"
+        + "]\n"
+        + "print(json.dumps(sorted(set(runtime))))\n"
+    )
+    return _probe_names(code, env)
+
+
+def _probe_names(code: str, env: dict[str, str] | None = None) -> list[str]:
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
+    src = str(PROJECT_ROOT)
+    pythonpath = merged.get("PYTHONPATH", "")
+    merged["PYTHONPATH"] = src + os.pathsep + pythonpath if pythonpath else src
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(PROJECT_ROOT),
+        env=merged,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads(proc.stdout.splitlines()[-1])
+
+
+def _run_main_code(argv: str, allowed: str = "(0, None)") -> str:
+    return (
+        "from agentself.cli.app import main\n"
+        "try:\n"
+        f"    code = main({argv})\n"
+        "except SystemExit as exc:\n"
+        "    code = exc.code\n"
+        f"assert code in {allowed}, code\n"
+    )
+
+
 def test_help_does_not_load_wallet_sdks():
     assert _probe(_run_main("['--help']")) == []
+
+
+def test_help_version_commands_and_parse_fail_skip_runtime():
+    assert _runtime(_run_main("['--help']")) == []
+    assert _runtime(_run_main("['--version']")) == []
+    assert _runtime(_run_main("['commands']")) == []
+    assert _runtime(_run_main_code("['secret']", allowed="(2,)")) == []
 
 
 def test_backends_does_not_load_wallet_sdks():

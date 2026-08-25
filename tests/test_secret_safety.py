@@ -30,9 +30,7 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     payload = json.loads(refused.stdout)
     assert payload["error"] == "refused"
     assert "protected" in payload["reason"]
-    exported = run_cli(
-        ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-    )
+    exported = run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env)
     assert exported.returncode == 0
     hexkey = json.loads(exported.stdout)["value"]
     assert hexkey.startswith("0x")
@@ -61,9 +59,7 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     assert payload["error"] == "refused"
     assert "protected" in payload["reason"]
     still = json.loads(
-        run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-        ).stdout
+        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
     )["value"]
     assert still == hexkey
     forced = run_cli(
@@ -80,9 +76,7 @@ def test_wallet_key_is_protected_and_requires_unsafe(tmp_path: Path) -> None:
     )
     assert forced.returncode == 0, forced.stdout + forced.stderr
     replaced = json.loads(
-        run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-        ).stdout
+        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
     )["value"]
     assert replaced == new_key
 
@@ -125,15 +119,15 @@ def test_secret_meta_omits_value(tmp_path: Path) -> None:
     assert len(meta["sha256"]) == 64
 
 
-def test_secret_plaintext_requires_explicit_print(tmp_path: Path) -> None:
+def test_secret_plaintext_json_includes_value(tmp_path: Path) -> None:
     env = _init(tmp_path)
     assert run_cli(["secret", "create", "demo.token", "alpha"], env).returncode == 0
-    refused = run_cli(["--json", "secret", "get", "demo.token"], env)
-    assert refused.returncode == 2
-    payload = json.loads(refused.stdout)
-    assert payload["reason"] == "choose --file, --meta, or --print"
-    printed = run_cli(["--json", "secret", "get", "demo.token", "--print"], env)
-    assert json.loads(printed.stdout)["value"] == "alpha"
+    got = run_cli(["--json", "secret", "get", "demo.token"], env)
+    assert got.returncode == 0
+    assert json.loads(got.stdout)["value"] == "alpha"
+    raw = run_cli(["secret", "get", "demo.token", "--raw"], env)
+    assert raw.returncode == 0
+    assert raw.stdout == "alpha"
 
 
 def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
@@ -197,9 +191,7 @@ def test_secret_file_wallet_key_strips_bom_and_refuses_garbage(
 ) -> None:
     env = _init(tmp_path)
     original = json.loads(
-        run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-        ).stdout
+        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
     )["value"]
     replacement = "0x" + "ab" * 32
     source = tmp_path / "new-key.txt"
@@ -218,9 +210,7 @@ def test_secret_file_wallet_key_strips_bom_and_refuses_garbage(
     )
     assert forced.returncode == 0, forced.stdout + forced.stderr
     stored = json.loads(
-        run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-        ).stdout
+        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
     )["value"]
     assert stored == replacement
     bad = tmp_path / "bad-key.txt"
@@ -242,9 +232,7 @@ def test_secret_file_wallet_key_strips_bom_and_refuses_garbage(
     assert payload["error"] == "refused"
     assert payload["reason"] == "wallet.key is not a key"
     still = json.loads(
-        run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"], env
-        ).stdout
+        run_cli(["--json", "secret", "get", "wallet.key", "--unsafe"], env).stdout
     )["value"]
     assert still == replacement
     assert still != original

@@ -10,6 +10,62 @@ from tests.support import cli_env, run_cli, value_file
 MESSAGE = "prove custody"
 
 
+def test_wallet_message_ingest_taxonomy(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+    source = tmp_path / "message.txt"
+    source.write_text(MESSAGE, encoding="utf-8")
+    missing_path = str(tmp_path / "missing.txt")
+
+    missing = run_cli(["--json", "wallet", "authorize"], env)
+    assert missing.returncode == 3
+    assert json.loads(missing.stdout)["error"] == "missing"
+    assert json.loads(missing.stdout)["reason"] == "need a value"
+
+    clash = run_cli(
+        ["--json", "wallet", "authorize", MESSAGE, "--file", str(source)], env
+    )
+    assert clash.returncode == 2
+    assert json.loads(clash.stdout)["error"] == "refused"
+    assert json.loads(clash.stdout)["reason"] == "message and --file"
+
+    missing_file = run_cli(
+        ["--json", "wallet", "authorize", "--file", missing_path], env
+    )
+    assert missing_file.returncode == 1
+    assert json.loads(missing_file.stdout)["error"] == "error"
+    assert json.loads(missing_file.stdout)["reason"] == "file"
+
+    missing_verify = run_cli(["--json", "wallet", "verify"], env)
+    assert missing_verify.returncode == 3
+    assert json.loads(missing_verify.stdout)["error"] == "missing"
+    assert json.loads(missing_verify.stdout)["reason"] == "need a value"
+
+    clash_verify = run_cli(
+        [
+            "--json",
+            "wallet",
+            "verify",
+            MESSAGE,
+            "0x" + "00" * 65,
+            "--file",
+            str(source),
+        ],
+        env,
+    )
+    assert clash_verify.returncode == 2
+    assert json.loads(clash_verify.stdout)["error"] == "refused"
+    assert json.loads(clash_verify.stdout)["reason"] == "message and --file"
+
+    missing_file_verify = run_cli(
+        ["--json", "wallet", "verify", "--file", missing_path, "0x" + "00" * 65],
+        env,
+    )
+    assert missing_file_verify.returncode == 1
+    assert json.loads(missing_file_verify.stdout)["error"] == "error"
+    assert json.loads(missing_file_verify.stdout)["reason"] == "file"
+
+
 def test_wallet_verify_valid_modified_mismatched_restored(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
@@ -51,7 +107,7 @@ def test_wallet_verify_valid_modified_mismatched_restored(tmp_path: Path) -> Non
 
     backup = json.loads(
         run_cli(
-            ["--json", "secret", "get", "wallet.key", "--unsafe", "--print"],
+            ["--json", "secret", "get", "wallet.key", "--unsafe"],
             env,
         ).stdout
     )

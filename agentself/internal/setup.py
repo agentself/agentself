@@ -39,7 +39,6 @@ class SetupOption(TypedDict):
     type: Literal["string", "secret", "choice"]
     required: bool
     sensitive: bool
-    prompt: str
     help: str
     source: str | None
     choices: list[str]
@@ -81,7 +80,6 @@ _PUBLIC_OPTION_KEYS = (
     "choices",
     "source",
     "help",
-    "prompt",
     "action",
 )
 
@@ -96,7 +94,6 @@ def setup_option(
     choices: list[str] | tuple[str, ...] | None = None,
     source: str = "",
     help: str = "",
-    prompt: str = "",
     action: SetupAction | None = None,
     persist: bool = False,
     persist_as: str = "",
@@ -111,7 +108,6 @@ def setup_option(
         "choices": list(choices or ()),
         "source": source or "",
         "help": help or "",
-        "prompt": prompt or name,
         "action": action,
         "persist": bool(persist),
         "persist_as": persist_as or "",
@@ -139,7 +135,6 @@ def credential_option(
     required: bool = True,
     source: str = "",
     help: str = "Secret required to connect. Write it to --result-file and continue.",
-    prompt: str = "Paste the credential",
     action: SetupAction | None = None,
     persist: bool = False,
     persist_as: str = "",
@@ -152,7 +147,6 @@ def credential_option(
         sensitive=True,
         source=source,
         help=help,
-        prompt=prompt,
         action=action,
         persist=persist,
         persist_as=persist_as,
@@ -165,7 +159,6 @@ def address_option(
     required: bool = False,
     source: str = "",
     help: str = "Mailbox address",
-    prompt: str = "Mailbox address",
     choices: list[str] | tuple[str, ...] | None = None,
     persist: bool = False,
     persist_as: str = "",
@@ -178,7 +171,6 @@ def address_option(
         sensitive=False,
         source=source,
         help=help,
-        prompt=prompt,
         choices=choices,
         persist=persist,
         persist_as=persist_as,
@@ -204,9 +196,7 @@ def decode_state(state: str) -> dict[str, object] | None:
 
 
 def continue_command(state: str) -> str:
-    return (
-        f"agentself --json email connect --continue --state {state} --result-file PATH"
-    )
+    return f"agentself email connect --continue --state {state} --result-file PATH"
 
 
 def setup_status_of(payload: object) -> str:

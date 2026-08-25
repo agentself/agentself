@@ -30,7 +30,6 @@ OPTIONS = (
         persist=True,
         persist_as="email.oauthish.label",
         help="Display label for this mailbox.",
-        prompt="Mailbox label",
     ),
     credential_option(
         persist=True,

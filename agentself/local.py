@@ -168,37 +168,6 @@ def redact_secrets(text: str) -> str:
     return _HEXKEY.sub("0x[redacted]", text)
 
 
-def format_status(view: dict[str, object], vault: Path) -> str:
-    raw_email = view.get("email")
-    raw_wallet = view.get("wallet")
-    email = raw_email if isinstance(raw_email, dict) else {}
-    wallet = raw_wallet if isinstance(raw_wallet, dict) else {}
-    addr = str(wallet.get("address") or "")
-    recipient = str(view.get("recipient") or "")
-    owned = email.get("owned_address") and email.get("address")
-    email_line = str(email["address"]) if owned else "not configured"
-    wallet_backend = str(view.get("wallet_backend") or "")
-    email_backend = str(view.get("email_backend") or "")
-    if owned:
-        nxt = ""
-    elif email_backend == "agentmail":
-        nxt = (
-            "next: agentself email connect\n"
-            "routes: existing_credential, or create_account with explicit authorization\n"
-        )
-    else:
-        nxt = "next: agentself email connect\n"
-    return redact_secrets(
-        f"identity_dir: {vault}\n"
-        f"wallet: {addr}\n"
-        f"wallet_backend: {wallet_backend}\n"
-        f"recipient: {recipient}\n"
-        f"email_backend: {email_backend}\n"
-        f"email: {email_line}\n"
-        f"{nxt}"
-    )
-
-
 @contextmanager
 def _locked_vault(vault: Path) -> Iterator[Path]:
     root = Path(vault)

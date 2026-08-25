@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agentself.cli.app import _write_human_plaintext
+from agentself.cli.app import _write_raw
 from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.text import strip_one_trailing_newline
 
@@ -100,7 +100,7 @@ def _run_bytes(
     )
 
 
-def test_human_print_writes_binary_lf_terminator(tmp_path: Path) -> None:
+def test_raw_get_writes_exact_stored_bytes(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
     no_nl = tmp_path / "no-nl.txt"
@@ -118,17 +118,14 @@ def test_human_print_writes_binary_lf_terminator(tmp_path: Path) -> None:
     )
     assert created_crlf.returncode == 0, created_crlf.stderr
 
-    printed = _run_bytes(["secret", "get", "demo.nonewline", "--print"], env)
+    printed = _run_bytes(["secret", "get", "demo.nonewline", "--raw"], env)
     assert printed.returncode == 0, printed.stderr
-    assert printed.stdout.endswith(b"\x0a")
-    assert not printed.stdout.endswith(b"\x0d\x0a")
-    assert printed.stdout == b"plain-secret\n"
+    assert printed.stdout == b"plain-secret"
+    assert not printed.stdout.endswith(b"\x0a")
 
-    printed_crlf = _run_bytes(["secret", "get", "demo.crlf", "--print"], env)
+    printed_crlf = _run_bytes(["secret", "get", "demo.crlf", "--raw"], env)
     assert printed_crlf.returncode == 0, printed_crlf.stderr
-    assert printed_crlf.stdout.endswith(b"\x0a")
-    assert not printed_crlf.stdout.endswith(b"\x0d\x0a")
-    assert printed_crlf.stdout == b"crlf-secret\n"
+    assert printed_crlf.stdout == b"crlf-secret\r\n"
 
     dest = tmp_path / "out-crlf.txt"
     got = run_cli(["--json", "secret", "get", "demo.crlf", "--file", str(dest)], env)
@@ -139,14 +136,16 @@ def test_human_print_writes_binary_lf_terminator(tmp_path: Path) -> None:
     note_src.write_bytes(b"note-body")
     noted = run_cli(["--json", "note", "set", "handoff", "--file", str(note_src)], env)
     assert noted.returncode == 0, noted.stderr
-    note_printed = _run_bytes(["note", "get", "handoff"], env)
-    assert note_printed.returncode == 0, note_printed.stderr
-    assert note_printed.stdout.endswith(b"\x0a")
-    assert not note_printed.stdout.endswith(b"\x0d\x0a")
-    assert note_printed.stdout == b"note-body\n"
+    note_json = _run_bytes(["note", "get", "handoff"], env)
+    assert note_json.returncode == 0, note_json.stderr
+    assert note_json.stdout.endswith(b"\x0a")
+    assert json.loads(note_json.stdout.decode("utf-8"))["value"] == "note-body"
+    note_raw = _run_bytes(["note", "get", "handoff", "--raw"], env)
+    assert note_raw.returncode == 0, note_raw.stderr
+    assert note_raw.stdout == b"note-body"
 
 
-def test_write_human_plaintext_without_buffer_and_flush_error(monkeypatch) -> None:
+def test_write_raw_without_buffer_and_flush_error(monkeypatch) -> None:
     class TextOnly:
         def __init__(self) -> None:
             self.written: list[str] = []
@@ -157,8 +156,8 @@ def test_write_human_plaintext_without_buffer_and_flush_error(monkeypatch) -> No
 
     text_only = TextOnly()
     monkeypatch.setattr(sys, "stdout", text_only)
-    _write_human_plaintext("plain")
-    assert text_only.written == ["plain\n"]
+    _write_raw("plain")
+    assert text_only.written == ["plain"]
 
     class FlushFails:
         def __init__(self) -> None:
@@ -174,8 +173,8 @@ def test_write_human_plaintext_without_buffer_and_flush_error(monkeypatch) -> No
 
     flaky = FlushFails()
     monkeypatch.setattr(sys, "stdout", flaky)
-    _write_human_plaintext("plain")
-    assert flaky.written == [b"plain\n"]
+    _write_raw("plain")
+    assert flaky.written == [b"plain"]
 
 
 def test_json_unicode_round_trip(tmp_path: Path) -> None:
@@ -194,9 +193,7 @@ def test_json_unicode_round_trip(tmp_path: Path) -> None:
     )
     assert created.returncode == 0, created.stderr
     assert json.loads(created.stdout)["ok"] is True
-    got = json.loads(
-        run_cli(["--json", "secret", "get", "demo.token", "--print"], env).stdout
-    )
+    got = json.loads(run_cli(["--json", "secret", "get", "demo.token"], env).stdout)
     assert got["value"] == "café"
 
 

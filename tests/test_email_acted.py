@@ -155,4 +155,5 @@ def test_cli_list_acted_flags_are_mutually_exclusive(tmp_path):
     env = cli_env(tmp_path / "vault")
     proc = run_cli(["email", "list", "--acted", "--unacted"], env)
     assert proc.returncode == 2
-    assert "not allowed with argument" in proc.stderr
+    assert proc.stderr == ""
+    assert "not allowed with argument" in json.loads(proc.stdout)["reason"]
