@@ -8,7 +8,7 @@ import sys
 from agentself import __version__
 from agentself.cli.outcomes import CliFailure, CliOutcome, CliRaw, CliSuccess
 from agentself.cli.parser import _parser
-from agentself.cli.registry import CommandSpec, commands_payload, spec_for
+from agentself.cli.registry import CommandSpec, spec_for
 from agentself.cli.runtime import (
     INSTALL_TOOLS_NEXT,
     bind_error,
@@ -107,11 +107,8 @@ def main(argv: list[str] | None = None) -> int:
                 return _render(missing)
     outcome: CliOutcome
     try:
-        if spec.path == ("commands",):
-            outcome = CliSuccess(commands_payload())
-        else:
-            handler = _load_handler(spec)
-            outcome = handler(args, vault)
+        handler = _load_handler(spec)
+        outcome = handler(args, vault)
     except IdentityStateError as exc:
         outcome = identity_fail(args, exc)
     except UnboundCaller:

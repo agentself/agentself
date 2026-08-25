@@ -473,6 +473,36 @@ def test_continue_without_result_file_stays_input_required(
     assert "AGENT PROCEDURE DO NOT PRINT" not in json.dumps(again)
 
 
+def test_continue_with_invalid_utf8_result_file_is_file_error(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+
+    def connect(token, address, answers):
+        del address, answers
+        if not token:
+            return setup_needed(credential_option())
+        return mailbox_view(ADDRESS, owned_address=True)
+
+    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    bad = tmp_path / "invalid-utf8.txt"
+    bad.write_bytes(b"\xff")
+    code, failed = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"], "--result-file", str(bad)],
+    )
+    assert code == 1
+    assert failed["ok"] is False
+    assert failed["error"] == "error"
+    assert failed["reason"] == "file"
+    assert failed["next"] == "agentself email connect --help"
+
+
 @pytest.mark.parametrize(
     ("status", "extra", "reason"),
     [

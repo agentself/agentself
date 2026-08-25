@@ -148,7 +148,8 @@ def _strip_prose(value):
 
 
 def test_registry_leaf_handlers_are_unique_and_raw_matches():
-    seen: dict[tuple[str, ...], str] = {}
+    seen_paths: set[tuple[str, ...]] = set()
+    seen_handlers: dict[str, tuple[str, ...]] = {}
     for spec in REGISTRY:
         if spec.handler is None:
             assert spec.path in {
@@ -159,8 +160,14 @@ def test_registry_leaf_handlers_are_unique_and_raw_matches():
             }
             continue
         assert spec.handler, spec.path
-        assert spec.path not in seen, spec.path
-        seen[spec.path] = spec.handler
+        assert spec.path not in seen_paths, spec.path
+        seen_paths.add(spec.path)
+        assert spec.handler not in seen_handlers, (
+            spec.handler,
+            seen_handlers.get(spec.handler),
+            spec.path,
+        )
+        seen_handlers[spec.handler] = spec.path
         assert spec_for(spec.path) is spec
         module, _, func = spec.handler.partition(":")
         assert module.startswith("agentself.cli.commands.")

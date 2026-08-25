@@ -102,9 +102,10 @@ def _prepare_received_messages(
             store_value_file(path, body)
         except OSError:
             return fail(args, 1, "error", "file")
+        meta = value_meta(body)
         messages[0]["body_file"] = path
-        messages[0]["body_bytes"] = str(value_meta(body)["bytes"])
-        messages[0]["body_sha256"] = str(value_meta(body)["sha256"])
+        messages[0]["body_bytes"] = meta["bytes"]
+        messages[0]["body_sha256"] = meta["sha256"]
     for message in messages:
         message.pop("body", None)
     return None
@@ -143,7 +144,7 @@ def _connect_answers(args) -> tuple[dict[str, str], CliOutcome | None]:
     if path:
         try:
             text = load_value_file(path)
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return {}, fail(
                 args,
                 1,

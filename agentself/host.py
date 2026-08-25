@@ -160,7 +160,7 @@ CHANNELS: dict[str, Channel] = {
         ),
         note=(
             "email connect does not block init. Run connect, supply the requested "
-            "credential through --result-file, then verify with agentself email show."
+            "value through --result-file, then verify with agentself email show."
         ),
     ),
     "store": Channel(

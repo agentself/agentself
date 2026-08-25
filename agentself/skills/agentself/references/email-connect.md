@@ -46,10 +46,10 @@ OTPs, or other sensitive answers in argv, logs, a `*.notes` file, or chat.
 Delete temporary answer files after use. Do not switch email backends during a
 continuation.
 
-If JSON includes `human_action_required`, relay the `action` URL and label to
-the user. After they complete that external step, continue with
-`--result-file`. Do not run an interactive prompt or ask them to paste the
-secret into chat. Then verify:
+If JSON includes `human_action_required`, relay the `action` URL and label when
+an `action` object is present; otherwise relay `message`. After they complete
+that external step, continue with `--result-file`. Do not run an interactive
+prompt or ask them to paste the secret into chat. Then verify:
 
 ```bash
 agentself email show

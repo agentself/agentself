@@ -21,7 +21,7 @@ agentself diagnose
 
 Done when `--version` JSON has `"ok": true` and `"cli": 2`. A different `cli` or an unexpected `package` / `executable` path means the install is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
 
-Default output is one JSON object on stdout. Exit 0 success, 1 error, 2 refused, 3 missing. stderr is empty for handled outcomes. Failures include `"error"`, `"reason"`, and `"next"`. Ignore unknown keys.
+Default output is one JSON object on stdout. Exit 0 success, 1 error (including missing host tools; recover with `agentself install --tools`), 2 refused, 3 missing input or resource. stderr is empty for handled outcomes. Failures include `"error"`, `"reason"`, and `"next"`. Ignore unknown keys.
 
 Use `--raw` when a caller needs exact bytes from `wallet address`, `wallet show`, `wallet authorize`, `secret get NAME`, `note get NAME`, or `email receive REF`. Unsupported `--raw` is JSON refusal, exit 2.
 
@@ -43,7 +43,7 @@ Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `dia
 
 `show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
 
-Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Output is JSON by default; `--raw` emits the signature bytes. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
+Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Output is JSON by default; `--raw` emits the signature or authorization token. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
 
 For secrets, use files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Default `secret get NAME` is JSON with the value. Use `--raw` when exact bytes are required. `wallet.key` also needs `--unsafe`.
 

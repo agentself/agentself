@@ -168,9 +168,10 @@ agentself diagnose
 
 Default success and failure emit one compact JSON object on stdout. stderr
 is empty for handled outcomes. Exit codes are `0` for success, `1` for an
-error, `2` for a refusal, and `3` when an input, dependency, or resource is
-missing. `agentself --version` reports the package version and machine-output
-schema (`cli`: 2). Consumers should ignore unknown JSON keys.
+error (including missing host tools; recover with `agentself install --tools`),
+`2` for a refusal, and `3` when an input or resource is missing.
+`agentself --version` reports the package version and machine-output schema
+(`cli`: 2). Consumers should ignore unknown JSON keys.
 
 An optional bundled skill provides the same discovery guidance to compatible
 coding agents:
