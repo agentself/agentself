@@ -213,9 +213,103 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     assert "--raw" in start
     assert "never put the message on argv" in common
     assert "agentself wallet authorize --file PATH" in common
+    assert "secret list" in common
+    assert "store list" not in common
+    assert "agentself store" not in common
     assert "--print" not in body
     assert "authorize --print" not in body
     assert "wallet authorize MESSAGE" not in body
     assert "references/email-connect.md" in text
     assert "references/mail.md" in text
     assert "references/handoff.md" in text
+
+
+def _store_list_refused(proc) -> dict:
+    blob = _blob(proc)
+    assert proc.returncode == 2, blob
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout)
+    assert data["ok"] is False
+    assert data["error"] == "refused"
+    assert data["reason"] == "store maps to the secret command group"
+    assert data["next"] == "agentself secret list"
+    assert "restore" not in blob.lower()
+    assert "did you mean" not in data["reason"]
+    assert "value" not in data
+    assert "names" not in data
+    return data
+
+
+def test_unknown_store_list_points_to_secret_list(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    for args in (["store", "list"], ["--json", "store", "list"]):
+        data = _store_list_refused(run_cli(args, env))
+        assert data["next"] == "agentself secret list"
+
+
+def test_discovery_maps_store_to_registry_derived_secret_commands(
+    tmp_path: Path,
+) -> None:
+    env = cli_env(tmp_path / "vault")
+    commands_proc = run_cli(["commands"], env)
+    assert commands_proc.returncode == 0, commands_proc.stderr
+    commands = json.loads(commands_proc.stdout)
+    names = [item["name"] for item in commands["commands"]]
+    assert "secret" in names
+    assert "secret list" not in names
+    secret = next(item for item in commands["commands"] if item["name"] == "secret")
+    assert secret["next"] == "agentself secret list"
+
+    backends_proc = run_cli(["backends", "store"], env)
+    assert backends_proc.returncode == 0, backends_proc.stderr
+    store = json.loads(backends_proc.stdout)["channel"]
+    assert store["command_group"] == "secret"
+    assert store["next"] == "agentself secret list"
+    for backend in store["backends"]:
+        assert backend["verbs"] == secret["args"]
+        assert "exists" in backend["verbs"]
+    blob = json.dumps(commands) + json.dumps(store)
+    assert "value" not in blob
+    assert "AGE-SECRET-KEY" not in blob
+
+
+def test_known_command_intents_have_safe_exact_recovery(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    cases = (
+        (["stores", "list"], "agentself secret list"),
+        (["sops", "list"], "agentself secret list"),
+        (["pass", "list"], "agentself secret list"),
+        (["agentmail", "list"], "agentself email list"),
+        (["base", "address"], "agentself wallet address"),
+        (["doctor"], "agentself diagnose"),
+        (["whoami"], "agentself show"),
+        (["start"], "agentself init"),
+        (["wallet", "sign"], "agentself wallet authorize --help"),
+        (["secret", "read"], "agentself secret get --help"),
+        (["secret", "set"], "agentself secret --help"),
+        (["email", "remove"], "agentself email --help"),
+        (["note", "create"], "agentself note set --help"),
+        (["note", "update"], "agentself note set --help"),
+    )
+    for args, nxt in cases:
+        proc = run_cli(args, env)
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        data = json.loads(proc.stdout)
+        assert data["next"] == nxt
+        assert "did you mean" not in data["reason"]
+        assert "restore" not in proc.stdout.lower()
+
+
+def test_fuzzy_recovery_never_suggests_mutating_commands(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    for args in (
+        ["remove"],
+        ["secret", "udpate"],
+        ["email", "connevt"],
+        ["email", "snd"],
+    ):
+        proc = run_cli(args, env)
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        data = json.loads(proc.stdout)
+        assert "did you mean" not in data["reason"]
+        assert "restore" not in proc.stdout.lower()

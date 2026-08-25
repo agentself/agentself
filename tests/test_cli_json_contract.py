@@ -238,6 +238,8 @@ def test_json_backends_match_goldens(tmp_path):
         )
         assert _strip_prose(one) == _strip_prose(_golden(f"backends-{channel}.json"))
         assert one["channel"]["name"] == channel
+        assert one["channel"]["command_group"] == CHANNELS[channel].command_group
+        assert one["channel"]["next"] == CHANNELS[channel].next
         assert "backends" in one["channel"]
         assert one["channel"]["backends"]
         for item in one["channel"]["backends"]:
@@ -260,6 +262,10 @@ def test_json_commands_lists_featured_verbs(tmp_path):
     names = [item["name"] for item in data["commands"]]
     for verb in ("init", "show", "secret", "email", "wallet"):
         assert verb in names
+    assert "secret list" not in names
+    secret = next(item for item in data["commands"] if item["name"] == "secret")
+    assert secret["args"] == list(COMMANDS["secret"])
+    assert secret["next"] == "agentself secret list"
     for item in data["commands"]:
         assert set(item) == {"name", "args", "next"}
         assert isinstance(item["args"], list)

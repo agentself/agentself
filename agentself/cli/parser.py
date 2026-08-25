@@ -10,6 +10,16 @@ from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
 _FEATURED = featured_metavar()
+_MUTATING_COMMANDS = {
+    "connect",
+    "create",
+    "delete",
+    "mark",
+    "restore",
+    "send",
+    "set",
+    "update",
+}
 
 
 class _Parser(argparse.ArgumentParser):
@@ -40,11 +50,12 @@ class _Parser(argparse.ArgumentParser):
     def _check_value(self, action, value):
         if action.choices is None or value in action.choices:
             return
+        token = str(value)
         listing = getattr(action, "_choices_actions", None)
         shown = [item.dest for item in listing] if listing else list(action.choices)
-        msg = f"invalid choice: {value!r} (choose from {', '.join(map(repr, shown))})"
-        hint = close_match(str(value), shown)
-        if hint:
+        msg = f"invalid choice: {token!r} (choose from {', '.join(map(repr, shown))})"
+        hint = close_match(token, shown)
+        if hint and hint not in _MUTATING_COMMANDS:
             msg += f" (did you mean {hint!r}?)"
         raise argparse.ArgumentError(action, msg)
 

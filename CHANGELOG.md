@@ -20,6 +20,9 @@
   `list`/`receive` have not stored.
 - `backends` and `commands` are compact catalogs. Option essays are on
   `backends CHANNEL BACKEND`.
+- Backend discovery names each canonical command group and derives its verbs
+  from the command registry. Mistaken backend commands and known legacy terms
+  return safe exact `next` steps without suggesting mutating commands.
 
 ## 0.1.0 - 2026-08-24
 
