@@ -99,7 +99,9 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     assert "workflow_call:" in test
     assert "name: python-package-distributions" in test
     assert "upload-artifact@" in test
-    assert "needs: [lint, test]" in test
+    jobs = _jobs(test)
+    assert "needs: [lint, test]" in jobs["artifact"]
+    assert "test-full" not in jobs["artifact"]
     assert "needs: ci" in publish or "needs: [ci" in publish
 
 
@@ -133,17 +135,27 @@ def test_test_workflow_does_not_double_run_same_repo_prs() -> None:
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in trigger
 
 
+def _matrix_cells(job: str) -> list[tuple[str, str]]:
+    return re.findall(
+        r"- os: (\S+)\n[ \t]+python-version: \"([^\"]+)\"",
+        job,
+    )
+
+
 def test_pull_requests_skip_macos_and_second_windows() -> None:
     jobs = _jobs(WORKFLOWS[0].read_text(encoding="utf-8"))
-    assert "os: macos-latest" not in jobs["test"]
-    assert "os: windows-latest" in jobs["test"]
-    assert 'python-version: "3.11"' in jobs["test"]
-    assert 'python-version: "3.12"' in jobs["test"]
-    assert "os: macos-latest" in jobs["test-full"]
-    assert "os: windows-latest" in jobs["test-full"]
-    assert 'python-version: "3.11"' in jobs["test-full"]
+    assert _matrix_cells(jobs["test"]) == [
+        ("ubuntu-latest", "3.11"),
+        ("ubuntu-latest", "3.12"),
+        ("windows-latest", "3.12"),
+    ]
+    assert _matrix_cells(jobs["test-full"]) == [
+        ("windows-latest", "3.11"),
+        ("macos-latest", "3.11"),
+    ]
     assert "if: github.event_name != 'pull_request'" in jobs["test-full"]
     assert "timeout-minutes:" in jobs["lint"]
     assert "timeout-minutes:" in jobs["test"]
     assert "cache: pip" in jobs["test"]
     assert "retention-days: 7" in jobs["artifact"]
+    assert "test-full" not in jobs["artifact"]

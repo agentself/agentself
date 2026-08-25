@@ -9,6 +9,12 @@ The package, tests, and release metadata live together in this repository.
 Use `pyproject.toml`, `README.md`, `CONTRIBUTING.md`, and
 `.github/workflows/` as the source of truth for project commands and CI.
 
+## Taste
+
+Never delete, overwrite, or rewrite existing comments or docstrings.
+Add a comment only to explain non-obvious behavior or the why.
+Prefer self-documenting code.
+
 ## Development environment
 
 - The CLI and dev tools can be installed with `uv sync`, or with a user pip
