@@ -93,7 +93,8 @@ OTPs, private keys, secret values, or mail bodies in notes.
 and `new`/`seen` status without bodies. Surfaced messages include the raw
 provider `id` and a stable compact identity-local `ref` such as `m1`.
 Use the ref with `email receive REF --file PATH` or
-`email mark REF acted|unacted`; raw provider IDs remain accepted. `acted` is
+`email mark REF acted|unacted`; raw provider IDs remain accepted after
+`list` or `receive` has stored them. `acted` is
 independent local task state. The compact syntax is reserved: an unknown
 matching ref is refused instead of being sent to a provider. Acted state can be
 filtered with `email list --acted|--unacted` or the same flags on `email find`.
@@ -168,9 +169,10 @@ agentself diagnose
 
 Default success and failure emit one compact JSON object on stdout. stderr
 is empty for handled outcomes. Exit codes are `0` for success, `1` for an
-error, `2` for a refusal, and `3` when an input, dependency, or resource is
-missing. `agentself --version` reports the package version and machine-output
-schema (`cli`: 2). Consumers should ignore unknown JSON keys.
+error (including missing host tools; recover with `agentself install --tools`),
+`2` for a refusal, and `3` when an input or resource is missing.
+`agentself --version` reports the package version and machine-output schema
+(`cli`: 2). Consumers should ignore unknown JSON keys.
 
 An optional bundled skill provides the same discovery guidance to compatible
 coding agents:

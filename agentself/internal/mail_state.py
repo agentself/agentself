@@ -59,6 +59,25 @@ class MailRefState:
                 raise OSError("invalid mail ref mapping")
             return message_id
 
+    def known_provider_id(self, identity_id: str, message_id: str) -> bool:
+        if is_mail_ref(message_id) or not _valid_message_id(message_id):
+            return False
+        with exclusive(self._root):
+            folder = _state_dir(self._root, identity_id, "refs")
+            if not folder.exists():
+                return False
+            for path in folder.iterdir():
+                if not is_mail_ref(path.name):
+                    continue
+                if path.is_symlink() or not path.is_file():
+                    raise OSError("unsafe mail ref mapping")
+                existing = path.read_text(encoding="utf-8")
+                if not _valid_message_id(existing):
+                    raise OSError("invalid mail ref mapping")
+                if existing == message_id:
+                    return True
+            return False
+
     def _remember_locked(self, identity_id: str, message_id: str) -> str:
         if not _valid_message_id(message_id):
             raise ValueError("invalid provider message id")

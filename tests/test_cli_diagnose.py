@@ -62,3 +62,15 @@ def test_doctor_reads_binds_from_host_files(tmp_path):
     assert again["wallet_backend"] == "ethereum"
     assert again["reason"] == "age key file is not usable"
     assert "AGE-SECRET-KEY" not in human.stdout + human.stderr
+
+
+def test_diagnose_tools_reports_actual_host_tool_presence(monkeypatch):
+    from agentself.cli.runtime import diagnose_tools
+
+    monkeypatch.setattr(
+        "agentself.cli.runtime.have_host_tool",
+        lambda name: name == "age-keygen",
+    )
+    tools = diagnose_tools("sops")
+    assert tools["age-keygen"] is True
+    assert tools["sops"] is False

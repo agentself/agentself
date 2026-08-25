@@ -14,6 +14,7 @@ from agentself.cli.registry import COMMANDS as REGISTRY
 from agentself.cli.registry import spec_for
 from agentself.host import CHANNELS
 from agentself.internal.files import identity_home, secrets_home
+from agentself.internal.mail_state import MailRefState
 from agentself.internal.names import EMAIL_CONTINUATION_NAME
 
 from tests.support import (
@@ -148,7 +149,8 @@ def _strip_prose(value):
 
 
 def test_registry_leaf_handlers_are_unique_and_raw_matches():
-    seen: dict[tuple[str, ...], str] = {}
+    seen_paths: set[tuple[str, ...]] = set()
+    seen_handlers: dict[str, tuple[str, ...]] = {}
     for spec in REGISTRY:
         if spec.handler is None:
             assert spec.path in {
@@ -159,8 +161,14 @@ def test_registry_leaf_handlers_are_unique_and_raw_matches():
             }
             continue
         assert spec.handler, spec.path
-        assert spec.path not in seen, spec.path
-        seen[spec.path] = spec.handler
+        assert spec.path not in seen_paths, spec.path
+        seen_paths.add(spec.path)
+        assert spec.handler not in seen_handlers, (
+            spec.handler,
+            seen_handlers.get(spec.handler),
+            spec.path,
+        )
+        seen_handlers[spec.handler] = spec.path
         assert spec_for(spec.path) is spec
         module, _, func = spec.handler.partition(":")
         assert module.startswith("agentself.cli.commands.")
@@ -312,7 +320,7 @@ def test_json_secrets_and_missing(tmp_path):
         "secret_write",
     )
     assert created == {"ok": True, "name": "notes"}
-    same = assert_ok(
+    same = assert_err(
         run_cli(
             [
                 "--json",
@@ -324,9 +332,24 @@ def test_json_secrets_and_missing(tmp_path):
             ],
             env,
         ),
-        "secret_write",
+        error="refused",
     )
-    assert same == {"ok": True, "name": "notes", "unchanged": True}
+    assert same["next"] == "agentself secret update NAME"
+    different = assert_err(
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "a different value", "other.txt"),
+            ],
+            env,
+        ),
+        error="refused",
+    )
+    assert different["next"] == "agentself secret update NAME"
     missing_exists = assert_err(
         run_cli(["--json", "secret", "exists", "ghost"], env), error="missing"
     )
@@ -447,7 +470,8 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
 
 
 def test_json_email_mark_contract(tmp_path):
-    _vault, env, _started = _init(tmp_path)
+    vault, env, started = _init(tmp_path)
+    MailRefState(vault).remember(str(started["id"]), "provider/id")
     marked = assert_ok(
         run_cli(["--json", "email", "mark", "provider/id", "acted"], env),
         "email_mark",

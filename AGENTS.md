@@ -14,6 +14,8 @@ Use `pyproject.toml`, `README.md`, `CONTRIBUTING.md`, and
 Never delete, overwrite, or rewrite existing comments or docstrings.
 Add a comment only to explain non-obvious behavior or the why.
 Prefer self-documenting code.
+Keep changelog notes concise and compact. Focus on the changes that
+actually impact the user.
 
 ## Development environment
 

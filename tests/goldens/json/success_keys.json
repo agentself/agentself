@@ -63,8 +63,7 @@
     "exact": ["ok", "commands", "raw"]
   },
   "secret_write": {
-    "required": ["ok", "name"],
-    "allowed": ["ok", "name", "unchanged"]
+    "exact": ["ok", "name"]
   },
   "secret_create_bulk": {
     "exact": ["ok", "created", "unchanged", "refused"]

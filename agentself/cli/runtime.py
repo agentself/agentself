@@ -193,7 +193,7 @@ def store_from_registry(vault: Path, cfg: dict[str, str]) -> str | None:
 def diagnose_tools(store_name: str) -> dict[str, bool]:
     bind = bind_of("store", store_name)
     names = ("age-keygen",) + (bind.tools if bind is not None else ())
-    return {name: True for name in names}
+    return {name: have_host_tool(name) for name in names}
 
 
 def tools_next(missing: list[str], store_name: str | None = None) -> str:

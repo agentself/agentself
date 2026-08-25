@@ -170,11 +170,16 @@ def test_unknown_ref_is_refused_before_backend(vault, monkeypatch):
         app.client.email_receive(message_id=unknown)
     with pytest.raises(Refused, match="unknown mail ref"):
         app.client.email_mark(unknown, acted=True)
+    with pytest.raises(Refused, match="unknown mail ref"):
+        app.client.email_mark("nosuchref", acted=True)
+    with pytest.raises(Refused, match="unknown mail ref"):
+        app.client.email_mark("m0", acted=True)
     assert mailbox.received_ids == []
 
 
 def test_find_is_header_only_case_insensitive_and_applies_filters(vault, monkeypatch):
     app, mailbox, _factory = _ready_app(vault, monkeypatch)
+    app.client.email_list()
     app.client.email_mark("provider/alpha@example", acted=True)
 
     assert [item["id"] for item in app.client.email_find("invoice")] == [
@@ -188,7 +193,7 @@ def test_find_is_header_only_case_insensitive_and_applies_filters(vault, monkeyp
     ]
     assert app.client.email_find("invoice", acted=False) == []
     assert all("body" not in item for item in app.client.email_find("report"))
-    assert mailbox.list_calls == 5
+    assert mailbox.list_calls == 6
 
     with pytest.raises(Refused):
         app.client.email_find("")
@@ -201,14 +206,13 @@ def test_ref_mapping_survives_backup_restore(tmp_path):
     env = cli_env(vault)
     initialized = run_cli(["--json", "init"], env)
     assert initialized.returncode == 0, initialized.stderr
+    refs = MailRefState(vault)
+    ref = refs.remember("agent", "provider/id")
     marked = run_cli(
         ["--json", "email", "mark", "provider/id", "acted"],
         env,
     )
     assert marked.returncode == 0, marked.stderr
-
-    refs = MailRefState(vault)
-    ref = refs.remember("agent", "provider/id")
     backup = tmp_path / "backup"
     copied = run_cli(["backup", str(backup)], env)
     assert copied.returncode == 0, copied.stderr
@@ -223,6 +227,9 @@ def test_legacy_identity_creates_ref_state_on_first_surface(vault):
     legacy = MailRefState(vault)
     other = legacy.remember("legacy", "first-id")
     assert legacy.resolve("legacy", other) == "first-id"
+    assert legacy.known_provider_id("legacy", "first-id") is True
+    assert legacy.known_provider_id("legacy", "missing-id") is False
+    assert legacy.known_provider_id("legacy", "m1") is False
 
 
 def test_cli_find_help_ref_syntax_and_unknown_ref_json(tmp_path):
@@ -243,6 +250,12 @@ def test_cli_find_help_ref_syntax_and_unknown_ref_json(tmp_path):
     assert payload["error"] == "refused"
     assert payload["reason"] == "unknown mail ref"
     assert payload["next"] == "agentself email list"
+    ghost = run_cli(["--json", "email", "mark", "nosuchref", "acted"], env)
+    assert ghost.returncode == 2
+    assert json.loads(ghost.stdout)["reason"] == "unknown mail ref"
+    leading = run_cli(["--json", "email", "mark", "m0", "acted"], env)
+    assert leading.returncode == 2
+    assert json.loads(leading.stdout)["reason"] == "unknown mail ref"
     received = run_cli(["--json", "email", "receive", unknown], env)
     assert received.returncode == 2
     received_payload = json.loads(received.stdout)
