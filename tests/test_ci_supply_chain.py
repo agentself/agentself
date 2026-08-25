@@ -102,6 +102,9 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     jobs = _jobs(test)
     assert "needs: [lint, test]" in jobs["artifact"]
     assert "test-full" not in jobs["artifact"]
+    assert 'AGENTSELF_ACCEPTANCE_EXE="$venv/bin/agentself"' in jobs["artifact"]
+    assert '"$venv/bin/python" -m pytest -q acceptance' in jobs["artifact"]
+    assert "pip install -e" not in jobs["artifact"]
     assert "needs: ci" in publish or "needs: [ci" in publish
 
 

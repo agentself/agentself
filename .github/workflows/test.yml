@@ -3,8 +3,8 @@
 #   macos-latest × Python 3.11
 # Pull requests skip macOS and Windows 3.11.
 # ruff on one Ubuntu job. Artifact job waits for lint and pytest, then builds
-# wheel+sdist, twine-checks, smoke-tests a non-editable wheel install (not
-# pip install -e), and uploads dist/ for tag publish to reuse.
+# wheel+sdist, twine-checks, acceptance-tests a non-editable wheel install
+# (not pip install -e), and uploads dist/ for tag publish to reuse.
 # Live `pass` / `init --store pass` smoke is Ubuntu-only (`pass` is a Unix CLI).
 name: test
 
@@ -135,35 +135,14 @@ jobs:
           python -m pip install build twine
           python -m build
           python -m twine check --strict dist/*
-      - name: Smoke-test the wheel
-        env:
-          AGENTSELF_FETCH_TOOLS: "0"
+      - name: Acceptance-test the wheel
         run: |
           set -euo pipefail
           venv="${RUNNER_TEMP}/wheel-env"
           python -m venv "$venv"
-          "$venv/bin/python" -m pip install dist/*.whl
-          empty="${RUNNER_TEMP}/empty"
-          mkdir -p "$empty"
-          export PATH="$venv/bin:$PATH"
-          cd "$empty"
-          version="$("$venv/bin/python" -c "from agentself import __version__; print(__version__)")"
-          got="$(agentself --version)"
-          test "$got" = "agentself ${version}"
-          agentself --help
-          agentself backends
-          export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-sops"
-          agentself diagnose
-          agentself init
-          agentself --json diagnose
-          agentself install --skills=agents
-          test -f "${empty}/.agents/skills/agentself/SKILL.md"
-          test -f "${empty}/.agents/skills/agentself/references/email-connect.md"
-          test -f "${empty}/.agents/skills/agentself/references/handoff.md"
-          test -f "${empty}/.agents/skills/agentself/references/mail.md"
-          export AGENTSELF_IDENTITY_DIR="${RUNNER_TEMP}/agentself-identity-pass"
-          agentself init --store pass
-          agentself --json diagnose
+          "$venv/bin/python" -m pip install dist/*.whl pytest
+          AGENTSELF_ACCEPTANCE_EXE="$venv/bin/agentself" \
+            "$venv/bin/python" -m pytest -q acceptance
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: python-package-distributions
