@@ -68,8 +68,6 @@ def test_ci_host_tool_downloads_have_pinned_digests() -> None:
     assert "linux-host-tools.sh" in test_workflow
     assert "macos-host-tools.sh" in test_workflow
     assert "windows-host-tools.ps1" in test_workflow
-    # macos-latest is arm64. A 65-char darwin-arm64 sops digest once broke
-    # only that job; {64} still matches a prefix of an overlong hex string.
     assert "v1.3.1:arm64)" in macos
     assert "v3.13.3:arm64)" in macos
     for name, text, count in (
@@ -136,8 +134,6 @@ def test_test_workflow_does_not_double_run_same_repo_prs() -> None:
 
 
 def test_pull_requests_skip_macos_and_second_windows() -> None:
-    """macOS is 10x billed minutes; a second Windows cell is 2x."""
-
     jobs = _jobs(WORKFLOWS[0].read_text(encoding="utf-8"))
     assert "os: macos-latest" not in jobs["test"]
     assert "os: windows-latest" in jobs["test"]

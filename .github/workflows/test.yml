@@ -1,14 +1,11 @@
-# Support matrix (CI-tested on main, tags, merge queue, and workflow_dispatch):
+# Support matrix (CI-tested on main, tags, merge queue, workflow_dispatch):
 #   ubuntu-latest, windows-latest × Python 3.11/3.12
 #   macos-latest × Python 3.11
-# Pull requests run Ubuntu 3.11/3.12, Windows 3.12, lint, and the wheel smoke.
-# macOS is billed at 10x Linux minutes and Windows at 2x, so those extra cells
-# wait for main / tags. Re-run this workflow on a branch for the full matrix.
-# ruff on one Ubuntu job. Artifact job waits for lint and the pull-request
-# pytest jobs, then builds wheel+sdist, twine-checks, smoke-tests a
-# non-editable wheel install (not pip install -e), and uploads dist/ for tag
-# publish to reuse. Live `pass` / `init --store pass` smoke is Ubuntu-only
-# (`pass` is a Unix CLI).
+# Pull requests skip macOS and Windows 3.11.
+# ruff on one Ubuntu job. Artifact job waits for lint and pytest, then builds
+# wheel+sdist, twine-checks, smoke-tests a non-editable wheel install (not
+# pip install -e), and uploads dist/ for tag publish to reuse.
+# Live `pass` / `init --store pass` smoke is Ubuntu-only (`pass` is a Unix CLI).
 name: test
 
 on:
