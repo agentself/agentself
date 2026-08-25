@@ -32,3 +32,13 @@ You can add a new backend for any channel.
 4. Add a `CHANNELS` row in `agentself/host.py`. Set `live`, `verbs`, `custody`, `network`, `asset`, and `options`. Option fields are `name`, `type`, `required`, `sensitive`, `default`, `choices`, `source`, `prompt`, `help`, and the optional `action`.
 
 `CHANNELS` lists shipped backends only. `agentself backends` is how callers discover backend-specific options. A new backend must not require parser, Client, or public command changes.
+
+## Continuous integration
+
+Pull requests run lint, pytest on Ubuntu 3.11/3.12 and Windows 3.12, and the
+wheel smoke test. macOS and Windows 3.11 run on `main`, tags, the merge queue,
+and `workflow_dispatch`. GitHub bills macOS minutes at 10x Linux and Windows at
+2x.
+
+A new push to an open pull request cancels the previous run. To run the full
+matrix on a branch before merge, use workflow_dispatch on that ref.

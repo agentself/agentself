@@ -10,7 +10,32 @@ WORKFLOWS = (
     PROJECT_ROOT / ".github" / "workflows" / "test.yml",
     PROJECT_ROOT / ".github" / "workflows" / "publish.yml",
 )
-SHA256 = re.compile(r"[0-9a-f]{64}")
+SCRIPTS = PROJECT_ROOT / ".github" / "scripts"
+SHA256 = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
+OVERLONG_HEX = re.compile(r"[0-9a-f]{65,}", re.IGNORECASE)
+ASSIGNED_DIGEST = re.compile(
+    r"(?:age_sha256|sops_sha256|ageSha256|sopsSha256)\s*=\s*\"?([0-9a-fA-F]+)\"?"
+)
+JOB_ID = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
+
+
+def _jobs(text: str) -> dict[str, str]:
+    _, _, rest = text.partition("\njobs:\n")
+    jobs: dict[str, str] = {}
+    current: str | None = None
+    chunks: list[str] = []
+    for line in rest.splitlines(keepends=True):
+        match = JOB_ID.match(line)
+        if match:
+            if current is not None:
+                jobs[current] = "".join(chunks)
+            current = match.group(1)
+            chunks = []
+        else:
+            chunks.append(line)
+    if current is not None:
+        jobs[current] = "".join(chunks)
+    return jobs
 
 
 def test_workflow_actions_use_immutable_refs() -> None:
@@ -32,16 +57,35 @@ def test_publish_does_not_skip_existing_testpypi_artifacts() -> None:
 
 
 def test_ci_host_tool_downloads_have_pinned_digests() -> None:
-    linux = (PROJECT_ROOT / ".github" / "scripts" / "linux-host-tools.sh").read_text(
-        encoding="utf-8"
-    )
+    linux = (SCRIPTS / "linux-host-tools.sh").read_text(encoding="utf-8")
+    macos = (SCRIPTS / "macos-host-tools.sh").read_text(encoding="utf-8")
+    windows = (SCRIPTS / "windows-host-tools.ps1").read_text(encoding="utf-8")
     test_workflow = WORKFLOWS[0].read_text(encoding="utf-8")
 
     assert "sha256sum --check --status" in linux
-    assert "shasum -a 256 -c" in test_workflow
-    assert "Get-FileHash -Algorithm SHA256" in test_workflow
-    assert SHA256.findall(linux)
-    assert SHA256.findall(test_workflow)
+    assert "shasum -a 256 -c" in macos
+    assert "Get-FileHash -Algorithm SHA256" in windows
+    assert "linux-host-tools.sh" in test_workflow
+    assert "macos-host-tools.sh" in test_workflow
+    assert "windows-host-tools.ps1" in test_workflow
+    # macos-latest is arm64. A 65-char darwin-arm64 sops digest once broke
+    # only that job; {64} still matches a prefix of an overlong hex string.
+    assert "v1.3.1:arm64)" in macos
+    assert "v3.13.3:arm64)" in macos
+    for name, text, count in (
+        ("linux-host-tools.sh", linux, 4),
+        ("macos-host-tools.sh", macos, 4),
+        ("windows-host-tools.ps1", windows, 2),
+    ):
+        overlong = OVERLONG_HEX.findall(text)
+        assert overlong == [], (name, overlong)
+        assigned = ASSIGNED_DIGEST.findall(text)
+        assert assigned, name
+        for digest in assigned:
+            assert len(digest) == 64, (name, digest)
+            assert SHA256.fullmatch(digest.lower()), (name, digest)
+        found = SHA256.findall(text.lower())
+        assert len(found) == count, (name, found)
 
 
 def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
@@ -87,3 +131,23 @@ def test_test_workflow_does_not_double_run_same_repo_prs() -> None:
     assert "workflow_call:" in trigger
     assert "workflow_dispatch:" in trigger
     assert "merge_group:" in trigger
+    assert "concurrency:" in trigger
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in trigger
+
+
+def test_pull_requests_skip_macos_and_second_windows() -> None:
+    """macOS is 10x billed minutes; a second Windows cell is 2x."""
+
+    jobs = _jobs(WORKFLOWS[0].read_text(encoding="utf-8"))
+    assert "os: macos-latest" not in jobs["test"]
+    assert "os: windows-latest" in jobs["test"]
+    assert 'python-version: "3.11"' in jobs["test"]
+    assert 'python-version: "3.12"' in jobs["test"]
+    assert "os: macos-latest" in jobs["test-full"]
+    assert "os: windows-latest" in jobs["test-full"]
+    assert 'python-version: "3.11"' in jobs["test-full"]
+    assert "if: github.event_name != 'pull_request'" in jobs["test-full"]
+    assert "timeout-minutes:" in jobs["lint"]
+    assert "timeout-minutes:" in jobs["test"]
+    assert "cache: pip" in jobs["test"]
+    assert "retention-days: 7" in jobs["artifact"]
