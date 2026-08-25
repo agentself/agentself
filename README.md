@@ -6,9 +6,9 @@ If you are an LLM, install the CLI, then run `agentself install --skills`.
 secrets, non-secret notes, and optional email. It is a CLI first, with one
 command tree across the supported backends.
 
-Linux, macOS, and Windows. Python 3.11+. 0.2.0 is the second stable release:
-an agent-native CLI (`cli: 2`). Review [COMPATIBILITY.md](COMPATIBILITY.md)
-before automating against the CLI.
+Linux, macOS, and Windows. Python 3.11+. 0.2.1 is a patch of the agent-native
+CLI (`cli: 2`). Review [COMPATIBILITY.md](COMPATIBILITY.md) before automating
+against the CLI.
 
 ## Install
 

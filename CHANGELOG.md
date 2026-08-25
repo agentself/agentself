@@ -2,9 +2,20 @@
 
 ## Unreleased
 
-- 0.2.0 is a CLI break (`cli: 2`). Commands print one JSON object. Exit 0
-  success, 1 error, 2 refused, 3 missing. Only `--help` is text. `--json` is
-  a hidden no-op. Identity `format_version` stays 1.
+## 0.2.1 - 2026-08-25
+
+- Backend discovery names each canonical command group and derives its verbs
+  from the command registry. Mistaken backend commands and known legacy terms
+  return safe exact `next` steps without suggesting mutating commands.
+- Unexpected CLI failures stay generic (`next: agentself diagnose`). Diagnostics
+  record only a bounded operation label and exception type.
+
+## 0.2.0 - 2026-08-25
+
+0.2.0 is a CLI break (`cli: 2`). Commands print one JSON object. Exit 0
+success, 1 error, 2 refused, 3 missing. Only `--help` is text. `--json` is
+a hidden no-op. Identity `format_version` stays 1.
+
 - `--raw` writes exact command output bytes for `wallet address`,
   `wallet show`, `wallet authorize`, `secret get`, `note get`, and
   `email receive`. Unsupported `--raw` is a JSON refusal, exit 2.
@@ -20,9 +31,6 @@
   `list`/`receive` have not stored.
 - `backends` and `commands` are compact catalogs. Option essays are on
   `backends CHANNEL BACKEND`.
-- Backend discovery names each canonical command group and derives its verbs
-  from the command registry. Mistaken backend commands and known legacy terms
-  return safe exact `next` steps without suggesting mutating commands.
 
 ## 0.1.0 - 2026-08-24
 

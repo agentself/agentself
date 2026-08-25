@@ -14,11 +14,11 @@ wait for `test.yml` green on that merge commit (including wheel and sdist).
    green on that merge commit.
 6. Tag **only** the merge commit on `main`, never the PR branch: annotated tag
    `vVERSION` matching `__version__`, then `git push origin vVERSION`. For
-   0.2.0: `git tag -a v0.2.0 <merge-sha>` and `git push origin v0.2.0`.
+   0.2.1: `git tag -a v0.2.1 <merge-sha>` and `git push origin v0.2.1`.
 7. Let the tag workflow publish to TestPyPI, then PyPI, through Trusted
    Publishing (OIDC). No API token.
 8. After publish is green, create the GitHub Release from the matching
-   changelog section. For 0.2.0, use `## 0.2.0`. **Do not mark 0.2.0 as
+   changelog section. For 0.2.1, use `## 0.2.1`. **Do not mark 0.2.1 as
    pre-release.** Verify `agentself --version` JSON has the package version
    and `"cli": 2`.
 
