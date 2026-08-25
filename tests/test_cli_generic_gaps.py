@@ -302,7 +302,12 @@ def test_known_command_intents_have_safe_exact_recovery(tmp_path: Path) -> None:
 
 def test_fuzzy_recovery_never_suggests_mutating_commands(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
-    for args in (["remove"], ["secret", "udpate"], ["email", "snd"]):
+    for args in (
+        ["remove"],
+        ["secret", "udpate"],
+        ["email", "connevt"],
+        ["email", "snd"],
+    ):
         proc = run_cli(args, env)
         assert proc.returncode == 2, proc.stdout + proc.stderr
         data = json.loads(proc.stdout)

@@ -10,7 +10,16 @@ from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
 _FEATURED = featured_metavar()
-_MUTATING_COMMANDS = {"create", "delete", "mark", "restore", "send", "set", "update"}
+_MUTATING_COMMANDS = {
+    "connect",
+    "create",
+    "delete",
+    "mark",
+    "restore",
+    "send",
+    "set",
+    "update",
+}
 
 
 class _Parser(argparse.ArgumentParser):
