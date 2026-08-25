@@ -53,7 +53,8 @@ jobs:
           export PATH="$venv/bin:$PATH"
           cd "$empty"
           got="$(agentself --version)"
-          test "$got" = "agentself ${version}"
+          # --version is JSON (cli: 2). Only --help is text.
+          "$venv/bin/python" -c 'import json,sys; d=json.loads(sys.argv[1]); v=sys.argv[2]; assert d["ok"] is True and d["version"]==v and d["cli"]==2 and d["package"] and d["executable"]' "$got" "$version"
           agentself --help
 
   publish-testpypi:

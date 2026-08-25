@@ -115,6 +115,12 @@ def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     assert '"$venv/bin/python" -m pytest -q acceptance' in jobs["artifact"]
     assert "pip install -e" not in jobs["artifact"]
     assert "needs: ci" in publish or "needs: [ci" in publish
+    verify = _jobs(publish)["verify-dist"]
+    assert 'got="$(agentself --version)"' in verify
+    assert 'test "$got" = "agentself ${version}"' not in verify
+    assert "json.loads" in verify
+    assert 'd["cli"]==2' in verify
+    assert "agentself --help" in verify
 
 
 def test_changelog_and_release_fences_are_balanced() -> None:
