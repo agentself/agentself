@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from agentself.cli import app as cli_app
-from agentself.cli.app import _copy_identity_dir
+from agentself.cli.commands import identity as identity_cmd
+from agentself.cli.commands.identity import _copy_identity_dir
 from agentself.internal.files import LOCK_NAME, secrets_home
 from agentself.local import IdentityStateError
 
@@ -82,7 +82,8 @@ def test_backup_force_refuses_parent_of_identity(tmp_path: Path) -> None:
     parent = vault.parent
     proc = run_cli(["backup", "--force", str(parent)], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "contains the identity directory" in proc.stderr
+    assert proc.stderr == ""
+    assert "contains the identity directory" in json.loads(proc.stdout)["reason"]
     assert (vault / "config.json").is_file()
     shown = run_cli(["--json", "wallet", "address"], env)
     assert shown.returncode == 0, shown.stderr
@@ -108,7 +109,7 @@ def test_copy_force_survives_dest_dir_rename_failure(
     assert src_addr != dest_addr
     dest_resolved = dest.resolve()
     real_rename = os.rename
-    real_replace = cli_app._replace_tree_contents
+    real_replace = identity_cmd._replace_tree_contents
     replaced: list[bool] = []
 
     def rename(src_path, dst_path):
@@ -125,7 +126,7 @@ def test_copy_force_survives_dest_dir_rename_failure(
         real_replace(staging, dest_path)
 
     monkeypatch.setattr(os, "rename", rename)
-    monkeypatch.setattr(cli_app, "_replace_tree_contents", replace_tree)
+    monkeypatch.setattr(identity_cmd, "_replace_tree_contents", replace_tree)
     _copy_identity_dir(src, dest, force=True)
     assert replaced == [True]
     shown = run_cli(["--json", "wallet", "address"], dest_env)

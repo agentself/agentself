@@ -25,13 +25,15 @@ def test_identity_secret_and_cli_contract(cli) -> None:
     listed = cli.json("secret", "list")
     shown = cli.json("show")
     diagnosed = cli.json("diagnose")
-    refused = cli.json("secret", "get", "demo.token", expected_code=2)
-    assert refused.payload["reason"] == "choose --file, --meta, or --print"
-    for result in (created, listed, shown, diagnosed, refused):
+    got = cli.json("secret", "get", "demo.token")
+    assert got.payload["value"] == canary
+    for result in (created, listed, shown, diagnosed, got):
+        if result is got:
+            continue
         assert canary not in result.output
 
-    printed = cli.run("secret", "get", "demo.token", "--print").expect(0)
-    assert printed.stdout == canary + "\n"
+    printed = cli.run("secret", "get", "demo.token", "--raw").expect(0)
+    assert printed.stdout == canary
     assert printed.stderr == ""
 
     cli.json("secret", "delete", "demo.token")
@@ -62,9 +64,7 @@ def test_backup_restore_preserves_identity(cli) -> None:
 
     address = cli.json("wallet", "address", identity_dir=restored_dir)
     assert address.payload["address"] == started.payload["address"]
-    restored_secret = cli.json(
-        "secret", "get", "demo.token", "--print", identity_dir=restored_dir
-    )
+    restored_secret = cli.json("secret", "get", "demo.token", identity_dir=restored_dir)
     assert restored_secret.payload["value"] == secret
     restored_note = cli.json("note", "get", "handoff", identity_dir=restored_dir)
     assert restored_note.payload["value"] == note
@@ -84,7 +84,7 @@ def test_email_discovery_is_read_only_and_actionable(cli) -> None:
     assert option["name"] == "setup_method"
     assert option["choices"] == ["existing_credential", "create_account"]
     assert str(payload["next"]).startswith(
-        "agentself --json email connect --continue --state "
+        "agentself email connect --continue --state "
     )
     assert cli.snapshot() == before
 
@@ -96,7 +96,7 @@ def test_email_discovery_is_read_only_and_actionable(cli) -> None:
 
 def test_installed_skill_is_complete_and_truthful(cli) -> None:
     version = cli.json("--version")
-    assert version.payload["cli"] == 1
+    assert version.payload["cli"] == 2
     cli.run("--help").expect(0)
 
     project = cli.root / "empty-project"

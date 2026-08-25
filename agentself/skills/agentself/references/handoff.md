@@ -23,19 +23,22 @@ wallet.
 Before and after a handoff, record and compare public identity data:
 
 ```bash
-agentself --json show
-agentself --json wallet address
+agentself show
+agentself wallet address
 ```
 
-Stop if the wallet address changes when continuity was required.
+Done when both JSON `address` values match the intended identity. Stop if the
+wallet address changes when continuity was required. Use
+`agentself wallet address --raw` only when a caller needs the exact address
+bytes.
 
 ## Interrupted work
 
 Keep the same identity directory and inspect current state before retrying:
 
 ```bash
-agentself --json show
-agentself --json diagnose
+agentself show
+agentself diagnose
 ```
 
 Commands are designed to report `next`; follow that field rather than guessing.
@@ -46,12 +49,13 @@ Use the identity's first-class note channel for non-secret handoff context:
 
 ```bash
 agentself note set handoff --file PATH
-agentself --json note list
-agentself --json note get handoff
+agentself note list
+agentself note get handoff
 ```
 
 `note set` creates or replaces the note, so retrying a handoff write is safe.
-Notes are printable by default and may contain public addresses, message IDs,
+Default `note get` is JSON; `--raw` writes stored note bytes. Notes are
+printable by default and may contain public addresses, message IDs,
 command outcomes, and the next action. Never put credentials, OTPs, private
 keys, secret values, or mail bodies in a note. Delete completed context with
 `agentself note delete handoff`.
@@ -61,7 +65,7 @@ keys, secret values, or mail bodies in a note. Delete completed context with
 Back up the complete identity to an empty protected destination:
 
 ```bash
-agentself --json backup PATH
+agentself backup PATH
 ```
 
 The copy includes config, wallet/age key material, encrypted secrets,
@@ -74,9 +78,9 @@ To restore into the identity directory selected by
 `AGENTSELF_IDENTITY_DIR`:
 
 ```bash
-agentself --json restore PATH
-agentself --json show
-agentself --json wallet address
+agentself restore PATH
+agentself show
+agentself wallet address
 ```
 
 Restore refuses a non-empty destination unless `--force`. Before forcing,

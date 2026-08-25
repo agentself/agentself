@@ -60,23 +60,27 @@ def test_agentmail_connect_discovers_unique_inbox(tmp_path, monkeypatch, capsys)
     code = main(["email", "connect"])
     captured = capsys.readouterr()
     assert code == 0, captured.out + captured.err
-    assert captured.out == f"email: {OURS}\n"
+    connected = json.loads(captured.out)
+    assert connected["ok"] is True
+    assert connected["address"] == OURS
     assert TOKEN not in captured.out + captured.err
     assert f"{PRINCIPAL}@agentmail.to" not in captured.out
     assert http.posts == []
     shown = main(["email", "show"])
     shown_out = capsys.readouterr()
     assert shown == 0, shown_out.out + shown_out.err
-    assert shown_out.out == f"{OURS}\n"
+    shown_data = json.loads(shown_out.out)
+    assert shown_data["address"] == OURS
+    assert shown_data["ready"] is True
     names = run_cli(["secret", "list"], env)
-    assert "email.address" in names.stdout.splitlines()
-    got = run_cli(["secret", "get", "email.address", "--print"], env)
-    assert got.stdout.strip() == OURS
+    assert "email.address" in json.loads(names.stdout)["names"]
+    got = run_cli(["secret", "get", "email.address"], env)
+    assert json.loads(got.stdout)["value"] == OURS
     assert TOKEN not in got.stdout + got.stderr
     again = main(["email", "connect"])
     again_out = capsys.readouterr()
     assert again == 0, again_out.out + again_out.err
-    assert again_out.out == f"email: {OURS}\n"
+    assert json.loads(again_out.out)["address"] == OURS
     assert len(http.gets) == 3
     assert http.posts == []
 
@@ -112,8 +116,8 @@ def test_agentmail_connect_creates_when_empty(tmp_path, monkeypatch, capsys):
     assert "username" not in body
     assert "domain" not in body
     assert body["client_id"].startswith("agentself-")
-    got = run_cli(["secret", "get", "email.address", "--print"], env)
-    assert got.stdout.strip() == ISSUED
+    got = run_cli(["secret", "get", "email.address"], env)
+    assert json.loads(got.stdout)["value"] == ISSUED
     assert "Authorization" in headers
     assert TOKEN not in captured.out + captured.err
 
@@ -144,9 +148,11 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     code = main(["email", "connect"])
     captured = capsys.readouterr()
     assert code == 3, captured.out + captured.err
-    assert "input required" in captured.err
-    assert "address" in captured.err
-    assert TAKEN not in captured.out + captured.err
+    assert captured.err == ""
+    pending = json.loads(captured.out)
+    assert pending["reason"] == "input required"
+    assert pending["option"]["name"] == "address"
+    assert pending["option"]["choices"] == [TAKEN, OURS]
     assert TOKEN not in captured.out + captured.err
     assert http.posts == []
     js = main(["--json", "email", "connect"])
@@ -157,7 +163,7 @@ def test_agentmail_connect_many_inboxes_need_address(tmp_path, monkeypatch, caps
     assert data["error"] == "missing"
     assert data["status"] == "input_required"
     assert data["option"]["name"] == "address"
-    assert data["next"].startswith("agentself --json email connect --continue --state ")
+    assert data["next"].startswith("agentself email connect --continue --state ")
     assert "--result-file PATH" in data["next"]
 
 
@@ -178,7 +184,10 @@ def test_agentmail_connect_rpc_is_error(tmp_path, monkeypatch, capsys):
     code = main(["email", "connect"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
-    assert captured.err == "error: rpc\nnext: agentself backends email\n"
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["reason"] == "rpc"
+    assert data["next"] == "agentself backends email"
     assert TOKEN not in captured.out + captured.err
 
 
@@ -232,7 +241,7 @@ def test_agentmail_connect_unauthorized_is_invalid_credentials(
     assert data["ok"] is False
     assert data["error"] == "error"
     assert data["reason"] == "invalid credentials"
-    assert data["next"] == "agentself --json email connect"
+    assert data["next"] == "agentself email connect"
     assert TOKEN not in captured.out + captured.err
     exists = run_cli(["--json", "secret", "exists", "email.credential"], env)
     assert exists.returncode == 3
@@ -428,10 +437,10 @@ def test_agentmail_authorized_signup_json_continuation_persists_generated_key(
     assert connected["status"] == "connected"
     assert "private_outputs" not in connected
     assert not continuation.exists()
-    persisted = run_cli(["--json", "secret", "get", "email.credential", "--print"], env)
+    persisted = run_cli(["--json", "secret", "get", "email.credential"], env)
     assert persisted.returncode == 0
     assert json.loads(persisted.stdout)["value"] == generated
-    address = run_cli(["--json", "secret", "get", "email.address", "--print"], env)
+    address = run_cli(["--json", "secret", "get", "email.address"], env)
     assert json.loads(address.stdout)["value"] == ISSUED
     assert generated not in "".join(outputs)
     assert "123456" not in "".join(outputs)

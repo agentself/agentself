@@ -154,9 +154,7 @@ def test_new_backend_uses_existing_connect_without_parser_changes(
     assert code == 3
     assert first["status"] == "input_required"
     assert first["state"]
-    assert first["continue"].startswith(
-        "agentself --json email connect --continue --state "
-    )
+    assert first["continue"].startswith("agentself email connect --continue --state ")
     assert "--result-file PATH" in first["continue"]
     assert "agentmail" not in json.dumps(first).lower()
     assert first["option"]["name"] == "credential"
@@ -238,7 +236,7 @@ def test_human_action_and_pending_states(tmp_path: Path, monkeypatch, capsys) ->
     assert waiting["human_action_required"] is False
 
 
-def test_human_renderer_consumes_generic_secret_action_and_choice(
+def test_json_setup_exposes_action_choices_and_sensitive(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -249,7 +247,6 @@ def test_human_renderer_consumes_generic_secret_action_and_choice(
         if not token:
             return setup_needed(
                 credential_option(
-                    prompt="Paste the provider credential",
                     help="Create a credential in the provider console.",
                     action={
                         "kind": "open_url",
@@ -262,7 +259,6 @@ def test_human_renderer_consumes_generic_secret_action_and_choice(
             return setup_needed(
                 address_option(
                     required=True,
-                    prompt="Choose the inbox for this identity",
                     help="Select an inbox owned by this credential.",
                     choices=["assistant@example.com", "support@example.com"],
                 )
@@ -274,29 +270,46 @@ def test_human_renderer_consumes_generic_secret_action_and_choice(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: CREDENTIAL,
+        "builtins.input",
+        lambda _prompt="": (_ for _ in ()).throw(AssertionError("must not prompt")),
     )
-    monkeypatch.setattr("builtins.input", lambda _prompt="": "2")
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert first["status"] == "input_required"
+    assert first["option"]["name"] == "credential"
+    assert first["option"]["sensitive"] is True
+    assert first["option"]["action"]["url"] == "https://provider.example/keys"
+    assert "help" not in first["option"]
+    assert "prompt" not in first["option"]
+    assert CREDENTIAL not in json.dumps(first)
 
-    assert main(["email", "connect"]) == 0
-    output = capsys.readouterr()
-    assert output.err == ""
-    assert "Open provider console:" in output.out
-    assert "https://provider.example/keys" in output.out
-    assert "Paste the provider credential (input is hidden):" in output.out
-    assert "Create a credential in the provider console." not in output.out
-    assert "1. assistant@example.com" in output.out
-    assert "2. support@example.com" in output.out
-    assert "Checking the credential..." in output.out
-    assert output.out.endswith(
-        "Connected: support@example.com\n"
-        "The credential is encrypted in this identity.\n"
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    code, second = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"], "--result-file", cred],
     )
-    assert CREDENTIAL not in output.out
+    assert code == 3
+    assert second["option"]["name"] == "address"
+    assert second["option"]["choices"] == [
+        "assistant@example.com",
+        "support@example.com",
+    ]
+    addr = value_file(tmp_path, "support@example.com", "address.txt")
+    code, done = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", second["state"], "--result-file", addr],
+    )
+    assert code == 0
+    assert done["status"] == "connected"
+    assert done["address"] == "support@example.com"
+    assert CREDENTIAL not in json.dumps(done)
 
 
-def test_human_renderer_empty_secret_does_not_print_continue(
+def test_json_setup_omits_help_and_keeps_action(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -307,7 +320,6 @@ def test_human_renderer_empty_secret_does_not_print_continue(
         if not token:
             return setup_needed(
                 credential_option(
-                    prompt="Paste the provider credential",
                     help="AGENT PROCEDURE DO NOT PRINT",
                     action={
                         "kind": "open_url",
@@ -319,25 +331,16 @@ def test_human_renderer_empty_secret_does_not_print_continue(
         return mailbox_view("agent@example.com", owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: "",
-    )
-    assert main(["email", "connect"]) == 3
-    output = capsys.readouterr()
-    assert "AGENT PROCEDURE DO NOT PRINT" not in output.out + output.err
-    assert "nothing entered" in output.err
-    assert "--continue" not in output.err
-    assert "--result-file" not in output.err
-    assert "https://provider.example/keys" in output.out
+    code, payload = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    blob = json.dumps(payload)
+    assert "AGENT PROCEDURE DO NOT PRINT" not in blob
+    assert payload["option"]["action"]["url"] == "https://provider.example/keys"
+    assert "help" not in payload["option"]
+    assert "prompt" not in payload["option"]
 
 
-def test_human_renderer_strips_windows_trailing_cr(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_result_file_dash_reads_stdin(tmp_path: Path, monkeypatch, capsys) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["--json", "init"], env).returncode == 0
 
@@ -351,20 +354,39 @@ def test_human_renderer_strips_windows_trailing_cr(
         return mailbox_view(ADDRESS, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
     apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: CREDENTIAL + "\r",
+
+    class Stdin:
+        def __init__(self) -> None:
+            self.buffer = self
+
+        def read(self, *_args, **_kwargs):
+            return (CREDENTIAL + "\r\n").encode("utf-8")
+
+    monkeypatch.setattr("agentself.cli.io.sys.stdin", Stdin())
+    code = main(
+        [
+            "email",
+            "connect",
+            "--continue",
+            "--state",
+            first["state"],
+            "--result-file",
+            "-",
+        ]
     )
-    assert main(["email", "connect"]) == 0
-    output = capsys.readouterr()
-    assert f"Connected: {ADDRESS}\n" in output.out
-    assert CREDENTIAL not in output.out
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    assert captured.err == ""
+    done = json.loads(captured.out)
+    assert done["status"] == "connected"
+    assert done["address"] == ADDRESS
+    assert CREDENTIAL not in captured.out + captured.err
 
 
-def test_human_renderer_channel_failure_is_not_a_traceback(
+def test_json_channel_failure_is_not_a_traceback(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -377,20 +399,22 @@ def test_human_renderer_channel_failure_is_not_a_traceback(
         raise MailboxError("invalid credentials")
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: CREDENTIAL,
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    code, failed = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"], "--result-file", cred],
     )
-    assert main(["email", "connect"]) == 1
-    output = capsys.readouterr()
-    assert "Traceback" not in output.out + output.err
-    assert "ChannelFailure" not in output.out + output.err
-    assert "error: invalid credentials" in output.err
-    assert "next: agentself email connect" in output.err
-    assert CREDENTIAL not in output.out + output.err
+    assert code == 1
+    assert failed["ok"] is False
+    assert failed["reason"] == "invalid credentials"
+    assert failed["next"] == "agentself email connect"
+    assert CREDENTIAL not in json.dumps(failed)
+    assert "Traceback" not in json.dumps(failed)
+    assert "ChannelFailure" not in json.dumps(failed)
 
 
 def test_channel_from_mailbox_local_input_is_not_rpc() -> None:
@@ -421,45 +445,7 @@ def test_channel_from_mailbox_local_input_is_not_rpc() -> None:
     assert _channel_from_mailbox(injected).reason == "invalid_credential"
 
 
-def test_human_renderer_control_chars_are_not_rpc(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    env = cli_env(tmp_path / "vault")
-    assert run_cli(["--json", "init"], env).returncode == 0
-
-    def connect(token, address, answers):
-        del address
-        secret = (token or (answers or {}).get("credential") or "").strip()
-        if not secret:
-            return setup_needed(
-                credential_option(
-                    prompt="Paste the provider credential",
-                    help="AGENT PROCEDURE DO NOT PRINT",
-                )
-            )
-        require_secret(secret)
-        return mailbox_view(ADDRESS, owned_address=True)
-
-    _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: "tok\r\nAuthorization: Bearer " + CREDENTIAL,
-    )
-    assert main(["email", "connect"]) == 1
-    output = capsys.readouterr()
-    blob = output.out + output.err
-    assert "Traceback" not in blob
-    assert "ChannelFailure" not in blob
-    assert "error: rpc" not in blob
-    assert "AGENT PROCEDURE DO NOT PRINT" not in blob
-    assert "error: invalid credentials" in output.err
-    assert CREDENTIAL not in blob
-
-
-def test_tty_continue_empty_secret_is_nothing_entered(
+def test_continue_without_result_file_stays_input_required(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -472,26 +458,19 @@ def test_tty_continue_empty_secret_is_nothing_entered(
         return mailbox_view(ADDRESS, owned_address=True)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    first = main(["--json", "email", "connect"])
-    captured = capsys.readouterr()
-    assert first == 3
-    state = json.loads(captured.out)["state"]
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: "",
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    code, again = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"]],
     )
-    assert main(["email", "connect", "--continue", "--state", state]) == 3
-    output = capsys.readouterr()
-    blob = output.out + output.err
-    assert "nothing entered" in output.err
-    assert "next: agentself email connect" in output.err
-    assert "--continue" not in output.err
-    assert "--result-file" not in output.err
-    assert "--state" not in output.err
-    assert "AGENT PROCEDURE DO NOT PRINT" not in blob
+    assert code == 3
+    assert again["status"] == "input_required"
+    assert again["option"]["name"] == "credential"
+    assert "help" not in again["option"]
+    assert "AGENT PROCEDURE DO NOT PRINT" not in json.dumps(again)
 
 
 @pytest.mark.parametrize(
@@ -505,7 +484,7 @@ def test_tty_continue_empty_secret_is_nothing_entered(
         (SETUP_PENDING, {"message": "Provisioning"}, "pending"),
     ],
 )
-def test_tty_without_option_falls_through_to_setup_pending(
+def test_json_without_option_keeps_setup_pending(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -520,32 +499,22 @@ def test_tty_without_option_falls_through_to_setup_pending(
         return setup_needed(None, status=status, **extra)
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    first = main(["--json", "email", "connect"])
-    captured = capsys.readouterr()
-    assert first == 3
-    state = json.loads(captured.out)["state"]
-
-    def no_prompt(_prompt="", **_kwargs):
-        raise AssertionError("no named option should not prompt")
-
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr("agentself.cli.app.getpass.getpass", no_prompt)
-    monkeypatch.setattr("builtins.input", no_prompt)
-
-    assert main(["email", "connect", "--continue", "--state", state]) == 3
-    output = capsys.readouterr()
-    assert "nothing entered" not in output.err
-    assert reason in output.err
-
-    assert main(["email", "connect"]) == 3
-    output = capsys.readouterr()
-    assert "nothing entered" not in output.err
-    assert reason in output.err
+    code, payload = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    assert payload["status"] == status
+    assert payload["reason"] == reason
+    assert payload["message"] == extra["message"]
+    code, again = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", payload["state"]],
+    )
+    assert code == 3
+    assert again["reason"] == reason
 
 
-def test_human_renderer_unexpected_error_is_not_a_traceback(
+def test_json_unexpected_error_is_not_a_traceback(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     env = cli_env(tmp_path / "vault")
@@ -558,20 +527,23 @@ def test_human_renderer_unexpected_error_is_not_a_traceback(
         raise RuntimeError("ChannelFailure should not leak")
 
     _patch_mailbox(monkeypatch, ScriptedMailbox(connect))
-    apply_cli_env(monkeypatch, env)
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(
-        "agentself.cli.app.getpass.getpass",
-        lambda _prompt="", **_kwargs: CREDENTIAL,
+    code, first = _connect(monkeypatch, capsys, env)
+    assert code == 3
+    cred = value_file(tmp_path, CREDENTIAL, "credential.txt")
+    code, failed = _connect(
+        monkeypatch,
+        capsys,
+        env,
+        ["--continue", "--state", first["state"], "--result-file", cred],
     )
-    assert main(["email", "connect"]) == 1
-    output = capsys.readouterr()
-    blob = output.out + output.err
+    assert code == 1
+    assert failed["ok"] is False
+    assert failed["error"] == "error"
+    assert failed["reason"] == "error"
+    blob = json.dumps(failed)
     assert "Traceback" not in blob
     assert "ChannelFailure" not in blob
     assert "RuntimeError" not in blob
-    assert output.err == "error\n"
     assert CREDENTIAL not in blob
 
 
@@ -710,7 +682,7 @@ def test_private_generated_setup_output_is_persisted_but_never_rendered(
     assert result["status"] == "connected"
     assert generated not in json.dumps(result)
     assert "private_outputs" not in result
-    saved = run_cli(["--json", "secret", "get", EMAIL_CREDENTIAL_NAME, "--print"], env)
+    saved = run_cli(["--json", "secret", "get", EMAIL_CREDENTIAL_NAME], env)
     assert saved.returncode == 0
     assert json.loads(saved.stdout)["value"] == generated
     ignored = run_cli(["--json", "secret", "exists", "ignored"], env)
@@ -836,9 +808,7 @@ def test_persist_as_refuses_reserved_protected_and_invalid(
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
-    got = run_cli(
-        ["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe", "--print"], env
-    )
+    got = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
     assert got.returncode == 0, got.stdout + got.stderr
     wallet = json.loads(got.stdout)["value"]
     option = credential_option(persist=True, persist_as=persist_as)
@@ -869,9 +839,7 @@ def test_persist_as_refuses_reserved_protected_and_invalid(
     assert code == 2
     assert refused["ok"] is False
     assert refused["error"] == "refused"
-    after_proc = run_cli(
-        ["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe", "--print"], env
-    )
+    after_proc = run_cli(["--json", "secret", "get", WALLET_KEY_NAME, "--unsafe"], env)
     assert after_proc.returncode == 0, after_proc.stdout + after_proc.stderr
     after = json.loads(after_proc.stdout)["value"]
     assert after == wallet

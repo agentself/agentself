@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from agentself import __version__
 from agentself.cli.app import main
 from agentself.cli.parser import _FEATURED, _parser
+from agentself.cli.registry import COMMANDS as REGISTRY
+from agentself.cli.registry import spec_for
 from agentself.host import CHANNELS
 from agentself.internal.files import identity_home, secrets_home
 from agentself.internal.names import EMAIL_CONTINUATION_NAME
@@ -96,6 +98,7 @@ def assert_err(proc, *, error: str | None = None) -> dict:
     assert data["error"] in ERROR_TOKENS
     assert isinstance(data["reason"], str) and data["reason"]
     assert isinstance(data["next"], str) and data["next"].startswith("agentself ")
+    assert "--json" not in data["next"]
     if error is not None:
         assert data["error"] == error
         assert proc.returncode == EXIT_FOR_ERROR[error], proc.returncode
@@ -144,6 +147,35 @@ def _strip_prose(value):
     return value
 
 
+def test_registry_leaf_handlers_are_unique_and_raw_matches():
+    seen: dict[tuple[str, ...], str] = {}
+    for spec in REGISTRY:
+        if spec.handler is None:
+            assert spec.path in {
+                ("secret",),
+                ("note",),
+                ("email",),
+                ("wallet",),
+            }
+            continue
+        assert spec.handler, spec.path
+        assert spec.path not in seen, spec.path
+        seen[spec.path] = spec.handler
+        assert spec_for(spec.path) is spec
+        module, _, func = spec.handler.partition(":")
+        assert module.startswith("agentself.cli.commands.")
+        assert func
+    raw_paths = {spec.path for spec in REGISTRY if spec.raw}
+    assert raw_paths == {
+        ("secret", "get"),
+        ("note", "get"),
+        ("email", "receive"),
+        ("wallet", "show"),
+        ("wallet", "address"),
+        ("wallet", "authorize"),
+    }
+
+
 def test_featured_parser_matches_golden_commands():
     parser = _parser()
     assert _FEATURED == "{" + ",".join(COMMANDS["top"]) + "}"
@@ -178,7 +210,7 @@ def test_json_version(tmp_path):
     env = cli_env(tmp_path / "vault")
     version = assert_ok(run_cli(["--json", "--version"], env), "version")
     assert version["version"] == __version__
-    assert version["cli"] == 1
+    assert version["cli"] == 2
     assert version["package"]
     assert version["executable"]
 
@@ -224,6 +256,12 @@ def test_json_commands_lists_featured_verbs(tmp_path):
         assert set(item) == {"name", "args", "next"}
         assert isinstance(item["args"], list)
         assert item["next"].startswith("agentself ")
+        assert "--json" not in item["next"]
+    assert set(data["raw"]) == {"secret", "note", "email", "wallet"}
+    assert data["raw"]["secret"] == ["get"]
+    assert data["raw"]["note"] == ["get"]
+    assert data["raw"]["email"] == ["receive"]
+    assert data["raw"]["wallet"] == ["show", "address", "authorize"]
     blob = json.dumps(data)
     assert "0x" not in blob
     assert "AGE-SECRET-KEY" not in blob
@@ -298,7 +336,7 @@ def test_json_secrets_and_missing(tmp_path):
     )
     assert present == {"ok": True, "name": "notes", "exists": True}
     got = assert_ok(
-        run_cli(["--json", "secret", "get", "notes", "--print"], env),
+        run_cli(["--json", "secret", "get", "notes"], env),
         "secret_get",
     )
     assert got == {"ok": True, "name": "notes", "value": "only I can open this"}
@@ -392,7 +430,7 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     assert connected["status"] == "input_required"
     assert connected["state"]
     assert connected["continue"].startswith(
-        "agentself --json email connect --continue --state "
+        "agentself email connect --continue --state "
     )
     assert connected["human_action_required"] is True
     assert connected["option"]["name"] == "setup_method"
@@ -434,7 +472,6 @@ def test_json_email_connect_never_prompts_and_keeps_compact_next_step(
         prompted.append("secret")
         raise AssertionError("--json must not prompt")
 
-    monkeypatch.setattr("agentself.cli.app.getpass.getpass", no_prompt)
     monkeypatch.setattr("builtins.input", no_prompt)
     data = _main_err(monkeypatch, capsys, env, ["email", "connect"], error="missing")
     assert prompted == []
@@ -446,10 +483,8 @@ def test_json_email_connect_never_prompts_and_keeps_compact_next_step(
     ]
     assert "help" not in data["option"]
     assert "prompt" not in data["option"]
-    assert data["next"].startswith("agentself --json email connect --continue --state ")
-    assert data["continue"].startswith(
-        "agentself --json email connect --continue --state "
-    )
+    assert data["next"].startswith("agentself email connect --continue --state ")
+    assert data["continue"].startswith("agentself email connect --continue --state ")
     assert "--result-file PATH" in data["continue"]
 
 
@@ -512,6 +547,17 @@ def test_json_failure_envelope_and_streams(tmp_path):
         run_cli(["--json", "secret", "create"], env), error="refused"
     )
     assert create_usage["next"] == "agentself secret create --help"
+    get_usage = assert_err(run_cli(["--json", "secret", "get"], env), error="refused")
+    assert get_usage["next"] == "agentself secret get --help"
+    unknown_flag = assert_err(
+        run_cli(["--json", "secret", "get", "demo", "--print"], env), error="refused"
+    )
+    assert unknown_flag["next"] == "agentself secret get --help"
+    assert "unrecognized arguments: --print" in unknown_flag["reason"]
+    bogus_auth = assert_err(
+        run_cli(["--json", "wallet", "authorize", "--bogus"], env), error="refused"
+    )
+    assert bogus_auth["next"] == "agentself wallet authorize --help"
 
     unknown = assert_err(run_cli(["--json", "ninit"], env), error="refused")
     assert unknown["next"] == "agentself --help"

@@ -54,14 +54,12 @@ AGENTMAIL_OPTIONS = (
         required=True,
         choices=("existing_credential", "create_account"),
         help=HELP_AGENTMAIL_SETUP_METHOD,
-        prompt="Choose how to connect AgentMail",
         runtime_only=True,
     ),
     credential_option(
         required=True,
         source=SOURCE_AGENTMAIL_CREDENTIAL,
         help=HELP_AGENTMAIL_CREDENTIAL,
-        prompt="Paste the API key",
         persist=True,
         persist_as=EMAIL_CREDENTIAL_NAME,
         action=_API_KEYS_ACTION,
@@ -71,7 +69,6 @@ AGENTMAIL_OPTIONS = (
         type="string",
         required=True,
         help=HELP_AGENTMAIL_HUMAN_EMAIL,
-        prompt="Approved human email for verification",
         runtime_only=True,
     ),
     setup_option(
@@ -80,7 +77,6 @@ AGENTMAIL_OPTIONS = (
         required=True,
         sensitive=True,
         help="Six-digit verification code sent to the approved human email.",
-        prompt="Enter the six-digit verification code",
         runtime_only=True,
     ),
     address_option(

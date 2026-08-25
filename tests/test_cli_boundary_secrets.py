@@ -160,9 +160,9 @@ def test_flag_tokens_after_doubledash_are_stored_as_values(tmp_path):
         )
         assert created.returncode == 0, created.stderr
         assert value not in created.stdout
-        got = run_cli(["secret", "get", name, "--print"], env)
+        got = run_cli(["secret", "get", name], env)
         assert got.returncode == 0, got.stderr
-        assert got.stdout.strip() == value
+        assert json.loads(got.stdout)["value"] == value
         listed = run_cli(["--json", "secret", "list"], env)
         assert listed.returncode == 0, listed.stderr
         assert value not in listed.stdout + listed.stderr
@@ -220,9 +220,9 @@ def test_secret_create_value_stays_off_stderr_logs_and_list(tmp_path):
     assert doctor.returncode == 0, doctor.stderr
     assert PLAIN_CANARY not in doctor.stdout + doctor.stderr
 
-    got = run_cli(["secret", "get", "notes", "--print"], env)
+    got = run_cli(["secret", "get", "notes"], env)
     assert got.returncode == 0, got.stderr
-    assert got.stdout.strip() == PLAIN_CANARY
+    assert json.loads(got.stdout)["value"] == PLAIN_CANARY
 
 
 def test_malformed_registry_recipient_fails_closed(tmp_path):
@@ -362,7 +362,10 @@ def test_cli_wallet_send_does_not_echo_backend_key(tmp_path, monkeypatch, capsys
     assert code == 2, blob
     assert WALLET_CANARY not in blob
     assert "Traceback" not in blob
-    assert captured.err == "refused: backend cannot send\n"
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert WALLET_CANARY not in data["reason"]
 
 
 def test_age_key_file_relative_escape_fails_closed(tmp_path):

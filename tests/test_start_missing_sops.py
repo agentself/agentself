@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tests.support import cli_env, plant_host_binaries, run_cli
 
 
@@ -12,8 +14,8 @@ def test_start_missing_sops_one_error_line(tmp_path):
     env["PATH"] = str(plant_host_binaries(tmp_path / "host-bin", "age-keygen", "age"))
     proc = run_cli(["init"], env)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "Traceback" not in proc.stderr
+    assert proc.stderr == ""
     assert "Traceback" not in proc.stdout
-    lines = [line for line in proc.stderr.splitlines() if line.strip()]
-    assert lines[0] == "error: sops not on PATH"
-    assert "install --tools" in proc.stderr
+    data = json.loads(proc.stdout)
+    assert data["reason"] == "sops not on PATH"
+    assert data["next"] == "agentself install --tools"

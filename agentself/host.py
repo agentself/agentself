@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import difflib
-import textwrap
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -161,8 +160,7 @@ CHANNELS: dict[str, Channel] = {
         ),
         note=(
             "email connect does not block init. Run connect, supply the requested "
-            "credential through its secure prompt or --result-file, then verify with "
-            "agentself --json email show."
+            "credential through --result-file, then verify with agentself email show."
         ),
     ),
     "store": Channel(
@@ -257,32 +255,6 @@ def backends_payload(
     }
 
 
-def format_backends(channel: str | None = None, backend: str | None = None) -> str:
-    if backend:
-        spec = CHANNELS[channel or ""]
-        item = bind_of(spec.name, backend)
-        if item is None:
-            raise UnknownBind(spec.name, backend)
-        return _format_channel(spec, verbose_options=True, binds=(item,)) + "\n"
-    if channel:
-        return _format_channel(CHANNELS[channel], verbose_options=True) + "\n"
-    lines = [
-        "Shipped backends. Same command tree on every backend.",
-        "Each backend lists live/local, custody, and supported verbs.",
-        "Pick with init flags or AGENTSELF_*_BACKEND.",
-        "Flag, then env, then identity-directory config, then default. No failover.",
-        f"Identity directory: {ENV_IDENTITY_DIR} (default ~/.agentself).",
-        f"One identity per directory. Isolate with {ENV_IDENTITY_DIR}, not named remotes.",
-        "",
-    ]
-    for spec in CHANNELS.values():
-        lines.append(_format_channel(spec))
-        lines.append("")
-    lines.append("Drill in: agentself backends CHANNEL or CHANNEL BACKEND")
-    lines.append("Current mounts: agentself show")
-    return "\n".join(lines).rstrip() + "\n"
-
-
 def _channel_catalog(spec: Channel) -> dict[str, object]:
     return {
         "name": spec.name,
@@ -309,64 +281,5 @@ def _channel_json(
     }
 
 
-def _format_options(item: Bind) -> str:
-    parts: list[str] = []
-    for opt in item.options:
-        name = str(opt.get("name") or "")
-        source = str(opt.get("source") or "")
-        if not name:
-            continue
-        parts.append(f"{name} ({source})" if source else name)
-    return "  ".join(parts)
-
-
-def _format_caps(item: Bind) -> str:
-    parts = [f"live:{str(item.live).lower()}"]
-    if item.custody:
-        parts.append(f"custody:{item.custody}")
-    if item.network:
-        parts.append(f"network:{item.network}")
-    if item.asset:
-        parts.append(f"asset:{item.asset}")
-    if item.verbs:
-        parts.append("verbs:" + ",".join(item.verbs))
-    return "  ".join(parts)
-
-
 def _bind_label(name: str, default: str) -> str:
     return f"{name} (default)" if name == default else name
-
-
-def _format_channel(
-    spec: Channel,
-    *,
-    verbose_options: bool = False,
-    binds: tuple[Bind, ...] | None = None,
-) -> str:
-    items = binds if binds is not None else spec.binds
-    meta = [spec.env, spec.flag] if spec.env else [spec.flag]
-    lines = [f"{spec.name}  ({', '.join(meta)})"]
-    labels = [_bind_label(item.name, spec.default) for item in items]
-    width = max(len(label) for label in labels)
-    for item, label in zip(items, labels):
-        lines.append(f"  {label.ljust(width)}  {item.summary}")
-        if item.options:
-            lines.append(f"  {' ' * width}  {_format_options(item)}")
-            if verbose_options:
-                indent = " " * (width + 6)
-                for option in item.options:
-                    name = str(option.get("name") or "")
-                    help_text = str(option.get("help") or "")
-                    if name and help_text:
-                        lines.extend(
-                            textwrap.wrap(
-                                f"{name}: {help_text}",
-                                width=88,
-                                initial_indent=indent,
-                                subsequent_indent=indent,
-                            )
-                        )
-        lines.append(f"  {' ' * width}  {_format_caps(item)}")
-    if spec.note:
-        lines.append(f"  {spec.note}")
-    return "\n".join(lines)

@@ -628,4 +628,4 @@ def compose_with_rpc(monkeypatch, rpc) -> None:
         kwargs.setdefault("rpc", rpc)
         return real(*args, **kwargs)
 
-    monkeypatch.setattr("agentself.cli.app.compose", wrapped, raising=False)
+    monkeypatch.setattr("agentself.cli.runtime.compose", wrapped, raising=False)

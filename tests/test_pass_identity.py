@@ -37,12 +37,12 @@ def test_init_store_pass_missing_tools(tmp_path):
     assert "Traceback" not in blob
     assert "AGE-SECRET-KEY" not in blob
     assert "setup-principal.sh" not in blob
-    assert "pass" in proc.stderr
-    assert "gpg" in proc.stderr
+    data = json.loads(proc.stdout)
+    assert "pass" in data["reason"]
+    assert "gpg" in data["reason"]
     assert "install --tools" not in blob
-    lines = [line for line in proc.stderr.splitlines() if line.strip()]
-    assert lines[0].startswith("error:")
-    assert "pass" in lines[0] or "gpg" in lines[0]
+    assert data["error"] == "error"
+    assert proc.stderr == ""
 
 
 def test_leftover_gpg_batch_is_shredded(tmp_path, monkeypatch):
@@ -309,12 +309,12 @@ def test_init_surfaces_gpg_keygen_detail(tmp_path, monkeypatch, capsys):
     code = main(["init", "--store", "pass"])
     captured = capsys.readouterr()
     assert code == 1
-    assert captured.out == ""
-    assert "Traceback" not in captured.err
-    assert captured.err.startswith(
-        "error: gpg keygen failed: socket name is too long\n"
-    )
-    assert "AGE-SECRET-KEY-LEAKME" not in captured.err
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "error"
+    assert data["reason"] == "gpg keygen failed: socket name is too long"
+    assert "Traceback" not in captured.out
+    assert "AGE-SECRET-KEY-LEAKME" not in captured.out
     assert generates["n"] >= 1
     first = generates["n"]
     js = main(["--json", "init", "--store", "pass"])

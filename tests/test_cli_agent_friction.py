@@ -34,15 +34,14 @@ def test_unknown_bind_typo_names_value_and_suggestion(tmp_path):
     env["AGENTSELF_WALLET_BACKEND"] = "basee"
     proc = run_cli(["show"], env)
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "unknown wallet backend: basee" in proc.stderr
-    assert "did you mean base?" in proc.stderr
-    assert "next: agentself backends wallet" in proc.stderr
-    js = run_cli(["--json", "show"], env)
-    data = json.loads(js.stdout or js.stderr)
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout)
     assert data["ok"] is False
-    assert "basee" in data["reason"]
+    assert "unknown wallet backend: basee" in data["reason"]
     assert "did you mean base?" in data["reason"]
     assert data["next"] == "agentself backends wallet"
+    js = run_cli(["--json", "show"], env)
+    assert js.stdout == proc.stdout
 
 
 def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
@@ -53,20 +52,22 @@ def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
     _corrupt_wallet_key(vault)
     doctor = run_cli(["diagnose"], env)
     assert doctor.returncode == 1, doctor.stdout + doctor.stderr
-    assert "cannot read wallet.key" in doctor.stderr
+    assert doctor.stderr == ""
+    data = json.loads(doctor.stdout)
+    assert "cannot read wallet.key" in data["reason"]
     assert "AGE-SECRET-KEY" not in doctor.stdout + doctor.stderr
     addr = run_cli(["wallet", "address"], env)
     assert addr.returncode == 1, addr.stdout + addr.stderr
-    assert addr.stderr == "error: cannot read wallet.key\nnext: agentself diagnose\n"
-    js = run_cli(["--json", "wallet", "address"], env)
-    assert js.returncode == 1, js.stdout + js.stderr
-    data = json.loads(js.stdout or js.stderr)
-    assert data == {
+    assert addr.stderr == ""
+    assert json.loads(addr.stdout) == {
         "ok": False,
         "error": "error",
         "reason": "cannot read wallet.key",
         "next": "agentself diagnose",
     }
+    js = run_cli(["--json", "wallet", "address"], env)
+    assert js.returncode == 1, js.stdout + js.stderr
+    assert json.loads(js.stdout) == json.loads(addr.stdout)
     assert "AGE-SECRET-KEY" not in js.stdout + js.stderr
 
 
@@ -100,9 +101,13 @@ def test_secret_create_tty_without_value_is_missing(tmp_path, monkeypatch, capsy
 
     apply_cli_env(monkeypatch, env)
     monkeypatch.setattr("agentself.cli.app.sys.stdin", Tty())
+    monkeypatch.setattr("agentself.cli.io.sys.stdin", Tty())
     code = main(["secret", "create", "notes"])
     captured = capsys.readouterr()
     assert code == 3, captured.out + captured.err
-    assert captured.err == (
-        "missing: need a value\nnext: agentself secret create --help\n"
-    )
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["ok"] is False
+    assert data["error"] == "missing"
+    assert data["reason"] == "need a value"
+    assert data["next"] == "agentself secret create --help"

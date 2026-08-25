@@ -60,7 +60,7 @@
     "exact": ["ok", "channel"]
   },
   "commands": {
-    "exact": ["ok", "commands"]
+    "exact": ["ok", "commands", "raw"]
   },
   "secret_write": {
     "required": ["ok", "name"],

@@ -92,21 +92,23 @@ def test_set_from_stdin_and_argv(tmp_path):
     assert start.returncode == 0, start.stderr
 
     secret = "stdin-secret-value"
-    sealed = run_cli(["secret", "create", "notes"], env, input=secret + "\n")
+    sealed = run_cli(
+        ["secret", "create", "notes", "--file", "-"], env, input=secret + "\n"
+    )
     assert sealed.returncode == 0, sealed.stderr
     assert secret not in sealed.stdout
     assert secret not in sealed.stderr
-    got = run_cli(["secret", "get", "notes", "--print"], env)
+    got = run_cli(["secret", "get", "notes"], env)
     assert got.returncode == 0, got.stderr
-    assert got.stdout == secret + "\n"
+    assert json.loads(got.stdout)["value"].rstrip("\r\n") == secret
 
     argv = run_cli(["secret", "create", "other", "argv-value"], env)
     assert argv.returncode == 0, argv.stderr
     assert "argv-value" not in argv.stdout
     assert "argv-value" not in argv.stderr
-    got_argv = run_cli(["secret", "get", "other", "--print"], env)
+    got_argv = run_cli(["secret", "get", "other"], env)
     assert got_argv.returncode == 0, got_argv.stderr
-    assert got_argv.stdout == "argv-value\n"
+    assert json.loads(got_argv.stdout)["value"] == "argv-value"
 
     line_file = tmp_path / "line.txt"
     line_file.write_text("already-terminated\n", encoding="utf-8")
@@ -115,7 +117,7 @@ def test_set_from_stdin_and_argv(tmp_path):
         env,
     )
     assert created.returncode == 0, created.stderr
-    got_line = run_cli(["secret", "get", "line", "--print"], env)
+    got_line = run_cli(["secret", "get", "line", "--raw"], env)
     assert got_line.returncode == 0, got_line.stderr
     assert got_line.stdout == "already-terminated\n"
 
@@ -126,9 +128,9 @@ def test_set_from_stdin_and_argv(tmp_path):
         env,
     )
     assert created_crlf.returncode == 0, created_crlf.stderr
-    got_crlf = run_cli(["secret", "get", "crlf", "--print"], env)
+    got_crlf = run_cli(["secret", "get", "crlf"], env)
     assert got_crlf.returncode == 0, got_crlf.stderr
-    assert got_crlf.stdout == "windows-terminated\n"
+    assert json.loads(got_crlf.stdout)["value"] == "windows-terminated\r\n"
 
 
 def test_set_value_and_file_fails_closed(tmp_path):
@@ -141,12 +143,27 @@ def test_set_value_and_file_fails_closed(tmp_path):
     proc = run_cli(
         ["secret", "create", "notes", "argv-secret", "--file", str(path)], env
     )
-    assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "next:" in proc.stderr
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert proc.stderr == ""
+    err = json.loads(proc.stdout)
+    assert err["ok"] is False
+    assert err["error"] == "refused"
+    assert err["reason"] == "value and --file"
+    assert "next" in err
     assert "argv-secret" not in proc.stdout + proc.stderr
     assert "from-file" not in proc.stdout + proc.stderr
     missing = run_cli(["secret", "get", "notes", "--meta"], env)
     assert missing.returncode == 3
+    missing_file = run_cli(
+        ["secret", "create", "notes", "--file", str(tmp_path / "missing.txt")], env
+    )
+    assert missing_file.returncode == 1, missing_file.stdout + missing_file.stderr
+    assert json.loads(missing_file.stdout)["error"] == "error"
+    assert json.loads(missing_file.stdout)["reason"] == "file"
+    missing_value = run_cli(["secret", "create", "notes"], env)
+    assert missing_value.returncode == 3
+    assert json.loads(missing_value.stdout)["error"] == "missing"
+    assert json.loads(missing_value.stdout)["reason"] == "need a value"
 
 
 def test_cli_json_email_receive_list_without_token_has_reason(tmp_path):
@@ -162,6 +179,8 @@ def test_cli_json_email_receive_list_without_token_has_reason(tmp_path):
         assert err["reason"] == "no_token"
         human = run_cli(["email", verb], env)
         assert human.returncode == 1, human.stdout + human.stderr
+        assert human.stderr == ""
+        assert json.loads(human.stdout)["reason"] == "no_token"
 
 
 _TO = "0x" + "11" * 20
@@ -177,9 +196,12 @@ def test_cli_wallet_send_no_eth_names_eth(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert captured.err == "refused: need gas\n"
-    assert "ETH" not in captured.err
-    assert "USDC" not in captured.err
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert data["reason"] == "no_gas"
+    assert "ETH" not in captured.out
+    assert "USDC" not in captured.out
 
 
 def test_cli_wallet_send_no_usdc_names_usdc(tmp_path, monkeypatch, capsys):
@@ -192,9 +214,12 @@ def test_cli_wallet_send_no_usdc_names_usdc(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert captured.err == "refused: need funds\n"
-    assert "USDC" not in captured.err
-    assert "ETH" not in captured.err
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert data["reason"] == "insufficient_asset"
+    assert "USDC" not in captured.out
+    assert "ETH" not in captured.out
 
 
 def test_cli_wallet_send_wrong_asset_names_usdc(tmp_path, monkeypatch, capsys):
@@ -207,9 +232,12 @@ def test_cli_wallet_send_wrong_asset_names_usdc(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1", "ETH"])
     captured = capsys.readouterr()
     assert code == 2, captured.out + captured.err
-    assert captured.err == "refused: backend cannot send\n"
-    assert "USDC" not in captured.err
-    assert "need ETH for gas" not in captured.err
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert data["reason"] == "unsupported_asset"
+    assert "USDC" not in captured.out
+    assert "need ETH for gas" not in captured.out
 
 
 def test_cli_wallet_send_rpc_is_error_rpc(tmp_path, monkeypatch, capsys):
@@ -226,7 +254,14 @@ def test_cli_wallet_send_rpc_is_error_rpc(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
-    assert captured.err == "error: rpc\nnext: agentself backends wallet\n"
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data == {
+        "ok": False,
+        "error": "error",
+        "reason": "rpc",
+        "next": "agentself backends wallet",
+    }
 
 
 class _MissingKeyWallet:
@@ -265,7 +300,10 @@ def test_cli_wallet_send_missing_key_is_no_key(tmp_path, monkeypatch, capsys):
     code = main(["wallet", "send", _TO, "1"])
     captured = capsys.readouterr()
     assert code == 1, captured.out + captured.err
-    assert captured.err == "error: no_key\nnext: agentself backends wallet\n"
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["reason"] == "no_key"
+    assert data["next"] == "agentself backends wallet"
 
 
 def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
@@ -371,7 +409,7 @@ def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
     assert exported["body_file"] == str(body_file)
     assert body_file.read_text(encoding="utf-8") == "full good"
 
-    code = main(["--json", "email", "receive", good_id, "--print"])
+    code = main(["email", "receive", good_id, "--raw"])
     captured = capsys.readouterr()
     assert code == 0, captured.out + captured.err
-    assert json.loads(captured.out)["messages"][0]["body"] == "full good"
+    assert captured.out == "full good"

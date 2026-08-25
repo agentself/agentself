@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 from agentself.host import CHANNELS
@@ -54,7 +55,8 @@ def test_top_help_lists_commands_and_flags(tmp_path):
     text = proc.stdout
     for verb in _FEATURED_TOP:
         assert verb in text, verb
-    assert "--json" in text
+    assert "--json" not in text
+    assert "--raw" in text
     assert "--version" in text
     assert "AGENTSELF_IDENTITY_DIR" in text
     assert "0x" not in text
@@ -64,7 +66,7 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     env = cli_env(tmp_path / "vault")
     create = run_cli(["secret", "create", "--help"], env)
     assert create.returncode == 0, create.stderr
-    assert "--json" in create.stdout
+    assert "--json" not in create.stdout
     assert "NAME" in create.stdout
     assert "VALUE" in create.stdout
     assert "--file" in create.stdout
@@ -123,23 +125,24 @@ def test_operation_help_stays_provider_neutral(tmp_path):
 
 
 def test_backend_email_discovery_includes_first_run_stop_rules(tmp_path):
-    proc = run_cli(["backends", "email"], cli_env(tmp_path / "vault"))
+    proc = run_cli(["backends", "email", "agentmail"], cli_env(tmp_path / "vault"))
     assert proc.returncode == 0, proc.stderr
-    text = " ".join(proc.stdout.split())
-    assert "credential:" in text
-    assert "--result-file" in text
-    assert "claimed, forbidden, or unavailable" in text
-    assert "stop and ask the user" in text
+    assert proc.stderr == ""
+    data = json.loads(proc.stdout)
+    options = data["channel"]["backends"][0]["options"]
+    helps = " ".join(str(item.get("help") or "") for item in options)
+    names = [item["name"] for item in options]
+    assert "credential" in names
+    assert "--result-file" in helps
+    assert "claimed, forbidden, or unavailable" in helps
+    assert "stop and ask the user" in helps
 
 
 def test_help_does_not_print_status(tmp_path):
     env = cli_env(tmp_path / "vault")
     started = run_cli(["init"], env)
     assert started.returncode == 0, started.stderr
-    addr = ""
-    for line in started.stdout.splitlines():
-        if line.startswith("wallet:"):
-            addr = line.split(":", 1)[1].strip()
+    addr = json.loads(started.stdout)["address"]
     assert addr.startswith("0x")
     help_after = run_cli(["--help"], env)
     assert help_after.returncode == 0, help_after.stderr
@@ -147,3 +150,4 @@ def test_help_does_not_print_status(tmp_path):
     assert "email: not configured" not in after.lower()
     assert addr not in after
     assert "age1" not in after.lower()
+    assert json.loads(started.stdout)["ok"] is True

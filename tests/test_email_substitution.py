@@ -69,9 +69,7 @@ def test_oauthish_connect_round_trips_continuation_and_declared_persist(
     assert first["status"] == "action_required"
     assert first["human_action_required"] is True
     assert first["state"]
-    assert first["continue"].startswith(
-        "agentself --json email connect --continue --state "
-    )
+    assert first["continue"].startswith("agentself email connect --continue --state ")
     assert "option" not in first or first.get("option") is None
     assert "continuation" not in first
     assert "phase" not in first
@@ -139,7 +137,7 @@ def test_oauthish_connect_round_trips_continuation_and_declared_persist(
     assert LABEL_NAME in names
     assert EMAIL_CREDENTIAL_NAME not in names
     assert EMAIL_CONTINUATION_NAME not in names
-    got = run_cli(["--json", "secret", "get", LABEL_NAME, "--print"], env)
+    got = run_cli(["--json", "secret", "get", LABEL_NAME], env)
     assert json.loads(got.stdout)["value"] == LABEL
     missing = run_cli(["--json", "secret", "exists", EMAIL_CREDENTIAL_NAME], env)
     assert missing.returncode == 3
@@ -201,7 +199,7 @@ def test_oauthish_result_file_credential_persists_and_canary_stays_off_cli(
     assert EMAIL_CREDENTIAL_NAME in names
     listed = run_cli(["--json", "secret", "list"], env)
     assert CREDENTIAL_CANARY not in listed.stdout + listed.stderr
-    got = run_cli(["--json", "secret", "get", EMAIL_CREDENTIAL_NAME, "--print"], env)
+    got = run_cli(["--json", "secret", "get", EMAIL_CREDENTIAL_NAME], env)
     assert json.loads(got.stdout)["value"] == CREDENTIAL_CANARY
     assert CREDENTIAL_CANARY not in json.dumps(done)
 

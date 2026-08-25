@@ -1,6 +1,6 @@
 ---
 name: agentself
-description: Local agent identity — wallet, secrets, optional email. Use when asked to initialize or hand off an identity, use its wallet or secrets, connect email, or process mail. Prefer --json and open the matching reference for multi-step work.
+description: Local agent identity — wallet, secrets, optional email. Use when asked to initialize or hand off an identity, use its wallet or secrets, connect email, or process mail. Open the matching reference for multi-step work.
 allowed-tools: Bash(agentself:*)
 ---
 
@@ -15,36 +15,40 @@ Requires the `agentself` CLI. If unavailable, install it with `uv tool install a
 Do not guess flags or expose values in logs, arguments, or chat.
 
 ```bash
-agentself --json --version
-agentself --json diagnose
+agentself --version
+agentself diagnose
 ```
 
-Prefer `--json`. Success and failure are one JSON object on stdout with `"ok"`, and failures include `"error"`, `"reason"`, and `"next"`. Human errors may include a `next:` line on stderr. `agentself --json --version` includes `cli` (machine schema id, currently 1). Ignore unknown keys.
+Done when `--version` JSON has `"ok": true` and `"cli": 2`. A different `cli` or an unexpected `package` / `executable` path means the install is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
 
-Start by checking `agentself --json --version`. This skill requires `cli: 1`. A different schema or an unexpected `package` / `executable` path means the installation is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
+Default output is one JSON object on stdout. Exit 0 success, 1 error, 2 refused, 3 missing. stderr is empty for handled outcomes. Failures include `"error"`, `"reason"`, and `"next"`. Ignore unknown keys.
 
-When a flag or next step is unclear, run `agentself --json commands` or open the matching reference below. Do not dump human `--help` or the full backends catalog by default. Drill in with `agentself --json backends CHANNEL BACKEND` only when you need setup options.
+Use `--raw` when a caller needs exact bytes from `wallet address`, `wallet show`, `wallet authorize`, `secret get NAME`, `note get NAME`, or `email receive REF`. Unsupported `--raw` is JSON refusal, exit 2.
+
+When a flag or next step is unclear, run `agentself commands` or open the matching reference below. Drill in with `agentself backends CHANNEL BACKEND` only when you need setup options.
 
 Identity directory is `AGENTSELF_IDENTITY_DIR` (default `~/.agentself`).
+
+Stdin is never implicit. Use `--file -`, `--result-file -`, or `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
 
 ## Common path
 
 ```bash
 agentself install --tools
 agentself init
-agentself --json show
+agentself show
 ```
 
-`init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
+Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
-`--json show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
+`show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
 
-Signing is `agentself --json wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Do not `--print` the signature or dump it in chat or logs. Human and JSON output is for the caller to attach, not to echo. Existing identities use this same verb; there is no Python compose or SDK path.
+Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Output is JSON by default; `--raw` emits the signature bytes. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
 
-For secrets, prefer files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Plaintext stdout requires explicit `--print`.
+For secrets, use files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Default `secret get NAME` is JSON with the value. Use `--raw` when exact bytes are required. `wallet.key` also needs `--unsafe`.
 
 For printable cross-agent context, use `note set NAME --file PATH` and
-`note get NAME`. Notes are non-secret: never put credentials, OTPs, private
+`note get NAME` (JSON) or `--raw`. Notes are non-secret: never put credentials, OTPs, private
 keys, secret values, or mail bodies in them.
 
 ## Open the relevant workflow

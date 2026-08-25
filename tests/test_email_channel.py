@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from agentself.internal.custody.errors import EmailSendNotReady
@@ -79,10 +81,11 @@ def test_cli_email_send_without_domain_fails_closed(tmp_path):
     assert start.returncode == 0, start.stderr
     sent = run_cli(["email", "send", "someone@example.com", "hello", "body"], env)
     assert sent.returncode == 1, sent.stdout + sent.stderr
-    assert "Traceback" not in sent.stderr
+    assert sent.stderr == ""
     assert "Traceback" not in sent.stdout
-    assert "error:" in sent.stderr
-    assert "agentself backends email" in sent.stderr
+    data = json.loads(sent.stdout)
+    assert data["error"] == "error"
+    assert data["next"] == "agentself backends email"
     outbox = identity_home(vault, "agent") / "outbox"
     assert not outbox.exists() or not list(outbox.iterdir())
 
