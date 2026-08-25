@@ -11,6 +11,7 @@ from agentself.internal.files import (
     identity_home,
 )
 from agentself.internal.names import require_safe_token
+from agentself.internal.types import MailboxMessage
 
 MAIL_REF_PATTERN = r"m[1-9][0-9]{0,11}"
 _MAIL_REF_RE = re.compile(rf"^{MAIL_REF_PATTERN}$")
@@ -31,8 +32,8 @@ class MailRefState:
         self._root = Path(root)
 
     def apply(
-        self, identity_id: str, messages: list[dict[str, object]]
-    ) -> list[dict[str, object]]:
+        self, identity_id: str, messages: list[MailboxMessage]
+    ) -> list[MailboxMessage]:
         with exclusive(self._root):
             for message in messages:
                 message_id = str(message.get("id") or "")
@@ -141,8 +142,8 @@ class ActedMailState:
                 return
 
     def apply(
-        self, identity_id: str, messages: list[dict[str, object]]
-    ) -> list[dict[str, object]]:
+        self, identity_id: str, messages: list[MailboxMessage]
+    ) -> list[MailboxMessage]:
         with exclusive(self._root):
             for message in messages:
                 message_id = str(message.get("id") or "")

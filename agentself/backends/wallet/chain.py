@@ -26,6 +26,7 @@ from agentself.internal.format import load_json_file
 from agentself.internal.log import Log
 from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
 from agentself.internal.text import UTF8_BOM
+from agentself.internal.types import WalletAuthorization, WalletBalance, WalletView
 
 USDC_DECIMALS = 6
 ETH_DECIMALS = 18
@@ -90,18 +91,18 @@ class ChainWalletAccess(WalletAccess):
         self._log.record("wallet_authorize", identity_id, None, "ok")
         return sig
 
-    def balance(self, identity_id: str) -> dict[str, str]:
+    def balance(self, identity_id: str) -> WalletBalance:
         require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
-        result = self._rpc_request(
+        raw_result = self._rpc_request(
             "eth_call",
             [{"to": self.usdc, "data": _balance_of_data(addr)}, "latest"],
         )
-        raw = _hex_int(result)
+        raw = _hex_int(raw_result)
         amount = _format_usdc(raw)
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         self._log.record("wallet_balance", identity_id, None, "ok")
-        return {
+        result: WalletBalance = {
             "asset": USDC_ASSET,
             "chain": self.chain_name,
             "chain_id": str(self.chain_id),
@@ -112,6 +113,7 @@ class ChainWalletAccess(WalletAccess):
             "gas_raw": str(wei),
             "gas_amount": _format_eth(wei),
         }
+        return result
 
     def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
         require_safe_token(identity_id, "identity id")
@@ -135,7 +137,7 @@ class ChainWalletAccess(WalletAccess):
     def payment_ref(self) -> str:
         return self._payment_hash
 
-    def describe(self, identity_id: str) -> dict[str, object]:
+    def describe(self, identity_id: str) -> WalletView:
         require_safe_token(identity_id, "identity id")
         return {
             "address": self._derived_address(),
@@ -148,7 +150,7 @@ class ChainWalletAccess(WalletAccess):
 
     def verify(
         self, identity_id: str, message: str, authorization: str
-    ) -> dict[str, object]:
+    ) -> WalletAuthorization:
         require_safe_token(identity_id, "identity id")
         expected = self._derived_address()
         try:

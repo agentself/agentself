@@ -3,6 +3,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from agentself.internal.types import (
+    WalletAuthorization,
+    WalletBalance,
+    WalletView,
+)
+
 
 class WalletError(Exception):
     """Wallet Resource failure. Must never include a private key."""
@@ -36,7 +42,7 @@ class WalletAccess(ABC):
     def authorize(self, identity_id: str, message: str) -> str: ...
 
     @abstractmethod
-    def balance(self, identity_id: str) -> dict[str, str]:
+    def balance(self, identity_id: str) -> WalletBalance:
         """Amount and asset as strings. Extra keys are allowed."""
 
     @abstractmethod
@@ -49,12 +55,12 @@ class WalletAccess(ABC):
         return ""
 
     @abstractmethod
-    def describe(self, identity_id: str) -> dict[str, object]: ...
+    def describe(self, identity_id: str) -> WalletView: ...
 
     @abstractmethod
     def verify(
         self, identity_id: str, message: str, authorization: str
-    ) -> dict[str, object]:
+    ) -> WalletAuthorization:
         """Confirm an authorization against this identity. Never names a vendor."""
 
     def required_material(self) -> WalletMaterial | None:

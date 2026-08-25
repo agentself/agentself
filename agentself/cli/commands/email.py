@@ -5,6 +5,7 @@ from pathlib import Path
 from agentself.cli.io import load_value_file, store_value_file, value_meta
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import client, fail
+from agentself.cli.types import EmailCommandArguments
 from agentself.internal.custody.errors import ChannelFailure
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
@@ -16,7 +17,7 @@ from agentself.internal.setup import (
 )
 
 
-def connect_email(args, vault: Path) -> CliOutcome:
+def connect_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     answers, err = _connect_answers(args)
     if err is not None:
         return err
@@ -30,25 +31,25 @@ def connect_email(args, vault: Path) -> CliOutcome:
     return _email_connect_result(args, result)
 
 
-def show_email(args, vault: Path) -> CliOutcome:
+def show_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     email = client(vault).identity().get("email")
     email = email if isinstance(email, dict) else {}
     ready = bool(email.get("owned_address") and email.get("address"))
     return CliSuccess({**email, "ready": ready})
 
 
-def send_email(args, vault: Path) -> CliOutcome:
+def send_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     client(vault).email_send(args.to, args.subject, args.body)
     return CliSuccess({"to": args.to, "subject": args.subject})
 
 
-def mark_email(args, vault: Path) -> CliOutcome:
+def mark_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     acted = args.mark_state == "acted"
     client(vault).email_mark(args.message_id, acted=acted)
     return CliSuccess({"id": args.message_id, "acted": acted})
 
 
-def receive_email(args, vault: Path) -> CliOutcome:
+def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     ref = (args.message_id or "").strip()
     path = (args.body_file or "").strip()
     as_raw = bool(getattr(args, "as_raw", False))
@@ -81,12 +82,12 @@ def receive_email(args, vault: Path) -> CliOutcome:
     return CliSuccess({"messages": messages})
 
 
-def list_email(args, vault: Path) -> CliOutcome:
+def list_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     messages = client(vault).email_list(status=args.status, acted=args.acted_filter)
     return CliSuccess({"messages": messages})
 
 
-def find_email(args, vault: Path) -> CliOutcome:
+def find_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     messages = client(vault).email_find(
         args.query, status=args.status, acted=args.acted_filter
     )
@@ -94,7 +95,7 @@ def find_email(args, vault: Path) -> CliOutcome:
 
 
 def _prepare_received_messages(
-    args, messages: list[dict[str, object]], path: str
+    args: EmailCommandArguments, messages: list[dict[str, object]], path: str
 ) -> CliOutcome | None:
     if path and messages:
         body = str(messages[0].get("body", ""))
@@ -111,7 +112,9 @@ def _prepare_received_messages(
     return None
 
 
-def _connect_answers(args) -> tuple[dict[str, str], CliOutcome | None]:
+def _connect_answers(
+    args: EmailCommandArguments,
+) -> tuple[dict[str, str], CliOutcome | None]:
     do_continue = args.do_continue
     state = (args.setup_state or "").strip()
     path = (args.result_file or "").strip()
@@ -205,7 +208,9 @@ def _setup_public(result: dict[str, object]) -> dict[str, object]:
     return payload
 
 
-def _email_setup_pending(args, result: dict[str, object], status: str) -> CliOutcome:
+def _email_setup_pending(
+    args: EmailCommandArguments, result: dict[str, object], status: str
+) -> CliOutcome:
     token = str(result.get("state") or "")
     nxt = str(result.get("continue") or "") or (
         continue_command(token) if token else "agentself email connect --help"
@@ -218,12 +223,14 @@ def _email_setup_pending(args, result: dict[str, object], status: str) -> CliOut
     return fail(args, 3, "missing", reason, nxt=nxt, extra=extra)
 
 
-def _email_connect_ok(args, address: str | None) -> CliOutcome:
+def _email_connect_ok(args: EmailCommandArguments, address: str | None) -> CliOutcome:
     addr = (address or "").strip() or None
     return CliSuccess({"address": addr, "status": SETUP_CONNECTED})
 
 
-def _email_connect_result(args, result: dict[str, object]) -> CliOutcome:
+def _email_connect_result(
+    args: EmailCommandArguments, result: dict[str, object]
+) -> CliOutcome:
     status = setup_status_of(result)
     if status == SETUP_CONNECTED:
         addr = str(result.get("address") or "").strip()
@@ -249,7 +256,9 @@ def _email_connect_result(args, result: dict[str, object]) -> CliOutcome:
     return _email_setup_pending(args, result, status)
 
 
-def _email_connect_channel_fail(args, exc: ChannelFailure) -> CliOutcome:
+def _email_connect_channel_fail(
+    args: EmailCommandArguments, exc: ChannelFailure
+) -> CliOutcome:
     reason = exc.reason
     if reason == "no_token":
         return fail(

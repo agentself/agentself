@@ -9,6 +9,7 @@ import secrets
 import urllib.error
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 from urllib.parse import quote
 
 from agentself.backends.email.contract import (
@@ -33,7 +34,13 @@ from agentself.internal.files import (
 )
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import PRIVATE_SETUP_OUTPUTS, option_named
+from agentself.internal.setup import (
+    PRIVATE_SETUP_OUTPUTS,
+    SetupOption,
+    SetupResult,
+    option_named,
+)
+from agentself.internal.types import MailboxMessage, MailboxView
 
 _MESSAGE_COUNT_CAP = 100
 _RETRIEVAL_BYTE_BUDGET = 4_194_304
@@ -109,7 +116,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         address: str | None = None,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_recv")
         try:
@@ -127,7 +134,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         address: str | None,
         message_id: str | None,
         include_body: bool,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         budget = [_RETRIEVAL_BYTE_BUDGET]
@@ -135,7 +142,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         seen = self._seen_dir(identity_id)
         ensure_private_dir(seen)
         wanted = (message_id or "").strip()
-        messages: list[dict[str, str]] = []
+        messages: list[MailboxMessage] = []
         for item in listed:
             mid = str(item.get("message_id") or "")
             if not mid:
@@ -174,7 +181,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_list")
         inbox = self._inbox(identity_id, credential, address)
@@ -201,7 +208,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> dict[str, object]:
+    ) -> MailboxView:
         require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
         credential = secret_or_env(credential, SOURCE_AGENTMAIL_CREDENTIAL)
@@ -214,7 +221,7 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError("no inbox")
         return mailbox_view(email, owned_address=True)
 
-    def setup_options(self) -> tuple[dict[str, object], ...]:
+    def setup_options(self) -> tuple[SetupOption, ...]:
         return OPTIONS
 
     def connect(
@@ -225,7 +232,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         address: str | None = None,
         answers: dict[str, str] | None = None,
         state: object | None = None,
-    ) -> dict[str, object]:
+    ) -> SetupResult | MailboxView:
         require_safe_token(identity_id, "identity id")
         extra = answers or {}
         wanted = (address or extra.get("address") or "").strip()
@@ -290,7 +297,7 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def _connect_existing(
         self, identity_id: str, credential: str, wanted: str
-    ) -> dict[str, object]:
+    ) -> SetupResult | MailboxView:
         live = _live_inboxes(self._listed_inboxes(credential))
         if wanted:
             target = wanted.lower()
@@ -338,7 +345,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         identity_id: str,
         answers: dict[str, str],
         continuation: dict[object, object],
-    ) -> dict[str, object]:
+    ) -> SetupResult | MailboxView:
         api_key = require_secret(str(continuation.get("api_key") or ""))
         inbox_id = str(continuation.get("inbox_id") or "").strip()
         if not inbox_id:
@@ -378,9 +385,16 @@ class AgentMailMailboxAccess(MailboxAccess):
             raise MailboxError("no inbox")
         self._write_inbox_id(identity_id, inbox_id)
         self._log.record("mailbox_connect", identity_id, None, "ok")
-        result = mailbox_view(email, owned_address=True)
-        result[PRIVATE_SETUP_OUTPUTS] = {"credential": api_key}
-        return result
+        return cast(
+            SetupResult,
+            {
+                "status": "connected",
+                "address": email,
+                "owned_address": True,
+                "needs_domain": False,
+                PRIVATE_SETUP_OUTPUTS: {"credential": api_key},
+            },
+        )
 
     def _sign_up(
         self, human_email: str, username: str
@@ -601,7 +615,7 @@ def _as_text(value: object) -> str:
     return str(value)
 
 
-def _meta(item: dict[str, object]) -> dict[str, str]:
+def _meta(item: dict[str, object]) -> MailboxMessage:
     return {
         "id": str(item.get("message_id") or ""),
         "from": _as_text(item.get("from")),

@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from agentself.email_catalog import AGENTMAIL_OPTIONS, IMAP_OPTIONS
-from agentself.internal.setup import public_setup_option, setup_option
+from agentself.internal.setup import SetupOption, public_setup_option, setup_option
 from agentself.internal.store_tools import store_required_tools
 
 ENV_PREFIX = "AGENTSELF_"
@@ -49,7 +49,7 @@ class Bind:
     custody: str = ""
     network: str = ""
     asset: str = ""
-    options: tuple[dict[str, object], ...] = ()
+    options: tuple[SetupOption, ...] = ()
     tools: tuple[str, ...] = ()
     installable_tools: tuple[str, ...] = ()
 

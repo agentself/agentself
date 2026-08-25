@@ -5,6 +5,26 @@ import sys
 from typing import Protocol, TextIO
 
 
+def _safe_label(value: str, *, fallback: str) -> str:
+    """Keep internal diagnostic labels bounded and free of arbitrary text."""
+
+    label = value.strip()
+    if not label:
+        return fallback
+    safe = "".join(
+        char
+        if (
+            "a" <= char <= "z"
+            or "A" <= char <= "Z"
+            or "0" <= char <= "9"
+            or char in "._:/-"
+        )
+        else "_"
+        for char in label
+    )
+    return safe[:80] or fallback
+
+
 def _payload(
     operation: str,
     identity_id: str | None,
@@ -27,6 +47,23 @@ class Log(Protocol):
         name: str | None,
         result: str,
     ) -> None: ...
+
+
+def record_diagnostic(log: Log, operation: str, exception: BaseException) -> None:
+    """Record only safe context for an unexpected failure.
+
+    Exception messages and traceback state are deliberately never inspected.
+    Diagnostics use the established four-field log payload so every existing
+    sink and renderer remains compatible. A broken diagnostic sink must not
+    replace the original failure.
+    """
+
+    safe_operation = _safe_label(operation, fallback="unknown")
+    exception_type = _safe_label(type(exception).__name__, fallback="Exception")
+    try:
+        log.record(safe_operation, None, None, f"unexpected:{exception_type}")
+    except Exception:
+        pass
 
 
 class MemoryLog:

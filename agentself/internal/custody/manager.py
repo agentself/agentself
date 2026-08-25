@@ -8,7 +8,7 @@ import os
 import secrets
 from collections.abc import Mapping
 from pathlib import Path
-from typing import NoReturn, Protocol
+from typing import NoReturn, Protocol, cast
 
 from agentself.backends.email.contract import MailboxAccess, MailboxError
 from agentself.backends.store.contract import (
@@ -78,7 +78,19 @@ from agentself.internal.setup import (
     public_setup_option,
     setup_status_of,
 )
-from agentself.internal.types import BoundCaller, Identity
+from agentself.internal.types import (
+    BoundCaller,
+    EmailConnectView,
+    Identity,
+    IdentityView,
+    MailboxMessage,
+    MailboxView,
+    WalletAuthorization,
+    WalletBalance,
+    WalletMaterialStatus,
+    WalletSendResult,
+    WalletView,
+)
 
 _EMAIL_VIEW_KEYS = ("address", "owned_address", "needs_domain")
 _WALLET_VIEW_KEYS = (
@@ -361,7 +373,7 @@ class CustodyManager:
         *,
         answers: dict[str, str] | None = None,
         state: str | None = None,
-    ) -> dict[str, object]:
+    ) -> EmailConnectView:
         identity = self._require_identity(caller, "email_connect", None)
         incoming = {
             key: str(value)
@@ -376,7 +388,10 @@ class CustodyManager:
             loaded = self._load_email_continuation(identity, token)
             if loaded is None:
                 self._log.record("email_connect", identity.id, None, "error")
-                return {"status": SETUP_FAILED, "reason": "unknown setup"}
+                return cast(
+                    EmailConnectView,
+                    {"status": SETUP_FAILED, "reason": "unknown setup"},
+                )
             blob, asked = loaded
             raw_value = incoming.pop("value", "").strip()
             if asked and raw_value and asked not in incoming:
@@ -384,12 +399,15 @@ class CustodyManager:
         address, credential, sources = self._resolve_email_inputs(identity, incoming)
         mailbox = self._mailbox_for(identity, "email_connect")
         try:
-            desc = mailbox.connect(
-                identity.id,
-                credential=credential,
-                address=address,
-                answers=incoming,
-                state=blob,
+            desc = cast(
+                Mapping[str, object],
+                mailbox.connect(
+                    identity.id,
+                    credential=credential,
+                    address=address,
+                    answers=incoming,
+                    state=blob,
+                ),
             )
         except MailboxError as exc:
             mapped = _channel_from_mailbox(exc)
@@ -406,14 +424,23 @@ class CustodyManager:
             view = _email_view(desc)
             self._persist_email_success(identity, view, sources.get(OPTION_ADDRESS))
             self._delete_email_continuation(identity)
-            view["status"] = SETUP_CONNECTED
+            connected: EmailConnectView = {"status": SETUP_CONNECTED}
+            if "address" in view:
+                connected["address"] = view["address"]
+            if "owned_address" in view:
+                connected["owned_address"] = view["owned_address"]
+            if "needs_domain" in view:
+                connected["needs_domain"] = view["needs_domain"]
             self._log.record("email_connect", identity.id, None, "ok")
-            return view
+            return connected
         if status == SETUP_FAILED:
             self._delete_email_continuation(identity)
             self._log.record("email_connect", identity.id, None, "error")
             reason = str(desc.get("reason") or "error")
-            return {"status": SETUP_FAILED, "reason": reason}
+            return cast(
+                EmailConnectView,
+                {"status": SETUP_FAILED, "reason": reason},
+            )
         self._persist_setup_answers(identity, mailbox, incoming)
         option = _setup_option_of(desc)
         human = (
@@ -424,16 +451,20 @@ class CustodyManager:
             desc.get("continuation"),
             str(option.get("name") or "") if option else "",
         )
-        payload: dict[str, object] = {
-            "status": status,
-            "state": next_state,
-            "human_action_required": human,
-            "continue": continue_command(next_state),
-        }
+        payload = cast(
+            EmailConnectView,
+            {
+                "status": status,
+                "state": next_state,
+                "human_action_required": human,
+                "continue": continue_command(next_state),
+            },
+        )
         if option:
             payload["option"] = public_setup_option(option)
-        if desc.get("message"):
-            payload["message"] = desc["message"]
+        message = desc.get("message")
+        if isinstance(message, str) and message:
+            payload["message"] = message
         self._log.record("email_connect", identity.id, None, "ok")
         return payload
 
@@ -467,7 +498,7 @@ class CustodyManager:
         caller: BoundCaller,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         identity, mailbox, address, token = self._email_bound(caller, "email_receive")
         resolved_id = self._resolve_mail_id(identity.id, message_id, "email_receive")
         try:
@@ -497,7 +528,7 @@ class CustodyManager:
         *,
         status: str | None = None,
         acted: bool | None = None,
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         identity, mailbox, address, token = self._email_bound(caller, "email_list")
         if status is not None and status not in ("new", "seen"):
             self._refuse("email_list", identity.id, None)
@@ -527,7 +558,7 @@ class CustodyManager:
         *,
         status: str | None = None,
         acted: bool | None = None,
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         identity = self._require_identity(caller, "email_find", None)
         normalized = query.strip()
         if (
@@ -628,22 +659,25 @@ class CustodyManager:
         caller: BoundCaller,
         message: str,
         authorization: str,
-    ) -> dict[str, object]:
+    ) -> WalletAuthorization:
         identity, wallet = self._wallet_bound(caller, "wallet_verify")
         try:
             result = wallet.verify(identity.id, message, authorization)
         except WalletError as exc:
             self._fail_wallet("wallet_verify", identity.id, exc)
         self._log.record("wallet_verify", identity.id, None, "ok")
-        picked = _pick(result, ("valid", "address", "scheme"))
+        picked = cast(
+            WalletAuthorization, _pick(result, ("valid", "address", "scheme"))
+        )
         if "valid" in picked:
             picked["valid"] = bool(picked["valid"])
-        for key in ("address", "scheme"):
-            if key in picked:
-                picked[key] = str(picked[key])
+        if "address" in picked:
+            picked["address"] = str(picked["address"])
+        if "scheme" in picked:
+            picked["scheme"] = str(picked["scheme"])
         return picked
 
-    def wallet_balance(self, caller: BoundCaller) -> dict[str, str]:
+    def wallet_balance(self, caller: BoundCaller) -> WalletBalance:
         identity, wallet = self._wallet_bound(caller, "wallet_balance")
         try:
             result = wallet.balance(identity.id)
@@ -658,7 +692,7 @@ class CustodyManager:
         to: str,
         amount: str,
         asset: str = "",
-    ) -> dict[str, str]:
+    ) -> WalletSendResult:
         identity, wallet = self._wallet_bound(caller, "wallet_send")
         try:
             used = (wallet.send(identity.id, to, amount, asset) or "").strip()
@@ -675,7 +709,7 @@ class CustodyManager:
             self._log.record("wallet_send", identity.id, None, "cannot_send")
             raise CannotSend(reason="cannot_send")
         self._log.record("wallet_send", identity.id, None, "ok")
-        result = {"asset": used}
+        result: WalletSendResult = {"asset": used}
         getter = getattr(wallet, "payment_ref", None)
         ref = (getter() or "").strip() if callable(getter) else ""
         hashed = _payment_hash(ref)
@@ -683,7 +717,7 @@ class CustodyManager:
             result["hash"] = hashed
         return result
 
-    def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]:
+    def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus:
         identity = self._require_identity(caller, "wallet_material", None)
         wallet = self._wallet_for(identity, "wallet_material")
         need = wallet.required_material()
@@ -698,7 +732,7 @@ class CustodyManager:
         self._log.record("wallet_material", identity.id, None, "ok")
         return {"ready": True, "missing": None}
 
-    def identity(self, caller: BoundCaller) -> dict[str, object]:
+    def identity(self, caller: BoundCaller) -> IdentityView:
         identity = self._require_identity(caller, "identity", None)
         mailbox = self._mailbox_for(identity, "identity")
         address, token, _sources = self._resolve_email_inputs(identity, {}, "identity")
@@ -805,7 +839,7 @@ class CustodyManager:
     def _persist_email_success(
         self,
         identity: Identity,
-        view: dict[str, object],
+        view: MailboxView,
         address_source: str | None,
     ) -> None:
         email = str(view.get("address") or "").strip()
@@ -1236,7 +1270,7 @@ def _host_tool_from(exc: BaseException) -> str | None:
 
 
 def _pick(data: object, keys: tuple[str, ...]) -> dict[str, object]:
-    if not isinstance(data, dict):
+    if not isinstance(data, Mapping):
         return {}
     return {key: data[key] for key in keys if key in data}
 
@@ -1245,7 +1279,7 @@ def _str_pick(data: object, keys: tuple[str, ...]) -> dict[str, str]:
     return {key: str(value) for key, value in _pick(data, keys).items()}
 
 
-def _setup_option_of(desc: dict[str, object]) -> dict[str, object] | None:
+def _setup_option_of(desc: Mapping[str, object]) -> dict[str, object] | None:
     option = desc.get("option")
     if isinstance(option, dict) and str(option.get("name") or "").strip():
         return dict(option)
@@ -1257,19 +1291,19 @@ def _setup_option_of(desc: dict[str, object]) -> dict[str, object] | None:
     return None
 
 
-def _email_view(desc: object) -> dict[str, object]:
-    return _pick(desc, _EMAIL_VIEW_KEYS)
+def _email_view(desc: object) -> MailboxView:
+    return cast(MailboxView, _pick(desc, _EMAIL_VIEW_KEYS))
 
 
-def _wallet_view(desc: object) -> dict[str, object]:
-    return _pick(desc, _WALLET_VIEW_KEYS)
+def _wallet_view(desc: object) -> WalletView:
+    return cast(WalletView, _pick(desc, _WALLET_VIEW_KEYS))
 
 
-def _balance_view(result: object) -> dict[str, str]:
-    return _str_pick(result, _BALANCE_KEYS)
+def _balance_view(result: object) -> WalletBalance:
+    return cast(WalletBalance, _str_pick(result, _BALANCE_KEYS))
 
 
-def _items(items: object, keys: tuple[str, ...]) -> list[dict[str, object]]:
+def _items(items: object, keys: tuple[str, ...]) -> list[MailboxMessage]:
     if not isinstance(items, list):
         return []
-    return [dict(_str_pick(item, keys)) for item in items]
+    return [cast(MailboxMessage, _str_pick(item, keys)) for item in items]
