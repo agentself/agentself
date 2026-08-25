@@ -85,7 +85,6 @@ jobs:
         run: python -m pytest
 
   test-full:
-    name: pytest (${{ matrix.os }}, ${{ matrix.python-version }})
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
