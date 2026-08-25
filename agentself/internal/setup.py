@@ -3,13 +3,18 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
-SETUP_CONNECTED = "connected"
-SETUP_INPUT_REQUIRED = "input_required"
-SETUP_ACTION_REQUIRED = "action_required"
-SETUP_PENDING = "pending"
-SETUP_FAILED = "failed"
+SetupStatus = Literal[
+    "connected", "input_required", "action_required", "pending", "failed"
+]
+SetupOptionType = Literal["string", "secret", "choice"]
+
+SETUP_CONNECTED: Literal["connected"] = "connected"
+SETUP_INPUT_REQUIRED: Literal["input_required"] = "input_required"
+SETUP_ACTION_REQUIRED: Literal["action_required"] = "action_required"
+SETUP_PENDING: Literal["pending"] = "pending"
+SETUP_FAILED: Literal["failed"] = "failed"
 SETUP_STATUSES = frozenset(
     {
         SETUP_CONNECTED,
@@ -23,9 +28,9 @@ SETUP_STATUSES = frozenset(
 OPTION_ADDRESS = "address"
 OPTION_CREDENTIAL = "credential"
 PRIVATE_SETUP_OUTPUTS = "private_outputs"
-OPTION_TYPE_STRING = "string"
-OPTION_TYPE_SECRET = "secret"
-OPTION_TYPE_CHOICE = "choice"
+OPTION_TYPE_STRING: Literal["string"] = "string"
+OPTION_TYPE_SECRET: Literal["secret"] = "secret"
+OPTION_TYPE_CHOICE: Literal["choice"] = "choice"
 
 
 class SetupAction(TypedDict):
@@ -36,12 +41,13 @@ class SetupAction(TypedDict):
 
 class SetupOption(TypedDict):
     name: str
-    type: Literal["string", "secret", "choice"]
+    type: SetupOptionType
     required: bool
     sensitive: bool
     help: str
     source: str | None
     choices: list[str]
+    default: NotRequired[str | None]
     action: NotRequired[SetupAction | None]
     persist: NotRequired[bool]
     persist_as: NotRequired[str]
@@ -56,11 +62,11 @@ class SetupResult(TypedDict, total=False):
     must never include it.
     """
 
-    status: str
+    status: SetupStatus
     address: str | None
     owned_address: bool
     needs_domain: bool
-    option: dict[str, object]
+    option: SetupOption
     continuation: object
     private_outputs: Mapping[str, str]
     reason: str
@@ -87,7 +93,7 @@ _PUBLIC_OPTION_KEYS = (
 def setup_option(
     *,
     name: str,
-    type: str,
+    type: SetupOptionType,
     required: bool = False,
     sensitive: bool = False,
     default: str | None = None,
@@ -98,24 +104,27 @@ def setup_option(
     persist: bool = False,
     persist_as: str = "",
     runtime_only: bool = False,
-) -> dict[str, Any]:
-    return {
-        "name": name,
-        "type": type,
-        "required": bool(required),
-        "sensitive": bool(sensitive),
-        "default": default,
-        "choices": list(choices or ()),
-        "source": source or "",
-        "help": help or "",
-        "action": action,
-        "persist": bool(persist),
-        "persist_as": persist_as or "",
-        "runtime_only": bool(runtime_only),
-    }
+) -> SetupOption:
+    return cast(
+        SetupOption,
+        {
+            "name": name,
+            "type": type,
+            "required": bool(required),
+            "sensitive": bool(sensitive),
+            "default": default,
+            "choices": list(choices or ()),
+            "source": source or "",
+            "help": help or "",
+            "action": action,
+            "persist": bool(persist),
+            "persist_as": persist_as or "",
+            "runtime_only": bool(runtime_only),
+        },
+    )
 
 
-def public_setup_option(option: dict[str, object]) -> dict[str, object]:
+def public_setup_option(option: Mapping[str, object]) -> dict[str, object]:
     return {key: option[key] for key in _PUBLIC_OPTION_KEYS if key in option}
 
 
@@ -123,10 +132,10 @@ def option_named(
     options: Sequence[Mapping[str, Any]],
     name: str,
     **updates: object,
-) -> dict[str, Any]:
+) -> SetupOption:
     for item in options:
         if item.get("name") == name:
-            return {**item, **updates}
+            return cast(SetupOption, {**item, **updates})
     raise KeyError(name)
 
 
@@ -139,7 +148,7 @@ def credential_option(
     persist: bool = False,
     persist_as: str = "",
     runtime_only: bool = False,
-) -> dict[str, Any]:
+) -> SetupOption:
     return setup_option(
         name=OPTION_CREDENTIAL,
         type=OPTION_TYPE_SECRET,
@@ -163,7 +172,7 @@ def address_option(
     persist: bool = False,
     persist_as: str = "",
     runtime_only: bool = False,
-) -> dict[str, Any]:
+) -> SetupOption:
     return setup_option(
         name=OPTION_ADDRESS,
         type=OPTION_TYPE_CHOICE if choices else OPTION_TYPE_STRING,
@@ -178,7 +187,7 @@ def address_option(
     )
 
 
-def encode_state(payload: dict[str, object]) -> str:
+def encode_state(payload: Mapping[str, object]) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -199,12 +208,12 @@ def continue_command(state: str) -> str:
     return f"agentself email connect --continue --state {state} --result-file PATH"
 
 
-def setup_status_of(payload: object) -> str:
+def setup_status_of(payload: object) -> SetupStatus:
     if not isinstance(payload, dict):
         return SETUP_FAILED
     status = str(payload.get("status") or "").strip()
     if status in SETUP_STATUSES:
-        return status
+        return cast(SetupStatus, status)
     if payload.get("owned_address") and str(payload.get("address") or "").strip():
         return SETUP_CONNECTED
     return SETUP_INPUT_REQUIRED

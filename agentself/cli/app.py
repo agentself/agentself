@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 import sys
+from typing import cast
 
 from agentself import __version__
 from agentself.cli.outcomes import CliFailure, CliOutcome, CliRaw, CliSuccess
@@ -13,6 +14,7 @@ from agentself.cli.runtime import (
     INSTALL_TOOLS_NEXT,
     bind_error,
     channel_next,
+    cli_log,
     fail,
     fail_missing_tool,
     identity_fail,
@@ -21,6 +23,7 @@ from agentself.cli.runtime import (
     runtime_paths,
     store_fail,
 )
+from agentself.cli.types import CommandArguments, Handler
 from agentself.host import UnknownBind
 from agentself.internal.custody.errors import (
     CannotAuthorize,
@@ -37,6 +40,7 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
+from agentself.internal.log import record_diagnostic
 from agentself.internal.text import utf8_bytes
 from agentself.local import IdentityStateError, default_identity_dir, redact_secrets
 
@@ -79,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     as_raw = _has_flag(raw, "--raw")
     parser = _parser()
     try:
-        args = parser.parse_args(raw)
+        args = cast(CommandArguments, parser.parse_args(raw))
     except SystemExit as exc:
         code = exc.code
         return 0 if code is None else int(code)
@@ -158,12 +162,13 @@ def main(argv: list[str] | None = None) -> int:
             outcome = fail(args, 1, "error", detail, nxt=nxt)
         else:
             outcome = fail(args, 1, "error")
-    except Exception:
+    except Exception as exc:
+        record_diagnostic(cli_log(), ":".join(spec.path), exc)
         outcome = fail(args, 1, "error")
     return _render(outcome)
 
 
-def _command_path(args) -> tuple[str, ...]:
+def _command_path(args: CommandArguments) -> tuple[str, ...]:
     command = getattr(args, "command", None)
     if not command:
         return ("show",)
@@ -173,14 +178,20 @@ def _command_path(args) -> tuple[str, ...]:
     return (command,)
 
 
-def _load_handler(spec: CommandSpec):
-    assert spec.handler is not None
+def _load_handler(spec: CommandSpec) -> Handler:
+    if spec.handler is None:
+        raise TypeError(f"command {spec.path!r} has no handler")
     module_name, _, func_name = spec.handler.partition(":")
+    if not module_name or not func_name:
+        raise TypeError(f"invalid handler reference for {spec.path!r}")
     module = importlib.import_module(module_name)
-    return getattr(module, func_name)
+    loaded = getattr(module, func_name, None)
+    if not callable(loaded):
+        raise TypeError(f"handler {spec.handler!r} is not callable")
+    return cast(Handler, loaded)
 
 
-def _raw_conflict(args, spec: CommandSpec) -> CliFailure | None:
+def _raw_conflict(args: CommandArguments, spec: CommandSpec) -> CliFailure | None:
     if not getattr(args, "as_raw", False):
         return None
     if not spec.raw:

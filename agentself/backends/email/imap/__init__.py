@@ -26,7 +26,8 @@ from agentself.email_catalog import SOURCE_IMAP_CREDENTIAL
 from agentself.internal.files import IdentityBusy, exclusive
 from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
-from agentself.internal.setup import option_named
+from agentself.internal.setup import SetupOption, SetupResult, option_named
+from agentself.internal.types import MailboxMessage, MailboxView
 
 _IMAP_PORT = 993
 _SMTP_PORT = 587
@@ -145,11 +146,11 @@ class ImapMailboxAccess(MailboxAccess):
         address: str | None = None,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_recv")
         inbox = self._inbox(address)
-        messages: builtins.list[dict[str, str]] = []
+        messages: builtins.list[MailboxMessage] = []
         try:
             with exclusive(self._root):
                 with self._imap_session(inbox, credential) as box:
@@ -168,11 +169,11 @@ class ImapMailboxAccess(MailboxAccess):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         require_safe_token(identity_id, "identity id")
         credential = self._require_credential(identity_id, credential, "mailbox_list")
         inbox = self._inbox(address)
-        items: list[dict[str, str]] = []
+        items: list[MailboxMessage] = []
         try:
             with self._imap_session(inbox, credential) as box:
                 budget = [_OPERATION_BYTES]
@@ -203,14 +204,14 @@ class ImapMailboxAccess(MailboxAccess):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> dict[str, object]:
+    ) -> MailboxView:
         require_safe_token(identity_id, "identity id")
         wanted = (address or "").strip()
         if wanted:
             return mailbox_view(self._inbox(wanted), owned_address=True)
         return mailbox_view()
 
-    def setup_options(self) -> tuple[dict[str, object], ...]:
+    def setup_options(self) -> tuple[SetupOption, ...]:
         return OPTIONS
 
     def connect(
@@ -221,7 +222,7 @@ class ImapMailboxAccess(MailboxAccess):
         address: str | None = None,
         answers: dict[str, str] | None = None,
         state: object | None = None,
-    ) -> dict[str, object]:
+    ) -> SetupResult | MailboxView:
         require_safe_token(identity_id, "identity id")
         del state
         extra = answers or {}
@@ -312,7 +313,7 @@ class ImapMailboxAccess(MailboxAccess):
 
     def _receive_box(
         self, box: ImapBox, message_id: str | None, include_body: bool
-    ) -> builtins.list[dict[str, str]]:
+    ) -> builtins.list[MailboxMessage]:
         wanted = (message_id or "").strip()
         if wanted:
             parsed = _take(
@@ -325,7 +326,7 @@ class ImapMailboxAccess(MailboxAccess):
             if parsed is not None:
                 parsed["status"] = "seen"
             return [] if parsed is None else [parsed]
-        messages: list[dict[str, str]] = []
+        messages: list[MailboxMessage] = []
         budget = [_OPERATION_BYTES]
         for uid in _bounded_uids(box, unseen_only=True)[:_UNSEEN_RECV_CAP]:
             parsed = _take(
@@ -349,7 +350,7 @@ def _take(
     mark: bool,
     headers_only: bool = False,
     budget: list[int] | None = None,
-) -> dict[str, str] | None:
+) -> MailboxMessage | None:
     if not _uid_ok(uid):
         return None
     raw = box.fetch(uid, headers_only=headers_only)
@@ -369,7 +370,7 @@ def _take(
     return parsed
 
 
-def _parse(raw: bytes) -> dict[str, str]:
+def _parse(raw: bytes) -> MailboxMessage:
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     return {
         "id": "",

@@ -7,7 +7,17 @@ from typing import Protocol
 from agentself.bind import bind_from_env
 from agentself.internal.custody.errors import UnboundCaller
 from agentself.internal.log import Log
-from agentself.internal.types import BoundCaller, Identity
+from agentself.internal.types import (
+    BoundCaller,
+    EmailConnectView,
+    Identity,
+    IdentityView,
+    MailboxMessage,
+    WalletAuthorization,
+    WalletBalance,
+    WalletMaterialStatus,
+    WalletSendResult,
+)
 
 
 class CustodyManager(Protocol):
@@ -54,7 +64,7 @@ class CustodyManager(Protocol):
         *,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, object]]: ...
+    ) -> builtins.list[MailboxMessage]: ...
 
     def email_list(
         self,
@@ -62,7 +72,7 @@ class CustodyManager(Protocol):
         *,
         status: str | None = None,
         acted: bool | None = None,
-    ) -> builtins.list[dict[str, object]]: ...
+    ) -> builtins.list[MailboxMessage]: ...
 
     def email_find(
         self,
@@ -71,7 +81,7 @@ class CustodyManager(Protocol):
         *,
         status: str | None = None,
         acted: bool | None = None,
-    ) -> builtins.list[dict[str, object]]: ...
+    ) -> builtins.list[MailboxMessage]: ...
 
     def email_mark(
         self, caller: BoundCaller, message_id: str, *, acted: bool
@@ -83,7 +93,7 @@ class CustodyManager(Protocol):
         *,
         answers: dict[str, str] | None = None,
         state: str | None = None,
-    ) -> dict[str, object]: ...
+    ) -> EmailConnectView: ...
 
     def wallet_address(self, caller: BoundCaller) -> str: ...
 
@@ -94,9 +104,9 @@ class CustodyManager(Protocol):
         caller: BoundCaller,
         message: str,
         authorization: str,
-    ) -> dict[str, object]: ...
+    ) -> WalletAuthorization: ...
 
-    def wallet_balance(self, caller: BoundCaller) -> dict[str, str]: ...
+    def wallet_balance(self, caller: BoundCaller) -> WalletBalance: ...
 
     def wallet_send(
         self,
@@ -104,11 +114,11 @@ class CustodyManager(Protocol):
         to: str,
         amount: str,
         asset: str = "",
-    ) -> dict[str, str]: ...
+    ) -> WalletSendResult: ...
 
-    def wallet_material_status(self, caller: BoundCaller) -> dict[str, object]: ...
+    def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus: ...
 
-    def identity(self, caller: BoundCaller) -> dict[str, object]: ...
+    def identity(self, caller: BoundCaller) -> IdentityView: ...
 
 
 class Client:
@@ -184,7 +194,7 @@ class Client:
         *,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         caller = self._require_caller()
         return self._manager.email_receive(
             caller, message_id=message_id, include_body=include_body
@@ -192,7 +202,7 @@ class Client:
 
     def email_list(
         self, *, status: str | None = None, acted: bool | None = None
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         caller = self._require_caller()
         return self._manager.email_list(caller, status=status, acted=acted)
 
@@ -202,7 +212,7 @@ class Client:
         *,
         status: str | None = None,
         acted: bool | None = None,
-    ) -> builtins.list[dict[str, object]]:
+    ) -> builtins.list[MailboxMessage]:
         caller = self._require_caller()
         return self._manager.email_find(caller, query, status=status, acted=acted)
 
@@ -215,7 +225,7 @@ class Client:
         *,
         answers: dict[str, str] | None = None,
         state: str | None = None,
-    ) -> dict[str, object]:
+    ) -> EmailConnectView:
         caller = self._require_caller()
         return self._manager.email_connect(caller, answers=answers, state=state)
 
@@ -227,23 +237,23 @@ class Client:
         caller = self._require_caller()
         return self._manager.wallet_authorize(caller, message)
 
-    def wallet_verify(self, message: str, authorization: str) -> dict[str, object]:
+    def wallet_verify(self, message: str, authorization: str) -> WalletAuthorization:
         caller = self._require_caller()
         return self._manager.wallet_verify(caller, message, authorization)
 
-    def wallet_balance(self) -> dict[str, str]:
+    def wallet_balance(self) -> WalletBalance:
         caller = self._require_caller()
         return self._manager.wallet_balance(caller)
 
-    def wallet_send(self, to: str, amount: str, asset: str = "") -> dict[str, str]:
+    def wallet_send(self, to: str, amount: str, asset: str = "") -> WalletSendResult:
         caller = self._require_caller()
         return self._manager.wallet_send(caller, to, amount, asset)
 
-    def wallet_material_status(self) -> dict[str, object]:
+    def wallet_material_status(self) -> WalletMaterialStatus:
         caller = self._require_caller()
         return self._manager.wallet_material_status(caller)
 
-    def identity(self) -> dict[str, object]:
+    def identity(self) -> IdentityView:
         caller = self._require_caller()
         return self._manager.identity(caller)
 

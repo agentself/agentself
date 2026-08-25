@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from typing import cast
 
-from agentself.internal.setup import SETUP_FAILED, SETUP_INPUT_REQUIRED
+from agentself.internal.setup import (
+    SETUP_FAILED,
+    SETUP_INPUT_REQUIRED,
+    SetupOption,
+    SetupResult,
+    SetupStatus,
+)
+from agentself.internal.types import MailboxMessage, MailboxView
 
 
 class MailboxError(Exception):
@@ -35,8 +43,8 @@ def mailbox_view(
     owned_address: bool = False,
     needs_domain: bool = False,
     status: str | None = None,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
+) -> MailboxView:
+    payload: MailboxView = {
         "address": address,
         "owned_address": owned_address,
         "needs_domain": needs_domain,
@@ -47,14 +55,14 @@ def mailbox_view(
 
 
 def setup_needed(
-    option: dict[str, object] | None = None,
+    option: SetupOption | None = None,
     *,
-    status: str = SETUP_INPUT_REQUIRED,
+    status: SetupStatus = SETUP_INPUT_REQUIRED,
     human_action_required: bool = False,
     message: str = "",
     continuation: object | None = None,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
+) -> SetupResult:
+    payload: SetupResult = {
         "status": status,
         "address": None,
         "owned_address": False,
@@ -62,7 +70,7 @@ def setup_needed(
         "human_action_required": human_action_required,
     }
     if option:
-        payload["option"] = dict(option)
+        payload["option"] = cast(SetupOption, dict(option))
     if message:
         payload["message"] = message
     if continuation is not None:
@@ -70,7 +78,7 @@ def setup_needed(
     return payload
 
 
-def setup_failed(reason: str = "error") -> dict[str, object]:
+def setup_failed(reason: str = "error") -> SetupResult:
     return {
         "status": SETUP_FAILED,
         "address": None,
@@ -103,7 +111,7 @@ class MailboxAccess(ABC):
         address: str | None = None,
         message_id: str | None = None,
         include_body: bool = True,
-    ) -> list[dict[str, str]]:
+    ) -> list[MailboxMessage]:
         """May consume new mail."""
 
     @abstractmethod
@@ -113,7 +121,7 @@ class MailboxAccess(ABC):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> list[dict[str, str]]:
+    ) -> list[MailboxMessage]:
         """Metadata, not a mailbox product."""
 
     @abstractmethod
@@ -123,9 +131,9 @@ class MailboxAccess(ABC):
         *,
         credential: str | None = None,
         address: str | None = None,
-    ) -> dict[str, object]: ...
+    ) -> MailboxView: ...
 
-    def setup_options(self) -> tuple[dict[str, object], ...]:
+    def setup_options(self) -> tuple[SetupOption, ...]:
         return ()
 
     def connect(
@@ -136,7 +144,7 @@ class MailboxAccess(ABC):
         address: str | None = None,
         answers: dict[str, str] | None = None,
         state: object | None = None,
-    ) -> dict[str, object]:
+    ) -> SetupResult | MailboxView:
         """Return a mailbox view when connected, or setup_needed otherwise.
 
         Incomplete setup may return opaque `continuation` for the next call.
