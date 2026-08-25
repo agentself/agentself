@@ -86,6 +86,15 @@ def test_ci_host_tool_downloads_have_pinned_digests() -> None:
         assert len(found) == count, (name, found)
 
 
+def test_publish_grants_called_test_workflow_permissions() -> None:
+    """Reusable workflows cannot request more than the caller grants."""
+
+    publish_jobs = _jobs(WORKFLOWS[1].read_text(encoding="utf-8"))
+    assert "uses: ./.github/workflows/test.yml" in publish_jobs["ci"]
+    assert "contents: read" in publish_jobs["ci"]
+    assert "actions: write" in publish_jobs["ci"]
+
+
 def test_publish_is_gated_on_tested_dist_for_that_sha() -> None:
     publish = WORKFLOWS[1].read_text(encoding="utf-8")
     test = WORKFLOWS[0].read_text(encoding="utf-8")
