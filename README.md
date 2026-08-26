@@ -10,6 +10,17 @@ Linux, macOS, and Windows. Python 3.11+. 0.2.1 is a patch of the agent-native
 CLI (`cli: 2`). Review [COMPATIBILITY.md](COMPATIBILITY.md) before automating
 against the CLI.
 
+## Set up with your agent
+
+Paste this into any agent that can run commands:
+
+```text
+Set up agentself for me. Install the CLI, install the skill, and create a
+local identity. Follow https://github.com/agentself/agentself. Email is
+optional. Do not print secrets. When you are done, tell me what I have
+and what I can do next.
+```
+
 ## Install
 
 ```bash
