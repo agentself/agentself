@@ -94,6 +94,14 @@ def test_malformed_typed_statement_refuses_instead_of_personal() -> None:
         _encode_statement(blob)
 
 
+def test_invalid_typed_shapes_refuse_instead_of_personal() -> None:
+    blob = json.dumps({"domain": [], "types": {"Mail": []}, "message": {}})
+    assert _typed_statement(blob) is not None
+    assert _statement_scheme(blob) == "eip712"
+    with pytest.raises(CannotAuthorize):
+        _encode_statement(blob)
+
+
 def test_cli_typed_authorize_verifies_and_names_scheme(tmp_path: Path) -> None:
     env = _init(tmp_path)
     path = tmp_path / "typed.json"
@@ -128,7 +136,8 @@ def test_cli_typed_authorize_verifies_and_names_scheme(tmp_path: Path) -> None:
 def test_cli_login_text_stays_personal(tmp_path: Path) -> None:
     env = _init(tmp_path)
     path = tmp_path / "login.txt"
-    path.write_text(SIWE, encoding="utf-8")
+    # write_text would expand LF to CRLF on Windows and break recover.
+    path.write_bytes(SIWE.encode("utf-8"))
     auth = json.loads(
         run_cli(["--json", "wallet", "authorize", "--file", str(path)], env).stdout
     )

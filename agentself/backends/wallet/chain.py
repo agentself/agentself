@@ -405,23 +405,15 @@ def _typed_statement(message: str) -> dict[str, object] | None:
         return None
     if not isinstance(data, dict):
         return None
-    domain = data.get("domain")
-    types = data.get("types")
-    payload = data.get("message")
-    if not isinstance(domain, dict) or not isinstance(types, dict):
-        return None
-    if not types or not isinstance(payload, dict):
-        return None
-    primary = data.get("primaryType")
-    if primary is not None and not isinstance(primary, str):
+    if not {"domain", "types", "message"} <= data.keys():
         return None
     statement: dict[str, object] = {
-        "domain": domain,
-        "types": types,
-        "message": payload,
+        "domain": data["domain"],
+        "types": data["types"],
+        "message": data["message"],
     }
-    if isinstance(primary, str) and primary.strip():
-        statement["primaryType"] = primary
+    if "primaryType" in data:
+        statement["primaryType"] = data["primaryType"]
     return statement
 
 
@@ -435,7 +427,7 @@ def _encode_statement(message: str) -> SignableMessage:
         return encode_defunct(text=message)
     try:
         return encode_typed_data(full_message=typed)
-    except (TypeError, ValueError, KeyError, ArithmeticError) as exc:
+    except Exception as exc:
         # A typed-shaped file must not silently become a personal signature.
         raise CannotAuthorize() from exc
 
