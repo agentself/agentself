@@ -90,6 +90,7 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "--file" in auth.stdout
     assert "signature to attach" in auth.stdout
     assert "not a send" in auth.stdout
+    assert "typed statement" in auth.stdout
     assert "--print" not in auth.stdout
 
     email_send = run_cli(["email", "send", "--help"], env)

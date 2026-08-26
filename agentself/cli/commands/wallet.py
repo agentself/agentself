@@ -42,10 +42,11 @@ def authorize_wallet(args, vault: Path) -> CliOutcome:
     addr = access.wallet_address()
     view = access.identity().get("wallet")
     wallet = view if isinstance(view, dict) else {}
+    checked = access.wallet_verify(message, token)
     return CliSuccess(
         {
             "address": addr,
-            "scheme": str(wallet.get("scheme") or ""),
+            "scheme": str(checked.get("scheme") or wallet.get("scheme") or ""),
             "network": str(wallet.get("chain") or ""),
             "message_sha256": sha256_text(message),
             "authorization": token,

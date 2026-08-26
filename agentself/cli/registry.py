@@ -638,7 +638,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         raw=True,
         description=(
             "Prefer --file PATH or --file -. The output is the signature to attach, "
-            "for example an HTTP header or body. It is not a send."
+            "for example an HTTP header or body. It is not a send. "
+            "A typed statement (domain, types, message) is authorized as typed data; "
+            "other files stay a personal signature. Login text uses this verb."
         ),
         epilog="Examples:\n  agentself wallet authorize --file PATH\n  agentself wallet authorize --file - --raw",
     ),

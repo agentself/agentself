@@ -28,6 +28,11 @@ Within a CLI schema version, JSON consumers should ignore unknown object keys.
 For example, mail header objects may gain additive metadata such as local task
 state while retaining provider read state in `status`.
 
+`wallet authorize` and `wallet verify` report `scheme` for the statement
+that was authorized. Chain wallets may use `eip191` or `eip712`. Consumers
+that assumed a single backend-wide scheme should read the per-command
+value.
+
 Mail items retain the provider `id`; compact identity-local `ref` values are an
 additive convenience. Their private mapping is copied by backup/restore, while
 its on-disk filename layout is not a compatibility promise.

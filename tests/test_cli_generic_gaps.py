@@ -213,6 +213,8 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     assert "--raw" in start
     assert "never put the message on argv" in common
     assert "agentself wallet authorize --file PATH" in common
+    assert "Do not create another wallet" in common
+    assert "typed statement" in common
     assert "secret list" in common
     assert "store list" not in common
     assert "agentself store" not in common
