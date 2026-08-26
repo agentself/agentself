@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `wallet authorize` and `wallet verify` accept a typed statement
+  (`domain`, `types`, `message`) as typed data. Other files stay a
+  personal signature. Login text uses the same verb. The JSON `scheme`
+  names the encoding used for that statement.
+
 ## 0.2.1 - 2026-08-25
 
 - Backend discovery names each canonical command group and derives its verbs

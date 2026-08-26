@@ -5,10 +5,11 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from eth_account import Account
-from eth_account.messages import encode_defunct
+from eth_account.messages import SignableMessage, encode_defunct, encode_typed_data
 from eth_utils import keccak, to_checksum_address
 
 from agentself.backends.wallet.contract import (
+    CannotAuthorize,
     CannotSend,
     WalletAccess,
     WalletError,
@@ -86,7 +87,7 @@ class ChainWalletAccess(WalletAccess):
 
     def authorize(self, identity_id: str, message: str) -> str:
         require_safe_token(identity_id, "identity id")
-        signed = self._account().sign_message(encode_defunct(text=message))
+        signed = self._account().sign_message(_encode_statement(message))
         sig = hex_0x(signed.signature.hex())
         self._log.record("wallet_authorize", identity_id, None, "ok")
         return sig
@@ -153,16 +154,17 @@ class ChainWalletAccess(WalletAccess):
     ) -> WalletAuthorization:
         require_safe_token(identity_id, "identity id")
         expected = self._derived_address()
+        scheme = _statement_scheme(message)
         try:
             recovered = Account.recover_message(
-                encode_defunct(text=message),
+                _encode_statement(message),
                 signature=_normalize_signature(authorization),
             )
             valid = to_checksum_address(recovered) == to_checksum_address(expected)
         except Exception:
             valid = False
         self._log.record("wallet_verify", identity_id, None, "ok" if valid else "error")
-        return {"valid": valid, "address": expected, "scheme": "eip191"}
+        return {"valid": valid, "address": expected, "scheme": scheme}
 
     def _send_once(self, identity_id: str, to: str, amount: str) -> None:
         addr = self._derived_address()
@@ -392,6 +394,42 @@ class ChainWalletAccess(WalletAccess):
         if self._rpc is not None:
             return self._rpc.request(method, params)
         return self._http_client().request(method, params)
+
+
+def _typed_statement(message: str) -> dict[str, object] | None:
+    if not message.lstrip().startswith("{"):
+        return None
+    try:
+        data = json.loads(message)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not {"domain", "types", "message"} <= data.keys():
+        return None
+    statement: dict[str, object] = {
+        "domain": data["domain"],
+        "types": data["types"],
+        "message": data["message"],
+    }
+    if "primaryType" in data:
+        statement["primaryType"] = data["primaryType"]
+    return statement
+
+
+def _statement_scheme(message: str) -> str:
+    return "eip712" if _typed_statement(message) is not None else "eip191"
+
+
+def _encode_statement(message: str) -> SignableMessage:
+    typed = _typed_statement(message)
+    if typed is None:
+        return encode_defunct(text=message)
+    try:
+        return encode_typed_data(full_message=typed)
+    except Exception as exc:
+        # A typed-shaped file must not silently become a personal signature.
+        raise CannotAuthorize() from exc
 
 
 def _normalize_key(key_hex: str) -> str:

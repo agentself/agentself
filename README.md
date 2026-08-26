@@ -106,6 +106,12 @@ or `--raw` when a caller needs exact body bytes (one ref or provider ID).
 `wallet show` write the address; `wallet authorize` writes the signature
 or authorization token. Unsupported `--raw` is a JSON refusal, exit 2.
 
+`wallet authorize --file PATH` authorizes the host's exact statement with
+this identity. A typed statement (`domain`, `types`, `message`) is
+authorized as typed data; other files, including login text, stay a
+personal signature. The JSON `scheme` names that encoding. Do not create
+another wallet to sign.
+
 Stdin is never implicit. Pass `--file -`, `--result-file -`, or
 `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
 

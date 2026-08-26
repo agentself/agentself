@@ -41,9 +41,9 @@ agentself show
 
 Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
-`show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds.
+`show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds. `wallet balance` is the current amount. It does not name who paid or when.
 
-Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. Output is JSON by default; `--raw` emits the signature or authorization token. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
+Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. A typed statement (`domain`, `types`, `message`) is authorized as typed data; other files stay a personal signature. Login text uses this same verb and this identity. Do not create another wallet. Output is JSON by default; `--raw` emits the signature or authorization token. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
 
 List secret names with `agentself secret list`. Names only; never values. `store` is the backend (sops/pass), not a verb.
 
