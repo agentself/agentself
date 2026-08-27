@@ -544,7 +544,14 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
         monkeypatch,
         capsys,
         env,
-        ["wallet", "authorize", "--file", value_file(tmp_path, "hello"), "--out", str(dest)],
+        [
+            "wallet",
+            "authorize",
+            "--file",
+            value_file(tmp_path, "hello"),
+            "--out",
+            str(dest),
+        ],
         "wallet_authorize_out",
     )
     assert "authorization" not in authored

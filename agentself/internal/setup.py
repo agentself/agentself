@@ -220,7 +220,9 @@ def setup_status_of(payload: object) -> SetupStatus:
     return SETUP_INPUT_REQUIRED
 
 
-def human_action_required_of(payload: object, status: SetupStatus | None = None) -> bool:
+def human_action_required_of(
+    payload: object, status: SetupStatus | None = None
+) -> bool:
     """Derive human_action_required from status unless the backend value matches."""
 
     resolved = status if status is not None else setup_status_of(payload)

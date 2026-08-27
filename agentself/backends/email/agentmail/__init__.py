@@ -415,7 +415,8 @@ class AgentMailMailboxAccess(MailboxAccess):
             return {}, _signup_failure("backend_unavailable", retryable=True)
         if 200 <= status < 300:
             return _object(body, "signup failed"), None
-        return {}, _signup_failure(*_signup_category(status))
+        reason, retryable = _signup_category(status)
+        return {}, _signup_failure(reason, retryable=retryable)
 
     def _verify(self, api_key: str, otp: str) -> bool:
         payload = json.dumps({"otp_code": otp}).encode("utf-8")

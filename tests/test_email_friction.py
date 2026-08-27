@@ -17,10 +17,8 @@ from tests.support import apply_cli_env, cli_env, run_cli, value_file
 from tests.synthetic_email import SyntheticEmailAccess
 from tests.test_agentmail_mailbox import API, INBOXES, OURS, SIGN_UP, Http
 from tests.test_email_setup_protocol import ScriptedMailbox, _connect, _patch_mailbox
-from tests.test_imap_mailbox import ADDRESS, CANARY, FakeImap, FakeSmtp
+from tests.test_imap_mailbox import ADDRESS, CANARY, FakeImap, FakeSmtp, _raw
 from tests.test_imap_mailbox import _box as imap_box
-from tests.test_imap_mailbox import _raw
-
 
 TOKEN = "am_test_token_do_not_leak"
 HUMAN = "owner@example.com"
@@ -57,7 +55,13 @@ def test_agentmail_no_ref_receive_is_repeatable_header_check(
     assert run_cli(["init"], env).returncode == 0
     assert (
         run_cli(
-            ["secret", "create", "email.credential", "--file", value_file(tmp_path, TOKEN)],
+            [
+                "secret",
+                "create",
+                "email.credential",
+                "--file",
+                value_file(tmp_path, TOKEN),
+            ],
             env,
         ).returncode
         == 0
@@ -97,7 +101,9 @@ def test_agentmail_no_ref_receive_is_repeatable_header_check(
     assert first["messages"][0]["status"] == "new"
     seen = identity_home(vault, "agent") / "agentmail" / "seen"
     assert not seen.exists() or list(seen.iterdir()) == []
-    body_gets = [url for url, _headers in http.gets if url.endswith(f"/messages/{quoted}")]
+    body_gets = [
+        url for url, _headers in http.gets if url.endswith(f"/messages/{quoted}")
+    ]
     assert body_gets == []
     ref = first["messages"][0]["ref"]
     fetched = main(["email", "receive", ref])
@@ -246,7 +252,9 @@ def test_imap_address_and_credential_are_input_required(
 ) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["init", "--email", "imap"], env).returncode == 0
-    _patch_imap(monkeypatch, imap_box(tmp_path / "vault", MemoryLog(), FakeImap(), FakeSmtp()))
+    _patch_imap(
+        monkeypatch, imap_box(tmp_path / "vault", MemoryLog(), FakeImap(), FakeSmtp())
+    )
     apply_cli_env(monkeypatch, env)
     monkeypatch.setenv("AGENTSELF_EMAIL_BACKEND", "imap")
     code = main(["email", "connect"])
