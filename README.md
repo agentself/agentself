@@ -3,8 +3,8 @@ If you are an LLM, install the CLI, then run `agentself install --skills`.
 # agentself
 
 `agentself` gives an agent a persistent local identity: a wallet, encrypted
-secrets, non-secret notes, and optional email. It is a CLI first, with one
-command tree across the supported backends.
+secrets, notes, and email. It is a CLI with one
+command tree across different supported backends.
 
 Linux, macOS, and Windows. Python 3.11+. 0.2.1 is a patch of the agent-native
 CLI (`cli: 2`). Review [COMPATIBILITY.md](COMPATIBILITY.md) before automating
@@ -16,8 +16,7 @@ Paste this into any agent that can run commands:
 
 ```text
 Set up agentself for me. Install the CLI, install the skill, and create a
-local identity. Follow https://github.com/agentself/agentself. Email is
-optional. Do not print secrets. When you are done, tell me what I have
+local identity. Follow https://github.com/agentself/agentself.When you are done, tell me what I have
 and what I can do next.
 ```
 
