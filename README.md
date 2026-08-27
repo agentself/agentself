@@ -36,11 +36,11 @@ python -m pip install --user agentself
 ```bash
 agentself install --skills
 agentself install --tools
-agentself --identity-dir PATH init
-agentself --identity-dir PATH wallet address
-agentself --identity-dir PATH secret create API_TOKEN --file ./api-token.txt
-agentself --identity-dir PATH note set handoff --file ./handoff.txt
-agentself --identity-dir PATH email connect
+agentself init
+agentself wallet address
+agentself secret create API_TOKEN --file ./api-token.txt
+agentself PATH note set handoff --file ./handoff.txt
+agentself PATH email connect
 ```
 
 Those commands emit JSON. `init` creates one identity directory. Run
