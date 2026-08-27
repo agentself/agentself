@@ -16,8 +16,8 @@ Paste this into any agent that can run commands:
 
 ```text
 Set up agentself for me. Install the CLI, install the skill, and create a
-local identity. Follow https://github.com/agentself/agentself.When you are done, tell me what I have
-and what I can do next.
+local identity. Follow https://github.com/agentself/agentself. When you are done,
+tell me what I have and what I can do next.
 ```
 
 ## Install
