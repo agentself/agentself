@@ -338,6 +338,6 @@ def message_from_args(args) -> tuple[str | None, str | None]:
         args.message,
         getattr(args, "from_file", "") or "",
         both_error="message and --file",
-        strip_newline=True,
+        strip_newline=False,
         empty_is_missing=True,
     )

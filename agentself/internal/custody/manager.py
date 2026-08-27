@@ -69,12 +69,12 @@ from agentself.internal.setup import (
     OPTION_ADDRESS,
     OPTION_CREDENTIAL,
     PRIVATE_SETUP_OUTPUTS,
-    SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
     SETUP_FAILED,
     continue_command,
     decode_state,
     encode_state,
+    human_action_required_of,
     public_setup_option,
     setup_status_of,
 )
@@ -437,15 +437,19 @@ class CustodyManager:
             self._delete_email_continuation(identity)
             self._log.record("email_connect", identity.id, None, "error")
             reason = str(desc.get("reason") or "error")
-            return cast(
-                EmailConnectView,
-                {"status": SETUP_FAILED, "reason": reason},
-            )
+            failed: EmailConnectView = {"status": SETUP_FAILED, "reason": reason}
+            message = desc.get("message")
+            if isinstance(message, str) and message:
+                failed["message"] = message
+            if "retryable" in desc:
+                failed["retryable"] = bool(desc.get("retryable"))
+            option = _setup_option_of(desc)
+            if option:
+                failed["option"] = public_setup_option(option)
+            return failed
         self._persist_setup_answers(identity, mailbox, incoming)
         option = _setup_option_of(desc)
-        human = (
-            bool(desc.get("human_action_required")) or status == SETUP_ACTION_REQUIRED
-        )
+        human = human_action_required_of(desc, status)
         next_state = self._store_email_continuation(
             identity,
             desc.get("continuation"),

@@ -557,6 +557,7 @@ def test_connect_no_token_zero_http(vault):
     mb = _box(vault, log, http)
     desc = mb.connect(PRINCIPAL)
     assert desc["status"] == "input_required"
+    assert desc.get("human_action_required") is False
     assert desc["option"]["name"] == "setup_method"
     assert desc["option"]["choices"] == ["existing_credential", "create_account"]
     selected = mb.connect(PRINCIPAL, address=OURS)
@@ -585,6 +586,8 @@ def test_connect_existing_credential_is_an_explicit_setup_branch(vault):
         state={"phase": "setup_method"},
     )
     assert credential_step["option"]["name"] == "credential"
+    assert credential_step["status"] == "action_required"
+    assert credential_step["human_action_required"] is True
     assert http.gets == []
     connected = mb.connect(
         PRINCIPAL,
@@ -830,6 +833,8 @@ def test_authorized_signup_verifies_otp_and_returns_private_key(vault):
         state={"phase": "setup_method"},
     )
     assert email_step["option"]["name"] == "human_email"
+    assert email_step["status"] == "input_required"
+    assert email_step.get("human_action_required") is False
     otp_step = mb.connect(
         PRINCIPAL,
         answers={"human_email": "owner@example.com"},
@@ -837,6 +842,8 @@ def test_authorized_signup_verifies_otp_and_returns_private_key(vault):
     )
     assert otp_step["option"]["name"] == "otp"
     assert otp_step["option"]["sensitive"] is True
+    assert otp_step["status"] == "action_required"
+    assert otp_step["human_action_required"] is True
     assert len(http.posts) == 1
     signup_url, signup_headers, signup_body = http.posts[0]
     assert signup_url == SIGN_UP
@@ -878,8 +885,19 @@ def test_authorized_signup_verifies_otp_and_returns_private_key(vault):
     _secret_absent(log)
 
 
-@pytest.mark.parametrize("status", [400, 403, 409, 422])
-def test_signup_unavailable_stops_without_alias_probe(vault, status):
+@pytest.mark.parametrize(
+    ("status", "reason", "retryable"),
+    [
+        (400, "setup_rejected", False),
+        (401, "setup_forbidden", False),
+        (403, "setup_forbidden", False),
+        (404, "backend_unavailable", True),
+        (409, "setup_conflict", False),
+        (422, "setup_rejected", False),
+        (500, "backend_unavailable", True),
+    ],
+)
+def test_signup_unavailable_stops_without_alias_probe(vault, status, reason, retryable):
     log = MemoryLog()
     http = Http()
     http.on_post(SIGN_UP, status, {"error": "unavailable"})
@@ -890,9 +908,32 @@ def test_signup_unavailable_stops_without_alias_probe(vault, status):
         state={"phase": "create_account"},
     )
     assert result["status"] == "failed"
-    assert result["reason"] == "signup unavailable; connect with existing_credential"
+    assert result["reason"] == reason
+    assert result["retryable"] is retryable
+    assert result["option"]["name"] == "setup_method"
+    assert "existing_credential" in str(result.get("message") or "")
+    assert "continuation" not in result
     assert len(http.posts) == 1
     body = json.loads(http.posts[0][2])
     assert set(body) == {"human_email", "username", "source"}
     assert http.gets == []
+    assert VERIFY not in [item[0] for item in http.posts]
+
+
+def test_signup_malformed_success_is_backend_unavailable(vault):
+    log = MemoryLog()
+    http = Http()
+    http.on_post(SIGN_UP, 200, {"email": "owner@example.com"})
+    mb = _box(vault, log, http)
+    result = mb.connect(
+        PRINCIPAL,
+        answers={"human_email": "owner@example.com"},
+        state={"phase": "create_account"},
+    )
+    assert result["status"] == "failed"
+    assert result["reason"] == "backend_unavailable"
+    assert result["retryable"] is True
+    assert result["option"]["name"] == "setup_method"
+    assert "continuation" not in result
+    assert len(http.posts) == 1
     assert VERIFY not in [item[0] for item in http.posts]

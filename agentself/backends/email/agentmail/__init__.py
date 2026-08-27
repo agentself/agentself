@@ -36,6 +36,7 @@ from agentself.internal.log import Log
 from agentself.internal.names import require_safe_token
 from agentself.internal.setup import (
     PRIVATE_SETUP_OUTPUTS,
+    SETUP_ACTION_REQUIRED,
     SetupOption,
     SetupResult,
     option_named,
@@ -255,12 +256,12 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not method:
             return setup_needed(
                 option_named(OPTIONS, "setup_method"),
-                human_action_required=True,
                 continuation={"phase": "setup_method"},
             )
         if method == "existing_credential":
             return setup_needed(
                 option_named(OPTIONS, "credential"),
+                status=SETUP_ACTION_REQUIRED,
                 human_action_required=True,
                 continuation={"phase": "existing_credential"},
             )
@@ -271,21 +272,21 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not human_email:
             return setup_needed(
                 option_named(OPTIONS, "human_email"),
-                human_action_required=True,
                 continuation={"phase": "create_account"},
             )
         if not _valid_email(human_email):
             return setup_failed("invalid human email")
         username = _signup_username(identity_id)
-        signed_up, unavailable = self._sign_up(human_email, username)
-        if unavailable:
-            return setup_failed("signup unavailable; connect with existing_credential")
+        signed_up, failure = self._sign_up(human_email, username)
+        if failure is not None:
+            return failure
         api_key = require_secret(str(signed_up.get("api_key") or ""))
         inbox_id = str(signed_up.get("inbox_id") or "").strip()
         if not inbox_id:
             raise MailboxError("no inbox")
         return setup_needed(
             option_named(OPTIONS, "otp"),
+            status=SETUP_ACTION_REQUIRED,
             human_action_required=True,
             message="Enter the six-digit code sent to the approved human email.",
             continuation={
@@ -359,6 +360,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not (len(otp) == 6 and otp.isascii() and otp.isdigit()):
             return setup_needed(
                 option_named(OPTIONS, "otp"),
+                status=SETUP_ACTION_REQUIRED,
                 human_action_required=True,
                 message="Enter the six-digit verification code.",
                 continuation=retry,
@@ -366,6 +368,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         if not self._verify(api_key, otp):
             return setup_needed(
                 option_named(OPTIONS, "otp"),
+                status=SETUP_ACTION_REQUIRED,
                 human_action_required=True,
                 message="Verification failed. Check the code and try again.",
                 continuation=retry,
@@ -398,7 +401,7 @@ class AgentMailMailboxAccess(MailboxAccess):
 
     def _sign_up(
         self, human_email: str, username: str
-    ) -> tuple[dict[str, object], bool]:
+    ) -> tuple[dict[str, object], SetupResult | None]:
         payload = json.dumps(
             {
                 "human_email": human_email,
@@ -406,12 +409,21 @@ class AgentMailMailboxAccess(MailboxAccess):
                 "source": "agentself",
             }
         ).encode("utf-8")
-        status, body = self._post_json(_SIGN_UP_URL, payload)
-        if status in (400, 401, 403, 404, 409, 422):
-            return {}, True
-        if not 200 <= status < 300:
-            raise MailboxError("rpc failed")
-        return _object(body, "signup failed"), False
+        try:
+            status, body = self._post_json(_SIGN_UP_URL, payload)
+        except MailboxError:
+            return {}, _signup_failure("backend_unavailable", retryable=True)
+        if 200 <= status < 300:
+            try:
+                signed_up = _object(body, "signup failed")
+                require_secret(str(signed_up.get("api_key") or ""))
+                if not str(signed_up.get("inbox_id") or "").strip():
+                    raise MailboxError("no inbox")
+            except MailboxError:
+                return {}, _signup_failure("backend_unavailable", retryable=True)
+            return signed_up, None
+        reason, retryable = _signup_category(status)
+        return {}, _signup_failure(reason, retryable=retryable)
 
     def _verify(self, api_key: str, otp: str) -> bool:
         payload = json.dumps({"otp_code": otp}).encode("utf-8")
@@ -539,6 +551,25 @@ def _http_error(status: int) -> str:
     if status in (401, 403):
         return "invalid credentials"
     return "rpc failed"
+
+
+def _signup_category(status: int) -> tuple[str, bool]:
+    if status == 409:
+        return "setup_conflict", False
+    if status in (401, 403):
+        return "setup_forbidden", False
+    if status in (400, 422):
+        return "setup_rejected", False
+    return "backend_unavailable", True
+
+
+def _signup_failure(reason: str, *, retryable: bool) -> SetupResult:
+    return setup_failed(
+        reason,
+        message="Account creation failed. Use existing_credential if you already have an approved key.",
+        retryable=retryable,
+        option=option_named(OPTIONS, "setup_method"),
+    )
 
 
 def _live_inboxes(inboxes: list[object]) -> list[dict[str, object]]:

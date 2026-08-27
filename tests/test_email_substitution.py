@@ -59,8 +59,7 @@ def test_oauthish_connect_round_trips_continuation_and_declared_persist(
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
-    SyntheticEmailAccess.received_states = []
-    SyntheticEmailAccess.issued = []
+    SyntheticEmailAccess.reset()
     _patch_mailbox(monkeypatch)
     env["AGENTSELF_EMAIL_CREDENTIAL"] = CREDENTIAL_CANARY
 
@@ -150,8 +149,7 @@ def test_oauthish_result_file_credential_persists_and_canary_stays_off_cli(
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
-    SyntheticEmailAccess.received_states = []
-    SyntheticEmailAccess.issued = []
+    SyntheticEmailAccess.reset()
     _patch_mailbox(monkeypatch)
 
     code, first, first_blob = _connect(monkeypatch, capsys, env)
@@ -205,8 +203,7 @@ def test_oauthish_result_file_credential_persists_and_canary_stays_off_cli(
 
 
 def test_oauthish_backend_stays_put_without_continuation_blob() -> None:
-    SyntheticEmailAccess.received_states = []
-    SyntheticEmailAccess.issued = []
+    SyntheticEmailAccess.reset()
     mailbox = SyntheticEmailAccess()
     first = mailbox.connect("agent")
     assert first["status"] == "action_required"
@@ -223,8 +220,7 @@ def test_forged_or_unknown_setup_state_fails(
     vault = tmp_path / "vault"
     env = cli_env(vault)
     assert run_cli(["--json", "init"], env).returncode == 0
-    SyntheticEmailAccess.received_states = []
-    SyntheticEmailAccess.issued = []
+    SyntheticEmailAccess.reset()
     _patch_mailbox(monkeypatch)
     code, first, first_blob = _connect(monkeypatch, capsys, env)
     assert code == 3

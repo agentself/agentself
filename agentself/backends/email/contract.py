@@ -78,14 +78,27 @@ def setup_needed(
     return payload
 
 
-def setup_failed(reason: str = "error") -> SetupResult:
-    return {
+def setup_failed(
+    reason: str = "error",
+    *,
+    message: str = "",
+    retryable: bool | None = None,
+    option: SetupOption | None = None,
+) -> SetupResult:
+    payload: SetupResult = {
         "status": SETUP_FAILED,
         "address": None,
         "owned_address": False,
         "needs_domain": False,
         "reason": reason,
     }
+    if message:
+        payload["message"] = message
+    if retryable is not None:
+        payload["retryable"] = retryable
+    if option is not None:
+        payload["option"] = option
+    return payload
 
 
 class MailboxAccess(ABC):

@@ -73,7 +73,14 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
         dest="as_raw",
         action="store_true",
         default=False,
-        help="Write exact bytes for allowlisted commands",
+        help="Write exact bytes for commands that support raw output",
+    )
+    parser.add_argument(
+        "--identity-dir",
+        dest="identity_dir",
+        default="",
+        metavar="PATH",
+        help="Identity directory for this invocation only (not persisted)",
     )
 
 
@@ -105,23 +112,25 @@ def _parser() -> argparse.ArgumentParser:
     add_global_flags(flags)
     parser = _Parser(
         prog="agentself",
-        usage="%(prog)s [--raw] [--version] [COMMAND ...]",
+        usage="%(prog)s [--raw] [--identity-dir PATH] [--version] [COMMAND ...]",
         formatter_class=_HELP,
         description=(
             "Local identity for an agent: wallet, secrets, non-secret notes, "
             "and optional email.\n"
             "Every command prints one JSON object. Use --raw for exact bytes "
-            "on allowlisted commands. Use agentself commands for the verb index.\n"
+            "on commands that support raw output. Use agentself commands for "
+            "the verb index.\n"
             "Exit codes: 0 ok, 1 error, 2 refused, 3 missing."
         ),
         epilog=(
             "Examples:\n"
             "  agentself --version\n"
             "  agentself commands\n"
-            "  agentself init\n"
+            "  agentself --identity-dir PATH init\n"
             "  agentself secret get NAME --raw\n"
             "  agentself wallet address --raw\n"
-            f"Identity directory is {ENV_IDENTITY_DIR} (default ~/.agentself)."
+            "Identity directory is --identity-dir, then "
+            f"{ENV_IDENTITY_DIR}, then ~/.agentself. The flag is not persisted."
         ),
     )
     add_global_flags(parser)

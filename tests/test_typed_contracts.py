@@ -82,6 +82,7 @@ def test_contract_typeddicts_cover_stable_boundary_fields() -> None:
 
 
 def test_provider_substitution_returns_contract_shapes() -> None:
+    SyntheticEmailAccess.reset()
     mailbox = SyntheticEmailAccess()
     setup = mailbox.connect("agent")
     assert setup["status"] == "action_required"

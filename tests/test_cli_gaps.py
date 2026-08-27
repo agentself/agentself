@@ -395,7 +395,7 @@ def test_cli_json_email_receive_mixed_is_ok(tmp_path, monkeypatch, capsys):
     assert good_id in by_id
     assert all("body" not in item for item in messages)
     assert "body" not in by_id[good_id]
-    assert by_id[good_id]["status"] == "seen"
+    assert by_id[good_id]["status"] == "new"
     assert not [url for url, _headers in http.gets if "/messages/msg" in url]
     assert "hold-value" not in captured.out
     assert "hold-value" not in captured.err

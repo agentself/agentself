@@ -57,8 +57,11 @@ def test_top_help_lists_commands_and_flags(tmp_path):
         assert verb in text, verb
     assert "--json" not in text
     assert "--raw" in text
+    assert "--identity-dir" in text
     assert "--version" in text
     assert "AGENTSELF_IDENTITY_DIR" in text
+    assert "allowlisted" not in text.lower()
+    assert "commands that support raw output" in text
     assert "0x" not in text
 
 
@@ -82,16 +85,23 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
 
     wallet = run_cli(["wallet", "--help"], env)
     assert wallet.returncode == 0, wallet.stderr
-    assert "authorize --file PATH" in wallet.stdout
+    assert "authorize --file PATH --out PATH" in wallet.stdout
     assert "wallet send" in wallet.stdout
 
     auth = run_cli(["wallet", "authorize", "--help"], env)
     assert auth.returncode == 0, auth.stderr
     assert "--file" in auth.stdout
+    assert "--out" in auth.stdout
     assert "signature to attach" in auth.stdout
     assert "not a send" in auth.stdout
     assert "typed statement" in auth.stdout
     assert "--print" not in auth.stdout
+    assert "Legacy" in auth.stdout
+
+    verify = run_cli(["wallet", "verify", "--help"], env)
+    assert verify.returncode == 0, verify.stderr
+    assert "--authorization-file" in verify.stdout
+    assert "Legacy" in verify.stdout
 
     email_send = run_cli(["email", "send", "--help"], env)
     assert email_send.returncode == 0, email_send.stderr

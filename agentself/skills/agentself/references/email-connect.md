@@ -63,8 +63,8 @@ discovery; stop searching for alternatives.
 Continuation is stored with the identity only when setup needs opaque resume
 state (secrets). Inspecting the connect menu does not write identity secrets.
 The latest opaque `state` token is still required to resume. Keep the same
-`AGENTSELF_IDENTITY_DIR` and continue only that latest state. Never reconstruct
-state or reuse an older token after a later step.
+`--identity-dir` / `AGENTSELF_IDENTITY_DIR` and continue only that latest
+state. Never reconstruct state or reuse an older token after a later step.
 
 If the latest state was lost, or the provider reports a failed or unknown setup,
 restart with

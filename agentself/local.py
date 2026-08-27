@@ -52,6 +52,15 @@ def default_identity_dir() -> Path:
     return Path(override) if override else Path.home() / DEFAULT_DIR_NAME
 
 
+def resolve_identity_dir(explicit: str | None = None) -> Path:
+    """Flag, then env, then ~/.agentself. Empty string is unset. Not persisted."""
+
+    flagged = (explicit or "").strip()
+    if flagged:
+        return Path(flagged)
+    return default_identity_dir()
+
+
 def config_path(vault: Path) -> Path:
     return Path(vault) / CONFIG_NAME
 

@@ -47,7 +47,7 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.log import record_diagnostic
 from agentself.internal.text import utf8_bytes
-from agentself.local import IdentityStateError, default_identity_dir, redact_secrets
+from agentself.local import IdentityStateError, redact_secrets, resolve_identity_dir
 
 CLI_SCHEMA_VERSION = 2
 _SKIP_HOST_TOOLS = {
@@ -69,6 +69,29 @@ def _has_flag(argv: list[str], *names: str) -> bool:
         if token in wanted:
             return True
     return False
+
+
+def _flag_value(argv: list[str], name: str) -> str | None:
+    """Last ``--name VALUE`` or ``--name=VALUE`` before ``--``. Empty is unset.
+
+    Subcommand parents reset the same dest to default when the flag appears
+    before the command path, so argv is the source of truth.
+    """
+
+    found: str | None = None
+    prefix = name + "="
+    for index, token in enumerate(argv):
+        if token == "--":
+            break
+        if token == name:
+            if index + 1 < len(argv):
+                found = argv[index + 1]
+            continue
+        if token.startswith(prefix):
+            found = token[len(prefix) :]
+    if found is None or not found.strip():
+        return None
+    return found
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -105,7 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         code = exc.code
         return 0 if code is None else int(code)
     args.as_raw = bool(getattr(args, "as_raw", False) or as_raw)
-    vault = default_identity_dir()
+    vault = resolve_identity_dir(
+        _flag_value(raw, "--identity-dir") or getattr(args, "identity_dir", None)
+    )
     path = _command_path(args)
     spec = spec_for(path)
     if spec is None or spec.handler is None:
@@ -221,12 +246,21 @@ def _raw_conflict(args: CommandArguments, spec: CommandSpec) -> CliFailure | Non
         )
     to_file = (getattr(args, "to_file", None) or "").strip()
     body_file = (getattr(args, "body_file", None) or "").strip()
+    out_file = (getattr(args, "out_file", None) or "").strip()
     if to_file or body_file:
         return fail(
             args,
             2,
             "refused",
             "--raw cannot be used with --file",
+            nxt="agentself --help",
+        )
+    if out_file:
+        return fail(
+            args,
+            2,
+            "refused",
+            "--raw cannot be used with --out",
             nxt="agentself --help",
         )
     if getattr(args, "meta", False):

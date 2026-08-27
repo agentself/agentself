@@ -40,6 +40,7 @@ EmailConnectView = TypedDict(
         "option": dict[str, object],
         "message": str,
         "reason": str,
+        "retryable": bool,
     },
     total=False,
 )
