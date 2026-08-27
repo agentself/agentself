@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 from agentself.internal.text import sha256_text
@@ -14,9 +15,11 @@ from tests.support import PROJECT_ROOT, cli_env, run_cli
 
 def _isolated_env() -> dict[str, str]:
     env = os.environ.copy()
-    pythonpath = env.get("PYTHONPATH", "")
-    src = str(PROJECT_ROOT)
-    env["PYTHONPATH"] = src + os.pathsep + pythonpath if pythonpath else src
+    # Keep the parent interpreter's import path so a rewritten HOME still
+    # finds user-site deps such as eth_account.
+    env["PYTHONPATH"] = os.pathsep.join(
+        dict.fromkeys([str(PROJECT_ROOT), *(path for path in sys.path if path)])
+    )
     env["AGENTSELF_FETCH_TOOLS"] = "0"
     env["AGENTSELF_FORBID_LIVE_AGENTMAIL"] = "1"
     for key in (

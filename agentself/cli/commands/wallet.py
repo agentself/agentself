@@ -83,7 +83,7 @@ def verify_wallet(args, vault: Path) -> CliOutcome:
     authorization = (args.authorization or "").strip()
     leftover = (args.message or "").strip()
     auth_file = (getattr(args, "authorization_file", None) or "").strip()
-    if path and leftover and not authorization and not auth_file:
+    if path and leftover and not authorization:
         authorization = leftover
         args.message = ""
     if auth_file and authorization:

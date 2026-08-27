@@ -106,10 +106,12 @@ def test_agentmail_no_ref_receive_is_repeatable_header_check(
     ]
     assert body_gets == []
     ref = first["messages"][0]["ref"]
-    fetched = main(["email", "receive", ref])
+    body_file = tmp_path / "body.txt"
+    fetched = main(["email", "receive", ref, "--file", str(body_file)])
     consumed = json.loads(capsys.readouterr().out)
     assert fetched == 0
     assert consumed["messages"][0]["status"] == "seen"
+    assert body_file.read_text(encoding="utf-8") == "full body"
     assert seen.is_dir()
     assert list(seen.iterdir())
     assert any(url.endswith(f"/messages/{quoted}") for url, _headers in http.gets)
