@@ -918,3 +918,22 @@ def test_signup_unavailable_stops_without_alias_probe(vault, status, reason, ret
     assert set(body) == {"human_email", "username", "source"}
     assert http.gets == []
     assert VERIFY not in [item[0] for item in http.posts]
+
+
+def test_signup_malformed_success_is_backend_unavailable(vault):
+    log = MemoryLog()
+    http = Http()
+    http.on_post(SIGN_UP, 200, {"email": "owner@example.com"})
+    mb = _box(vault, log, http)
+    result = mb.connect(
+        PRINCIPAL,
+        answers={"human_email": "owner@example.com"},
+        state={"phase": "create_account"},
+    )
+    assert result["status"] == "failed"
+    assert result["reason"] == "backend_unavailable"
+    assert result["retryable"] is True
+    assert result["option"]["name"] == "setup_method"
+    assert "continuation" not in result
+    assert len(http.posts) == 1
+    assert VERIFY not in [item[0] for item in http.posts]

@@ -192,7 +192,12 @@ def test_synthetic_no_ref_receive_uses_list_path(
     consumed = json.loads(capsys.readouterr().out)
     assert fetched == 0
     assert consumed["messages"][0]["id"] == "msg-1"
+    assert consumed["messages"][0]["status"] == "seen"
     assert SyntheticEmailAccess.received == 1
+    listed_after = main(["email", "list"])
+    after = json.loads(capsys.readouterr().out)
+    assert listed_after == 0
+    assert after["messages"][0]["status"] == "seen"
     assert "secret-body" not in first["messages"][0]
     assert "secret-body" not in json.dumps(first) + json.dumps(second)
 

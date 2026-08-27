@@ -414,7 +414,14 @@ class AgentMailMailboxAccess(MailboxAccess):
         except MailboxError:
             return {}, _signup_failure("backend_unavailable", retryable=True)
         if 200 <= status < 300:
-            return _object(body, "signup failed"), None
+            try:
+                signed_up = _object(body, "signup failed")
+                require_secret(str(signed_up.get("api_key") or ""))
+                if not str(signed_up.get("inbox_id") or "").strip():
+                    raise MailboxError("no inbox")
+            except MailboxError:
+                return {}, _signup_failure("backend_unavailable", retryable=True)
+            return signed_up, None
         reason, retryable = _signup_category(status)
         return {}, _signup_failure(reason, retryable=retryable)
 

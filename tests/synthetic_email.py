@@ -90,8 +90,8 @@ class SyntheticEmailAccess(MailboxAccess):
             if wanted and mid != wanted:
                 continue
             type(self).received_ids.append(mid)
+            item["status"] = "seen"
             parsed = dict(item)
-            parsed["status"] = "seen"
             if include_body:
                 parsed.setdefault("body", "")
             else:
