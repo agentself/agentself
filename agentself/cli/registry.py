@@ -281,14 +281,21 @@ def configure_wallet_authorize(parser: argparse.ArgumentParser) -> None:
         "message",
         nargs="?",
         metavar="MESSAGE",
-        help="Action or message to authorize. Omit when using --file PATH",
+        help="Legacy: action or message to authorize. Prefer --file PATH",
     )
     parser.add_argument(
         "--file",
         dest="from_file",
         default="",
         metavar="PATH",
-        help="Read the message from a file. Use - to read stdin",
+        help="Read the exact statement from a file. Trailing newlines are kept. Use - to read stdin",
+    )
+    parser.add_argument(
+        "--out",
+        dest="out_file",
+        default="",
+        metavar="PATH",
+        help="Write the exact authorization to PATH. Cannot be -; use --raw for stdout",
     )
 
 
@@ -297,20 +304,27 @@ def configure_wallet_verify(parser: argparse.ArgumentParser) -> None:
         "message",
         nargs="?",
         metavar="MESSAGE",
-        help="Message that was authorized. Omit when using --file; then AUTHORIZATION is the first positional",
+        help="Legacy: message that was authorized. Prefer --file PATH",
     )
     parser.add_argument(
         "authorization",
         nargs="?",
         metavar="AUTHORIZATION",
-        help="Authorization to check",
+        help="Legacy: authorization to check. Prefer --authorization-file PATH",
     )
     parser.add_argument(
         "--file",
         dest="from_file",
         default="",
         metavar="PATH",
-        help="Read the message from a file. Use - to read stdin",
+        help="Read the exact statement from a file. Trailing newlines are kept. Use - to read stdin",
+    )
+    parser.add_argument(
+        "--authorization-file",
+        dest="authorization_file",
+        default="",
+        metavar="PATH",
+        help="Read the authorization from a file instead of argv. Use - to read stdin",
     )
 
 
@@ -380,7 +394,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "Create the local identity. Email is optional and does not block init. "
             "Needs host tools on PATH (agentself install --tools)."
         ),
-        epilog="Examples:\n  agentself init\n  agentself init --id NAME\n  agentself init --wallet-key-file -",
+        epilog="Examples:\n  agentself --identity-dir PATH init\n  agentself init --id NAME\n  agentself init --wallet-key-file -",
     ),
     CommandSpec(
         ("show",),
@@ -530,10 +544,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         next="agentself email connect",
         dest="email_command",
         description=(
-            "Optional email. receive prints headers only. Fetch a body by ref with "
-            "receive REF --file PATH or receive REF --raw."
+            "Optional email. receive without a ref prints new-message headers "
+            "without fetching bodies or changing seen state. Fetch a body by ref "
+            "with receive REF --file PATH or receive REF --raw."
         ),
-        epilog="Examples:\n  agentself email connect\n  agentself email receive REF --raw\n  agentself backends email",
+        epilog="Examples:\n  agentself email connect\n  agentself email receive\n  agentself email receive REF --file PATH\n  agentself backends email",
     ),
     CommandSpec(
         ("email", "connect"),
@@ -567,10 +582,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_email_receive,
         raw=True,
         description=(
-            "Headers are safe by default. Bodies need --file or --raw. "
-            "--raw requires a ref or id and writes exact body bytes."
+            "Without a ref, print new-message headers through the list path. "
+            "That check is repeatable and does not fetch bodies or change seen "
+            "state. Explicit refs keep the consuming receive. Bodies need "
+            "--file or --raw. --raw requires a ref or id and writes exact body bytes."
         ),
-        epilog="Examples:\n  agentself email receive\n  agentself email receive REF --raw",
+        epilog="Examples:\n  agentself email receive\n  agentself email receive REF --file PATH\n  agentself email receive REF --raw",
     ),
     CommandSpec(
         ("email", "list"),
@@ -610,7 +627,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "Looking for signing? Use wallet authorize --file PATH. "
             "That is distinct from wallet send."
         ),
-        epilog="Examples:\n  agentself wallet address --raw\n  agentself wallet authorize --file PATH\n  agentself wallet send TO AMOUNT",
+        epilog="Examples:\n  agentself --identity-dir PATH wallet address --raw\n  agentself wallet authorize --file PATH --out PATH\n  agentself wallet send TO AMOUNT",
     ),
     CommandSpec(
         ("wallet", "show"),
@@ -637,19 +654,26 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_wallet_authorize,
         raw=True,
         description=(
-            "Prefer --file PATH or --file -. The output is the signature to attach, "
-            "for example an HTTP header or body. It is not a send. "
+            "Prefer --file PATH --out PATH. Positional MESSAGE and JSON "
+            "`authorization` are legacy CLI 2 forms. The file is the signature to "
+            "attach, for example an HTTP header or body. It is not a send. "
             "A typed statement (domain, types, message) is authorized as typed data; "
-            "other files stay a personal signature. Login text uses this verb."
+            "other files stay a personal signature. Login text uses this verb. "
+            "Statement files keep trailing newlines; message_sha256 is the exact "
+            "decoded statement."
         ),
-        epilog="Examples:\n  agentself wallet authorize --file PATH\n  agentself wallet authorize --file - --raw",
+        epilog="Examples:\n  agentself wallet authorize --file PATH --out PATH\n  agentself wallet authorize --file PATH\n  agentself wallet authorize --file - --raw",
     ),
     CommandSpec(
         ("wallet", "verify"),
         "Verify an authorization against this identity",
         f"{_H}.wallet:verify_wallet",
         configure_wallet_verify,
-        epilog="Examples:\n  agentself wallet verify --file PATH AUTHORIZATION",
+        description=(
+            "Prefer --file PATH --authorization-file PATH. Positional AUTHORIZATION "
+            "is a legacy CLI 2 form."
+        ),
+        epilog="Examples:\n  agentself wallet verify --file PATH --authorization-file PATH\n  agentself wallet verify --file PATH AUTHORIZATION",
     ),
     CommandSpec(
         ("wallet", "send"),
@@ -681,7 +705,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_install,
         args=("--skills", "--tools"),
         next="agentself install --tools",
-        epilog="Examples:\n  agentself install --tools\n  agentself install --skills=agents -g",
+        description=(
+            "install --skills copies the skill into the current workspace. "
+            "-g copies it into the user skill directory. Neither uses the "
+            "identity directory."
+        ),
+        epilog="Examples:\n  agentself install --tools\n  agentself install --skills\n  agentself install --skills=agents -g",
     ),
 )
 
@@ -713,11 +742,21 @@ def command_verbs() -> dict[str, tuple[str, ...]]:
 
 def command_recovery(argv: Sequence[str]) -> tuple[str, str] | None:
     tokens: list[str] = []
+    skip_value = False
     for token in argv:
         if token == "--":
             break
-        if token not in ("--json", "--raw"):
-            tokens.append(token)
+        if token in ("--json", "--raw"):
+            continue
+        if token == "--identity-dir":
+            skip_value = True
+            continue
+        if token.startswith("--identity-dir="):
+            continue
+        if skip_value:
+            skip_value = False
+            continue
+        tokens.append(token)
     if not tokens or tokens[0].startswith("-"):
         return None
     path = tuple(tokens[:2])

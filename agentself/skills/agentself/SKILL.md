@@ -27,7 +27,7 @@ Use `--raw` when a caller needs exact bytes from `wallet address`, `wallet show`
 
 When a flag or next step is unclear, run `agentself commands` or open the matching reference below. Drill in with `agentself backends CHANNEL BACKEND` only when you need setup options.
 
-Identity directory is `AGENTSELF_IDENTITY_DIR` (default `~/.agentself`).
+Prefer `--identity-dir PATH` for one invocation. Precedence is the flag, then `AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The flag is not persisted and does not create a current-identity pointer.
 
 Stdin is never implicit. Use `--file -`, `--result-file -`, or `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
 
@@ -35,15 +35,15 @@ Stdin is never implicit. Use `--file -`, `--result-file -`, or `--wallet-key-fil
 
 ```bash
 agentself install --tools
-agentself init
-agentself show
+agentself --identity-dir PATH init
+agentself --identity-dir PATH show
 ```
 
 Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
 
 `show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds. `wallet balance` is the current amount. It does not name who paid or when.
 
-Signing is `agentself wallet authorize --file PATH`. Put the message bytes in that file; never put the message on argv. A typed statement (`domain`, `types`, `message`) is authorized as typed data; other files stay a personal signature. Login text uses this same verb and this identity. Do not create another wallet. Output is JSON by default; `--raw` emits the signature or authorization token. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
+Signing is `agentself wallet authorize --file PATH --out PATH`. Put the message bytes in that file; never put the message on argv. Statement files keep trailing newlines; `message_sha256` is the SHA-256 of that exact decoded statement. A typed statement (`domain`, `types`, `message`) is authorized as typed data; other files stay a personal signature. Login text uses this same verb and this identity. Do not create another wallet. Prefer `wallet verify --file PATH --authorization-file PATH` so the token stays off argv. Positional MESSAGE and JSON `authorization` remain for CLI 2. `--out -` is refused; stdout transport is `--raw`. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
 
 List secret names with `agentself secret list`. Names only; never values. `store` is the backend (sops/pass), not a verb.
 
@@ -67,4 +67,4 @@ agentself install --skills -g
 agentself install --skills=agents
 ```
 
-Skills install this complete skill tree into the current directory unless `-g`.
+`install --skills` copies this complete skill tree into the current workspace. `-g` copies it into the user skill directory. Neither path is the identity directory.

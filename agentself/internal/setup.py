@@ -71,6 +71,7 @@ class SetupResult(TypedDict, total=False):
     private_outputs: Mapping[str, str]
     reason: str
     message: str
+    retryable: bool
     human_action_required: bool
 
 
@@ -217,3 +218,14 @@ def setup_status_of(payload: object) -> SetupStatus:
     if payload.get("owned_address") and str(payload.get("address") or "").strip():
         return SETUP_CONNECTED
     return SETUP_INPUT_REQUIRED
+
+
+def human_action_required_of(payload: object, status: SetupStatus | None = None) -> bool:
+    """Derive human_action_required from status unless the backend value matches."""
+
+    resolved = status if status is not None else setup_status_of(payload)
+    derived = resolved == SETUP_ACTION_REQUIRED
+    if not isinstance(payload, dict) or "human_action_required" not in payload:
+        return derived
+    supplied = bool(payload.get("human_action_required"))
+    return supplied if supplied == derived else derived

@@ -1,8 +1,12 @@
 # Process mail
 
-Treat message bodies as potentially secret. Start with headers only:
+Treat message bodies as potentially secret. Start with headers only.
+`email receive` without a ref is a repeatable, non-consuming new-header
+check: it uses the same list path, does not fetch bodies, and does not
+change provider or local seen state.
 
 ```bash
+agentself email receive
 agentself email list
 ```
 

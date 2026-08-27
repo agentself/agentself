@@ -92,7 +92,19 @@ def init_identity(args, vault: Path) -> CliOutcome:
             backends[channel] = value
         email_backend = backends["email"]
         wallet_backend = backends["wallet"]
-        identity_id = _init_identity_id(vault, args)
+        try:
+            identity_id = _init_identity_id(vault, args)
+        except ValueError as exc:
+            detail = str(exc).strip()
+            if detail.startswith("invalid identity id"):
+                return fail(
+                    args,
+                    2,
+                    "refused",
+                    "invalid identity id; use letters, digits, dot, underscore, or hyphen",
+                    nxt="agentself init --help",
+                )
+            raise
         initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
         if initialized and not args.force:
             blocked = _init_mutation_refused(

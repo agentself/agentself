@@ -13,7 +13,17 @@ from agentself.internal.setup import (
     SETUP_FAILED,
     SETUP_PENDING,
     continue_command,
+    human_action_required_of,
     setup_status_of,
+)
+
+_SIGNUP_FAILURES = frozenset(
+    {
+        "setup_conflict",
+        "setup_forbidden",
+        "setup_rejected",
+        "backend_unavailable",
+    }
 )
 
 
@@ -69,10 +79,13 @@ def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
             "--raw requires a message ref or ID",
             nxt="agentself email receive REF --raw",
         )
-    messages = client(vault).email_receive(
-        message_id=args.message_id,
-        include_body=bool(path or as_raw),
-    )
+    if not ref:
+        messages = client(vault).email_list(status="new")
+    else:
+        messages = client(vault).email_receive(
+            message_id=args.message_id,
+            include_body=bool(path or as_raw),
+        )
     if as_raw:
         body = str(messages[0].get("body", "")) if messages else ""
         return CliRaw(body)
@@ -190,9 +203,9 @@ def _setup_public(result: dict[str, object]) -> dict[str, object]:
         for key in (
             "status",
             "state",
-            "human_action_required",
             "continue",
             "message",
+            "retryable",
         )
         if key in result
     }
@@ -201,10 +214,7 @@ def _setup_public(result: dict[str, object]) -> dict[str, object]:
         payload["option"] = compact
     if "continue" not in payload and result.get("state"):
         payload["continue"] = continue_command(str(result["state"]))
-    if "human_action_required" not in payload:
-        payload["human_action_required"] = (
-            setup_status_of(result) == SETUP_ACTION_REQUIRED
-        )
+    payload["human_action_required"] = human_action_required_of(result)
     return payload
 
 
@@ -245,12 +255,17 @@ def _email_connect_result(
         return _email_connect_ok(args, addr)
     if status == SETUP_FAILED:
         reason = str(result.get("reason") or "error")
+        nxt = (
+            "agentself email connect"
+            if reason in _SIGNUP_FAILURES
+            else "agentself backends email"
+        )
         return fail(
             args,
             1,
             "error",
             reason,
-            nxt="agentself backends email",
+            nxt=nxt,
             extra=_setup_public(result),
         )
     return _email_setup_pending(args, result, status)

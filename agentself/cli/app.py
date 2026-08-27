@@ -47,7 +47,7 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.log import record_diagnostic
 from agentself.internal.text import utf8_bytes
-from agentself.local import IdentityStateError, default_identity_dir, redact_secrets
+from agentself.local import IdentityStateError, redact_secrets, resolve_identity_dir
 
 CLI_SCHEMA_VERSION = 2
 _SKIP_HOST_TOOLS = {
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         code = exc.code
         return 0 if code is None else int(code)
     args.as_raw = bool(getattr(args, "as_raw", False) or as_raw)
-    vault = default_identity_dir()
+    vault = resolve_identity_dir(getattr(args, "identity_dir", None))
     path = _command_path(args)
     spec = spec_for(path)
     if spec is None or spec.handler is None:
@@ -221,12 +221,21 @@ def _raw_conflict(args: CommandArguments, spec: CommandSpec) -> CliFailure | Non
         )
     to_file = (getattr(args, "to_file", None) or "").strip()
     body_file = (getattr(args, "body_file", None) or "").strip()
+    out_file = (getattr(args, "out_file", None) or "").strip()
     if to_file or body_file:
         return fail(
             args,
             2,
             "refused",
             "--raw cannot be used with --file",
+            nxt="agentself --help",
+        )
+    if out_file:
+        return fail(
+            args,
+            2,
+            "refused",
+            "--raw cannot be used with --out",
             nxt="agentself --help",
         )
     if getattr(args, "meta", False):

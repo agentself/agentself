@@ -5,13 +5,15 @@ before running `init`.
 
 ## Same identity versus isolation
 
-`AGENTSELF_IDENTITY_DIR` is the identity boundary.
+`--identity-dir PATH` is the identity boundary for one invocation. If the
+flag is omitted, `AGENTSELF_IDENTITY_DIR` is used, then `~/.agentself`. The
+flag is not persisted.
 
 - Use the same directory for sequential work that must keep the same wallet,
   encrypted secrets, non-secret notes, email setup, and local acted-mail state.
   Avoid concurrent writers to one directory.
-- Use a distinct directory and `agentself init` when agents or tasks should
-  have separate custody. This creates a different wallet.
+- Use a distinct directory and `agentself --identity-dir PATH init` when
+  agents or tasks should have separate custody. This creates a different wallet.
 - Use `backup` and `restore` to move or clone the same identity into a distinct
   directory. A clone carries the wallet key and every secret; protect it as
   strongly as the source.
@@ -23,8 +25,8 @@ wallet.
 Before and after a handoff, record and compare public identity data:
 
 ```bash
-agentself show
-agentself wallet address
+agentself --identity-dir PATH show
+agentself --identity-dir PATH wallet address
 ```
 
 Done when both JSON `address` values match the intended identity. Stop if the
@@ -74,13 +76,13 @@ plaintext on the host.
 `--force` replaces a non-empty destination, so use it only after verifying the
 path.
 
-To restore into the identity directory selected by
+To restore into the identity directory selected by `--identity-dir` or
 `AGENTSELF_IDENTITY_DIR`:
 
 ```bash
-agentself restore PATH
-agentself show
-agentself wallet address
+agentself --identity-dir PATH restore SOURCE
+agentself --identity-dir PATH show
+agentself --identity-dir PATH wallet address
 ```
 
 Restore refuses a non-empty destination unless `--force`. Before forcing,
