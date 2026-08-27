@@ -1,35 +1,62 @@
 ---
 name: agentself
-description: Local agent identity — wallet, secrets, optional email. Use when asked to initialize or hand off an identity, use its wallet or secrets, connect email, or process mail. Open the matching reference for multi-step work.
+description: Manage a local agent identity with a wallet, encrypted secrets, notes, optional email, and recovery. Use for agentself setup, identity handoff, secret or note storage, wallet authorization, email setup or processing, and backup or restore.
 allowed-tools: Bash(agentself:*)
 ---
 
 # agentself
 
-CLI identity for an agent. No MCP server.
+Use the `agentself` CLI to keep one local identity across agent tasks. It stores a
+wallet, encrypted secrets, non-secret notes, optional email credentials, and
+local mail state. It has no MCP server.
 
-Requires the `agentself` CLI. If unavailable, install it with `uv tool install agentself` or `pipx install agentself`, then run the version check below.
-
-## Start safely
-
-Do not guess flags or expose values in logs, arguments, or chat.
+## Check the CLI first
 
 ```bash
 agentself --version
 agentself diagnose
 ```
 
-Done when `--version` JSON has `"ok": true` and `"cli": 2`. A different `cli` or an unexpected `package` / `executable` path means the install is stale: stop, install the intended CLI, reinstall its packaged skill, and check again. Never mix instructions from one schema with an executable from another.
+Continue only when the version JSON includes `"ok": true` and `"cli": 2`.
+Check the `package` and `executable` paths too. A different CLI schema or an
+unexpected path means the install is stale. Stop, install the intended CLI,
+reinstall its packaged skill, and run the check again. Never mix instructions
+from one schema with another executable.
 
-Default output is one JSON object on stdout. Exit 0 success, 1 error (including missing host tools; recover with `agentself install --tools`), 2 refused, 3 missing input or resource. stderr is empty for handled outcomes. Failures include `"error"`, `"reason"`, and `"next"`. Ignore unknown keys.
+If `agentself` is missing, install it with `uv tool install agentself` or
+`pipx install agentself`. Then run both checks again.
 
-Use `--raw` when a caller needs exact bytes from `wallet address`, `wallet show`, `wallet authorize`, `secret get NAME`, `note get NAME`, or `email receive REF`. Unsupported `--raw` is JSON refusal, exit 2.
+The CLI writes one JSON object to stdout by default. Handled outcomes write
+nothing to stderr. Exit codes are:
 
-When a flag or next step is unclear, run `agentself commands` or open the matching reference below. Drill in with `agentself backends CHANNEL BACKEND` only when you need setup options.
+- `0`: success
+- `1`: error, including missing host tools
+- `2`: refusal
+- `3`: missing input or resource
 
-Prefer `--identity-dir PATH` for one invocation. Precedence is the flag, then `AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The flag is not persisted and does not create a current-identity pointer.
+Failures include `"error"`, `"reason"`, and `"next"`. Ignore unknown JSON keys.
+When a host tool is missing, run `agentself install --tools`.
 
-Stdin is never implicit. Use `--file -`, `--result-file -`, or `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
+Prefer `--identity-dir PATH` for one invocation. The CLI uses the flag, then
+`AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The flag is not persisted and
+does not create a current-identity pointer.
+
+Use `--raw` only when a caller needs exact bytes from `wallet address`,
+`wallet show`, `wallet authorize`, `secret get NAME`, `note get NAME`, or
+`email receive REF`. Other `--raw` uses return a JSON refusal with exit code 2.
+
+When a flag or next step is unclear, run `agentself commands` or open the
+matching reference below. Run `agentself backends CHANNEL BACKEND` when you
+need backend setup options.
+
+## Pass input safely
+
+Pass input explicitly with `--file -`, `--result-file -`, or
+`--wallet-key-file -` when the input must come from stdin. Stdin is never
+implicit. A missing explicit input returns JSON with exit code 3.
+
+Keep credentials, secret values, OTPs, private keys, and mail bodies out of
+command arguments, logs, chat, and `*.notes` files.
 
 ## Common path
 
@@ -39,27 +66,79 @@ agentself --identity-dir PATH init
 agentself --identity-dir PATH show
 ```
 
-Done when `show` JSON includes `id`, `address`, and `recipient`. `init` and `diagnose` do not fetch binaries. Missing host tools: `next: agentself install --tools`. `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`. Repeating init is safe; identity or backend changes need `--force`.
+The setup is complete when `show` JSON includes `id`, `address`, and
+`recipient`. `init` and `diagnose` do not fetch binaries. Repeating `init` is
+safe. Use `--force` to change an existing identity or its backends.
+`AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`.
 
-`show` includes the age recipient and email readiness. For wallet work, inspect `agentself backends wallet`; the default Base wallet is live and can move real funds. `wallet balance` is the current amount. It does not name who paid or when.
+`show` includes the age recipient and email readiness. For wallet work, inspect
+`agentself backends wallet` first. The default Base wallet is live and can move
+real funds. `wallet balance` reports the current amount. It does not identify
+who paid or when.
 
-Signing is `agentself wallet authorize --file PATH --out PATH`. Put the message bytes in that file; never put the message on argv. Statement files keep trailing newlines; `message_sha256` is the SHA-256 of that exact decoded statement. A typed statement (`domain`, `types`, `message`) is authorized as typed data; other files stay a personal signature. Login text uses this same verb and this identity. Do not create another wallet. Prefer `wallet verify --file PATH --authorization-file PATH` so the token stays off argv. Positional MESSAGE and JSON `authorization` remain for CLI 2. `--out -` is refused; stdout transport is `--raw`. Do not dump signatures or secrets in chat or logs. Existing identities use this same verb; there is no Python compose or SDK path.
+Authorize with the existing identity:
 
-List secret names with `agentself secret list`. Names only; never values. `store` is the backend (sops/pass), not a verb.
+```bash
+agentself wallet authorize --file PATH --out PATH
+```
 
-For secrets, use files: `secret create NAME --file PATH` and `secret get NAME --file PATH`. Default `secret get NAME` is JSON with the value. Use `--raw` when exact bytes are required. `wallet.key` also needs `--unsafe`.
+Write the exact message bytes to `PATH`. Statement files keep trailing
+newlines. Never put the message on argv. The JSON field `message_sha256`
+identifies the SHA-256 of that exact decoded statement.
 
-For printable cross-agent context, use `note set NAME --file PATH` and
-`note get NAME` (JSON) or `--raw`. Notes are non-secret: never put credentials, OTPs, private
-keys, secret values, or mail bodies in them.
+The CLI treats a typed statement with `domain`, `types`, and `message` as typed
+data. It treats other files, including login text, as personal signatures.
+Login text uses this same verb and identity. Do not create another wallet.
+
+Prefer this command when you need to check an authorization:
+
+```bash
+agentself wallet verify --file PATH --authorization-file PATH
+```
+
+This keeps the authorization token out of command arguments. CLI 2 also accepts
+positional `MESSAGE` and JSON `authorization`. The CLI refuses `--out -`. Use
+`--raw` for stdout transport. Output is JSON by default. Keep signatures and
+secrets out of chat and logs. There is no Python compose or SDK path.
+
+List secret names with:
+
+```bash
+agentself secret list
+```
+
+The list contains names, not values. `store` names the configured store
+backend, such as `sops` or `pass`. It is not a command.
+
+Use files for secrets:
+
+```bash
+agentself secret create NAME --file PATH
+agentself secret get NAME --file PATH
+```
+
+Default `secret get NAME` returns JSON with the value. Use `--raw` for exact
+bytes. `wallet.key` also needs `--unsafe`.
+
+Use notes for printable, non-secret context:
+
+```bash
+agentself note set NAME --file PATH
+agentself note get NAME
+```
+
+Use `--raw` when a caller needs exact note bytes. Never put credentials, OTPs,
+private keys, secret values, or mail bodies in a note.
 
 ## Open the relevant workflow
 
-- Connecting or recovering email setup: [references/email-connect.md](references/email-connect.md)
-- Identity sharing, isolation, continuity, interruption, backup, or restore: [references/handoff.md](references/handoff.md)
-- Listing, fetching, filtering, and completing mail work: [references/mail.md](references/mail.md)
+- Email setup or recovery: [references/email-connect.md](references/email-connect.md)
+- Identity continuity, handoff, backup, or restore: [references/handoff.md](references/handoff.md)
+- Mail listing, reading, filtering, or completion: [references/mail.md](references/mail.md)
 
-## Skills
+Open the matching reference before a multi-step task.
+
+## Install the skill
 
 ```bash
 agentself install --skills
@@ -67,4 +146,6 @@ agentself install --skills -g
 agentself install --skills=agents
 ```
 
-`install --skills` copies this complete skill tree into the current workspace. `-g` copies it into the user skill directory. Neither path is the identity directory.
+`install --skills` copies this complete skill tree into the current workspace.
+`-g` copies it into the user skill directory. Neither path is the identity
+directory.
