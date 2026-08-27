@@ -1,84 +1,91 @@
 # Connect email
 
-Use this workflow only after `agentself init`. Email is optional and does not
-block identity initialization.
+Use this reference after `agentself init`. Email is optional and does not
+block identity setup.
 
-## Choose the authorized branch
+## Choose a connection
 
-Start with:
+Run:
 
 ```bash
 agentself email connect
 ```
 
-Done when JSON has a connected `address`, or exit 3 with `status`,
-`option.name`, and `next` to continue. Optional `message` and
-`human_action_required` may also be present. Follow the offered `choices`
-instead of inventing an address or provider procedure. For option essays, run
-`agentself backends email BACKEND`. Agents use `help`, `choices`, `sensitive`,
-`action`, `message`, and `human_action_required`.
+Continue when JSON has a connected `address`. Exit code 3 returns `status`,
+`option.name`, and `next`. The response can also include `message` and
+`human_action_required`.
 
-- **Existing key:** choose `existing_credential` when the user already has a
-  key or will create one in the provider console. This does not authorize a
-  signup.
-- **New signup:** choose `create_account` only after the user explicitly
-  authorizes creating a new provider organization with the exact email
-  identity to use. Provider help describes a path; it is not authorization.
+Use the offered `choices`. Do not invent an address or provider procedure. Run
+`agentself backends email BACKEND` for option details. Read `help`, `choices`,
+`sensitive`, `action`, `message`, and `human_action_required` in the response.
 
-For AgentMail, make one signup attempt with that exact approved identity. A
-claimed, forbidden, or unavailable result ends the attempt. Ask the user; do
-not try aliases, disposable addresses, or additional organizations. An OTP or
-confirmation email is not an API key. A key may be shown only once; if it is
-lost, the human creates another under API Keys. Do not assume an existing
-claimed organization can be attached unless the provider documents it.
+### Existing key
 
-## Continue without leaking answers
+Choose `existing_credential` when the user has a key or will create one in the
+provider console. This choice does not authorize signup.
 
-Email connect never prompts. Write the one requested answer to a private
-temporary file, then use the exact `state` from the latest response:
+### New signup
+
+Choose `create_account` only after the user authorizes a new provider
+organization with the exact email identity to use. Provider help describes a
+path. It does not authorize signup.
+
+For AgentMail, make one signup attempt with the exact approved identity. Stop
+when the provider reports a claimed, forbidden, or unavailable identity. Ask the
+user what to do next. Do not try aliases, disposable addresses, or other
+organizations.
+
+An OTP or confirmation email is not an API key. The provider can show a key
+only once. If the key is lost, the user must create another under API Keys. Do
+not attach an existing claimed organization unless the provider documents that
+path.
+
+## Continue without exposing answers
+
+Email connect does not prompt for input. Write the requested answer to a
+private temporary file. Then use the exact `state` from the latest response:
 
 ```bash
 agentself email connect --continue --state STATE --result-file PATH
 ```
 
-`--result-file -` reads stdin when PATH must be stdin. Never put credentials,
-OTPs, or other sensitive answers in argv, logs, a `*.notes` file, or chat.
-Delete temporary answer files after use. Do not switch email backends during a
-continuation.
+Use `--result-file -` when the answer must come from stdin. Keep credentials,
+OTPs, and other sensitive answers out of command arguments, logs, `*.notes`
+files, and chat. Delete temporary answer files after use. Keep the same email
+backend during continuation.
 
 If JSON includes `human_action_required`, relay the `action` URL and label when
-an `action` object is present; otherwise relay `message`. After they complete
+an `action` object exists. Otherwise relay `message`. After the user completes
 that external step, continue with `--result-file`. Do not run an interactive
-prompt or ask them to paste the secret into chat. Then verify:
+prompt or ask the user to paste a secret into chat. Then check the connection:
 
 ```bash
 agentself email show
 ```
 
-Done when `email show` JSON reports ready. One validated credential completes
-discovery; stop searching for alternatives.
+The setup is complete when `email show` JSON reports ready. One validated
+credential completes discovery. Stop looking for alternatives.
 
-## Resume an interrupted setup
+## Resume interrupted setup
 
-Continuation is stored with the identity only when setup needs opaque resume
-state (secrets). Inspecting the connect menu does not write identity secrets.
-The latest opaque `state` token is still required to resume. Keep the same
-`--identity-dir` / `AGENTSELF_IDENTITY_DIR` and continue only that latest
-state. Never reconstruct state or reuse an older token after a later step.
+The identity stores continuation only when setup needs opaque resume state,
+which can contain secrets. Inspecting the connect menu does not write identity
+secrets. Resume only with the latest opaque `state` token. Keep the same
+`--identity-dir PATH` or `AGENTSELF_IDENTITY_DIR` setting. Do not reconstruct
+state or reuse an older token after a later step.
 
-If the latest state was lost, or the provider reports a failed or unknown setup,
-restart with
-`agentself email connect`. If the credential cannot be obtained, inspect
-`agentself backends email`; change backend only by intentionally reinitializing
-with `init --force --email OTHER`, or stop.
+If the latest state is lost, or the provider reports failed or unknown setup,
+restart with `agentself email connect`. If you cannot get the credential,
+inspect `agentself backends email`. Change the backend only by intentionally
+reinitializing with `init --force --email OTHER`, or stop.
 
-## Credential scope
+## Limit credential scope
 
-For a transient sandbox, inject `AGENTSELF_EMAIL_CREDENTIAL` (or the backend
-alias) on every email command. If a key owns multiple inboxes, also inject a
-provider-listed `AGENTSELF_EMAIL_ADDRESS`. For durable use, complete
-`email connect`; it stores the validated credential in this identity.
+For a transient sandbox, inject `AGENTSELF_EMAIL_CREDENTIAL` or the backend
+alias on every email command. If one key owns multiple inboxes, also inject
+the provider-listed `AGENTSELF_EMAIL_ADDRESS`. For durable use, complete
+`email connect`. It stores the validated credential in this identity.
 
-Credential injection provides email access only. It does not preserve the
-wallet or make a new identity directory equivalent to the old one. See
+Credential injection gives email access only. It does not preserve the wallet
+or make a new identity directory equivalent to the old one. Read
 [handoff.md](handoff.md) before moving work between agents or directories.

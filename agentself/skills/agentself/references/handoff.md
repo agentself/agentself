@@ -1,26 +1,24 @@
 # Identity continuity and handoff
 
-Decide whether the next worker needs the same identity or an isolated one
-before running `init`.
+Choose the next identity before you run `init`.
 
-## Same identity versus isolation
+## Choose continuity or isolation
 
-`--identity-dir PATH` is the identity boundary for one invocation. If the
-flag is omitted, `AGENTSELF_IDENTITY_DIR` is used, then `~/.agentself`. The
-flag is not persisted.
+`--identity-dir PATH` selects an identity for one invocation. If you omit the
+flag, the CLI uses `AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The flag is
+not persisted.
 
 - Use the same directory for sequential work that must keep the same wallet,
-  encrypted secrets, non-secret notes, email setup, and local acted-mail state.
-  Avoid concurrent writers to one directory.
-- Use a distinct directory and `agentself --identity-dir PATH init` when
-  agents or tasks should have separate custody. This creates a different wallet.
-- Use `backup` and `restore` to move or clone the same identity into a distinct
-  directory. A clone carries the wallet key and every secret; protect it as
+  encrypted secrets, notes, email setup, and acted-mail state. Avoid concurrent
+  writers to one directory.
+- Use a distinct directory and `agentself --identity-dir PATH init` when agents
+  or tasks need separate custody. This creates a different wallet.
+- Use `backup` and `restore` to move or clone the same identity into another
+  directory. A clone contains the wallet key and every secret. Protect it as
   strongly as the source.
 
-Email credentials alone do not provide wallet continuity. Never initialize a
-fresh directory and assume that matching email access means it has the same
-wallet.
+Email credentials do not give wallet continuity. A new directory with the
+same email access can still have a different wallet.
 
 Before and after a handoff, record and compare public identity data:
 
@@ -30,24 +28,23 @@ agentself --identity-dir PATH wallet address
 ```
 
 Done when both JSON `address` values match the intended identity. Stop if the
-wallet address changes when continuity was required. Use
-`agentself wallet address --raw` only when a caller needs the exact address
-bytes.
+wallet address changes when you need continuity. Use
+`agentself wallet address --raw` only when a caller needs exact address bytes.
 
-## Interrupted work
+## Resume interrupted work
 
-Keep the same identity directory and inspect current state before retrying:
+Keep the same identity directory. Inspect its state before you retry:
 
 ```bash
 agentself show
 agentself diagnose
 ```
 
-Commands are designed to report `next`; follow that field rather than guessing.
-For interrupted email setup, use [email-connect.md](email-connect.md). For mail
-task state, use [mail.md](mail.md).
+Commands report `next`. Use that field instead of guessing. For interrupted
+email setup, read [email-connect.md](email-connect.md). For mail task state,
+read [mail.md](mail.md).
 
-Use the identity's first-class note channel for non-secret handoff context:
+Use notes for non-secret handoff context:
 
 ```bash
 agentself note set handoff --file PATH
@@ -55,28 +52,26 @@ agentself note list
 agentself note get handoff
 ```
 
-`note set` creates or replaces the note, so retrying a handoff write is safe.
-Default `note get` is JSON; `--raw` writes stored note bytes. Notes are
-printable by default and may contain public addresses, message IDs,
-command outcomes, and the next action. Never put credentials, OTPs, private
-keys, secret values, or mail bodies in a note. Delete completed context with
-`agentself note delete handoff`.
+`note set` creates or replaces the note, so a retry is safe. Default
+`note get` returns JSON. `--raw` writes stored note bytes. Notes are printable
+and can contain public addresses, message IDs, command outcomes, and the next
+action. Keep credentials, OTPs, private keys, secret values, and mail bodies
+out of notes. Delete completed context with `agentself note delete handoff`.
 
-## Backup and restore
+## Back up and restore
 
-Back up the complete identity to an empty protected destination:
+Back up the complete identity to an empty, protected destination:
 
 ```bash
 agentself backup PATH
 ```
 
-The copy includes config, wallet/age key material, encrypted secrets,
-non-secret notes, mail cache, and acted-mail state. The age key remains
-plaintext on the host.
-`--force` replaces a non-empty destination, so use it only after verifying the
-path.
+The backup contains config, wallet and age key material, encrypted secrets,
+non-secret notes, mail cache, and acted-mail state. The age key remains plain
+text on the host. `--force` replaces a non-empty destination. Check the path
+before you use it.
 
-To restore into the identity directory selected by `--identity-dir` or
+Restore into the identity directory selected by `--identity-dir` or
 `AGENTSELF_IDENTITY_DIR`:
 
 ```bash
@@ -85,8 +80,8 @@ agentself --identity-dir PATH show
 agentself --identity-dir PATH wallet address
 ```
 
-Restore refuses a non-empty destination unless `--force`. Before forcing,
-verify both source and destination; replacement is intentional and changes
-the destination's wallet. After restore, compare the wallet address with the
-pre-handoff public address and check email readiness. Do not print or manually
-copy key and secret files.
+Restore refuses a non-empty destination unless you use `--force`. Before you
+force a restore, check both source and destination. Replacement changes the
+destination wallet. After restore, compare its wallet address with the
+pre-handoff address and check email readiness. Keep key and secret files out of
+chat and do not copy them by hand.

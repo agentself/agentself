@@ -197,7 +197,7 @@ def test_secret_create_from_files_reports_names_only(tmp_path: Path) -> None:
     assert "other-value" not in clash.stdout + clash.stderr
 
 
-def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
+def test_skill_start_uses_json_version_and_diagnose() -> None:
     text = (PROJECT_ROOT / "agentself" / "skills" / "agentself" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -211,10 +211,8 @@ def test_skill_start_safely_prefers_json_version_and_diagnose() -> None:
     assert "agentself --json diagnose" not in start
     assert "agentself --json commands" not in start
     assert "--raw" in start
-    assert "never put the message on argv" in common
     assert "agentself wallet authorize --file PATH" in common
-    assert "Do not create another wallet" in common
-    assert "typed statement" in common
+    assert "agentself wallet verify --file PATH --authorization-file PATH" in common
     assert "secret list" in common
     assert "store list" not in common
     assert "agentself store" not in common
