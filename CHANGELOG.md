@@ -2,9 +2,10 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-08-26
+
 - README has a short copy-paste prompt so an agent can install the CLI,
   install the skill, and create a local identity.
-
 - `wallet authorize` and `wallet verify` accept a typed statement
   (`domain`, `types`, `message`) as typed data. Other files stay a
   personal signature. Login text uses the same verb. The JSON `scheme`
