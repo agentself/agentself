@@ -461,7 +461,7 @@ def test_json_email_connect_without_token_is_missing(tmp_path):
     assert connected["continue"].startswith(
         "agentself email connect --continue --state "
     )
-    assert connected["human_action_required"] is True
+    assert connected["human_action_required"] is False
     assert connected["option"]["name"] == "setup_method"
     assert connected["option"]["choices"] == [
         "existing_credential",
@@ -539,6 +539,17 @@ def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, ca
     assert auth["scheme"] == "eip191"
     assert auth["network"] == "base"
     assert len(auth["message_sha256"]) == 64
+    dest = tmp_path / "authorization.txt"
+    authored = _main_ok(
+        monkeypatch,
+        capsys,
+        env,
+        ["wallet", "authorize", "--file", value_file(tmp_path, "hello"), "--out", str(dest)],
+        "wallet_authorize_out",
+    )
+    assert "authorization" not in authored
+    assert authored["authorization_file"] == str(dest)
+    assert dest.read_text(encoding="utf-8") == auth["authorization"]
     sent = _main_ok(
         monkeypatch,
         capsys,

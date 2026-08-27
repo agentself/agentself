@@ -195,7 +195,7 @@ def test_new_backend_uses_existing_connect_without_parser_changes(
     assert [call[0] for call in mailbox.calls[-4:]] == [
         "describe",
         "send",
-        "receive",
+        "list",
         "list",
     ]
     assert all(call[1:] == (CREDENTIAL, ADDRESS) for call in mailbox.calls[-4:])

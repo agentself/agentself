@@ -44,6 +44,19 @@ class SyntheticEmailAccess(MailboxAccess):
 
     received_states: ClassVar[list[object]] = []
     issued: ClassVar[list[object]] = []
+    inbox: ClassVar[list[dict[str, str]]] = []
+    received_ids: ClassVar[list[str]] = []
+    listed: ClassVar[int] = 0
+    received: ClassVar[int] = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.received_states = []
+        cls.issued = []
+        cls.inbox = []
+        cls.received_ids = []
+        cls.listed = 0
+        cls.received = 0
 
     def send(
         self,
@@ -68,8 +81,25 @@ class SyntheticEmailAccess(MailboxAccess):
         include_body: bool = True,
     ) -> list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
-        del credential, address, message_id, include_body
-        return []
+        del credential, address
+        type(self).received += 1
+        wanted = (message_id or "").strip()
+        items: list[dict[str, str]] = []
+        for item in list(self.inbox):
+            mid = item.get("id") or ""
+            if wanted and mid != wanted:
+                continue
+            type(self).received_ids.append(mid)
+            parsed = dict(item)
+            parsed["status"] = "seen"
+            if include_body:
+                parsed.setdefault("body", "")
+            else:
+                parsed.pop("body", None)
+            items.append(parsed)
+            if wanted:
+                break
+        return items
 
     def list(
         self,
@@ -80,7 +110,13 @@ class SyntheticEmailAccess(MailboxAccess):
     ) -> list[dict[str, str]]:
         require_safe_token(identity_id, "identity id")
         del credential, address
-        return []
+        type(self).listed += 1
+        items: list[dict[str, str]] = []
+        for item in self.inbox:
+            parsed = {key: value for key, value in item.items() if key != "body"}
+            parsed.setdefault("status", "new")
+            items.append(parsed)
+        return items
 
     def describe(
         self,

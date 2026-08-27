@@ -78,7 +78,7 @@ def test_email_discovery_is_read_only_and_actionable(cli) -> None:
     menu = cli.json("email", "connect", expected_code=3)
     payload = menu.payload
     assert payload["status"] == "input_required"
-    assert payload["human_action_required"] is True
+    assert payload["human_action_required"] is False
     option = payload["option"]
     assert isinstance(option, dict)
     assert option["name"] == "setup_method"
@@ -92,6 +92,71 @@ def test_email_discovery_is_read_only_and_actionable(cli) -> None:
     assert unknown.payload["reason"] == "unknown mail ref"
     assert unknown.payload["next"] == "agentself email list"
     assert cli.snapshot() == before
+
+
+def test_identity_authorize_verify_and_safe_receive(cli) -> None:
+    help_text = cli.run("--help").expect(0).stdout
+    assert "--identity-dir" in help_text
+    assert "commands that support raw output" in help_text
+    assert "allowlisted" not in help_text.lower()
+    commands = cli.json("commands")
+    assert commands.payload["ok"] is True
+
+    decoy = cli.root / "decoy"
+    isolated = cli.root / "isolated"
+    started = cli.json("--identity-dir", str(isolated), "init", identity_dir=decoy)
+    address = started.payload["address"]
+    assert isinstance(address, str) and address.startswith("0x")
+    assert (isolated / "config.json").is_file()
+    assert not (decoy / "config.json").exists()
+
+    statement = _write(cli.work_dir / "statement.txt", "prove custody\n")
+    dest = cli.work_dir / "authorization.txt"
+    authored = cli.json(
+        "--identity-dir",
+        str(isolated),
+        "wallet",
+        "authorize",
+        "--file",
+        str(statement),
+        "--out",
+        str(dest),
+        identity_dir=decoy,
+    )
+    payload = authored.payload
+    assert payload["address"] == address
+    assert "authorization" not in payload
+    token = dest.read_bytes()
+    assert len(token) == payload["authorization_bytes"]
+    assert payload["authorization_file"] == str(dest)
+
+    verified = cli.json(
+        "--identity-dir",
+        str(isolated),
+        "wallet",
+        "verify",
+        "--file",
+        str(statement),
+        "--authorization-file",
+        str(dest),
+        identity_dir=decoy,
+    )
+    assert verified.payload["valid"] is True
+    assert verified.payload["address"] == address
+    assert token.decode("utf-8") not in verified.output
+    assert token.decode("utf-8") not in authored.output
+
+    before = cli.snapshot(isolated)
+    received = cli.json(
+        "--identity-dir",
+        str(isolated),
+        "email",
+        "receive",
+        expected_code=1,
+        identity_dir=decoy,
+    )
+    assert received.payload["ok"] is False
+    assert cli.snapshot(isolated) == before
 
 
 def test_installed_skill_is_complete_and_truthful(cli) -> None:

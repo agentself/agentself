@@ -104,6 +104,7 @@
       "human_action_required",
       "continue",
       "message",
+      "retryable",
       "owned_address",
       "needs_domain"
     ]
@@ -125,13 +126,27 @@
     "exact": ["ok", "address"]
   },
   "wallet_authorize": {
+    "required": ["ok", "address", "scheme", "network", "message_sha256"],
+    "allowed": [
+      "ok",
+      "address",
+      "scheme",
+      "network",
+      "message_sha256",
+      "authorization",
+      "authorization_file",
+      "authorization_bytes"
+    ]
+  },
+  "wallet_authorize_out": {
     "exact": [
       "ok",
       "address",
       "scheme",
       "network",
       "message_sha256",
-      "authorization"
+      "authorization_file",
+      "authorization_bytes"
     ]
   },
   "wallet_verify": {

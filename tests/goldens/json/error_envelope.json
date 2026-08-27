@@ -32,6 +32,7 @@
     "human_action_required",
     "continue",
     "message",
+    "retryable",
     "name",
     "exists",
     "address",
