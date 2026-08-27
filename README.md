@@ -16,6 +16,9 @@ against the CLI.
 uv tool install agentself
 ```
 
+If `uv tool install` succeeds but `agentself` is not on PATH, run
+`uv tool update-shell` and open a new shell.
+
 Or:
 
 ```bash
@@ -33,11 +36,11 @@ python -m pip install --user agentself
 ```bash
 agentself install --skills
 agentself install --tools
-agentself init
-agentself wallet address
-agentself secret create API_TOKEN --file ./api-token.txt
-agentself note set handoff --file ./handoff.txt
-agentself email connect
+agentself --identity-dir PATH init
+agentself --identity-dir PATH wallet address
+agentself --identity-dir PATH secret create API_TOKEN --file ./api-token.txt
+agentself --identity-dir PATH note set handoff --file ./handoff.txt
+agentself --identity-dir PATH email connect
 ```
 
 Those commands emit JSON. `init` creates one identity directory. Run
@@ -89,12 +92,15 @@ otherwise preserves UTF-8 bytes and newlines. Default `note get` is JSON.
 Notes are included in identity backup/restore. Never put credentials,
 OTPs, private keys, secret values, or mail bodies in notes.
 
-`email list`, `email find QUERY`, and default `email receive` return headers
-and `new`/`seen` status without bodies. Surfaced messages include the raw
+`email list` and `email find QUERY` return headers and `new`/`seen` status
+without bodies. `email receive` without a ref is a repeatable, non-consuming
+new-header check: it uses the same list path, does not fetch bodies, and does
+not change provider or local seen state. Surfaced messages include the raw
 provider `id` and a stable compact identity-local `ref` such as `m1`.
 Use the ref with `email receive REF --file PATH` or
 `email mark REF acted|unacted`; raw provider IDs remain accepted after
-`list` or `receive` has stored them. `acted` is
+`list` or `receive` has stored them. An explicit ref keeps the existing
+consuming receive. `acted` is
 independent local task state. The compact syntax is reserved: an unknown
 matching ref is refused instead of being sent to a provider. Acted state can be
 filtered with `email list --acted|--unacted` or the same flags on `email find`.
@@ -106,11 +112,16 @@ or `--raw` when a caller needs exact body bytes (one ref or provider ID).
 `wallet show` write the address; `wallet authorize` writes the signature
 or authorization token. Unsupported `--raw` is a JSON refusal, exit 2.
 
-`wallet authorize --file PATH` authorizes the host's exact statement with
-this identity. A typed statement (`domain`, `types`, `message`) is
-authorized as typed data; other files, including login text, stay a
-personal signature. The JSON `scheme` names that encoding. Do not create
-another wallet to sign.
+`wallet authorize --file PATH --out PATH` authorizes the host's exact
+statement with this identity and writes the token to a private file.
+Statement files keep trailing newlines; `message_sha256` is the SHA-256 of
+that exact decoded statement. A typed statement (`domain`, `types`,
+`message`) is authorized as typed data; other files, including login text,
+stay a personal signature. The JSON `scheme` names that encoding. Prefer
+`wallet verify --file PATH --authorization-file PATH` so the token is never
+placed on argv. Positional MESSAGE and JSON `authorization` remain for
+CLI 2 compatibility. Do not create another wallet to sign. `--out -` is
+refused; stdout transport is `--raw`.
 
 Stdin is never implicit. Pass `--file -`, `--result-file -`, or
 `--wallet-key-file -`. Missing explicit input is JSON, exit 3.
@@ -146,12 +157,13 @@ there is no automatic failover. Backend-specific setup, credential sources,
 and required host settings are exposed by `agentself backends` and
 `agentself email connect`.
 
-The identity directory is `~/.agentself` by default. Set
-`AGENTSELF_IDENTITY_DIR` to isolate identities, for example:
+The identity directory is `~/.agentself` by default. Prefer
+`--identity-dir PATH` for one invocation. Precedence is the flag, then
+`AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The flag is not persisted.
 
 ```bash
-AGENTSELF_IDENTITY_DIR=~/.agent-a agentself init
-AGENTSELF_IDENTITY_DIR=~/.agent-b agentself init
+agentself --identity-dir ~/.agent-a init
+agentself --identity-dir ~/.agent-b init
 ```
 
 Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient
@@ -187,6 +199,9 @@ coding agents:
 agentself install --skills
 agentself install --skills -g
 ```
+
+`install --skills` copies the skill into the current workspace. `-g` copies
+it into the user skill directory. Neither path is the identity directory.
 
 ## Security
 

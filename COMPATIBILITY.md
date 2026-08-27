@@ -28,6 +28,25 @@ Within a CLI schema version, JSON consumers should ignore unknown object keys.
 For example, mail header objects may gain additive metadata such as local task
 state while retaining provider read state in `status`.
 
+`--identity-dir PATH` is an additive per-invocation selector. Precedence
+is the flag, then `AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The
+selection is not written to `config.json` and is not a current-identity
+pointer.
+
+`wallet authorize --out PATH` is an additive success shape: it includes
+`authorization_file` and `authorization_bytes` and omits `authorization`.
+Default JSON still includes `authorization`. `wallet verify
+--authorization-file PATH` is additive; the positional authorization
+argument remains. CLI schema stays `2`.
+
+`email receive` without a ref is additive behavior on the existing verb:
+it returns new-message headers through the list path and does not fetch
+bodies or change provider or local seen state. An explicit ref keeps the
+consuming receive.
+
+Failed email setup may include additive `message`, `retryable`, and
+`option` fields. Consumers should ignore unknown keys.
+
 `wallet authorize` and `wallet verify` report `scheme` for the statement
 that was authorized. Chain wallets may use `eip191` or `eip712`. Consumers
 that assumed a single backend-wide scheme should read the per-command

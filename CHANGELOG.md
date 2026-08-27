@@ -6,6 +6,18 @@
   (`domain`, `types`, `message`) as typed data. Other files stay a
   personal signature. Login text uses the same verb. The JSON `scheme`
   names the encoding used for that statement.
+- `--identity-dir PATH` selects the identity for one invocation. It is
+  not persisted. Precedence is the flag, then `AGENTSELF_IDENTITY_DIR`,
+  then `~/.agentself`.
+- `wallet authorize --out PATH` writes the exact token privately and
+  returns metadata without `authorization`. `--out -` is refused; use
+  `--raw`. Prefer `wallet verify --authorization-file PATH`. Positional
+  MESSAGE and JSON `authorization` remain for CLI 2.
+- `email receive` without a ref is a repeatable, non-consuming
+  new-header check. Explicit refs keep the consuming receive.
+- Invalid `init --id` names the identity-id character rule.
+- Failed email setup adds `message`, `retryable`, and optional `option`.
+  AgentMail signup failures recover with `agentself email connect`.
 
 ## 0.2.1 - 2026-08-25
 
