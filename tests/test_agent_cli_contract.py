@@ -17,6 +17,7 @@ from tests.support import (
     cli_env,
     compose_with_rpc,
     run_cli,
+    symlink_or_skip,
     value_file,
 )
 from tests.test_email_setup_protocol import ScriptedMailbox, _connect, _patch_mailbox
@@ -130,7 +131,7 @@ def test_secret_file_refuses_symlink_even_with_force(tmp_path: Path) -> None:
     target = tmp_path / "target.txt"
     target.write_text("other\n", encoding="utf-8")
     dest = tmp_path / "out-link.txt"
-    dest.symlink_to(target)
+    symlink_or_skip(dest, target)
     refused = run_cli(["secret", "get", "notes", "--file", str(dest), "--force"], env)
     assert refused.returncode == 2
     data = json.loads(refused.stdout)
@@ -162,6 +163,16 @@ def test_email_headers_drop_ansi(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "\x1b" not in subject
     assert subject == "Pay now"
     assert listed["messages"][0]["from"] == "evil@example.com"
+
+
+def test_connect_interval_rejects_nonfinite(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["init"], env).returncode == 0
+    for value in ("nan", "inf", "-inf"):
+        proc = run_cli(["email", "connect", "--interval", value], env)
+        assert proc.returncode == 2, proc.stdout
+        data = json.loads(proc.stdout)
+        assert data["reason"] == "interval must be >= 0"
 
 
 def test_connect_interval_polls_only_on_continue(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from pathlib import Path
 from typing import cast
@@ -421,7 +422,7 @@ def _nonneg_seconds(
             f"{name} must be >= 0",
             nxt="agentself email connect --help",
         )
-    if seconds < 0:
+    if not math.isfinite(seconds) or seconds < 0:
         return 0.0, fail(
             args,
             2,
