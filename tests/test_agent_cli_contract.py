@@ -169,7 +169,7 @@ def test_connect_interval_rejects_nonfinite(tmp_path: Path) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["init"], env).returncode == 0
     for value in ("nan", "inf", "-inf"):
-        proc = run_cli(["email", "connect", "--interval", value], env)
+        proc = run_cli(["email", "connect", f"--interval={value}"], env)
         assert proc.returncode == 2, proc.stdout
         data = json.loads(proc.stdout)
         assert data["reason"] == "interval must be >= 0"
