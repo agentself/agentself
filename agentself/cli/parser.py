@@ -6,6 +6,7 @@ import sys
 
 from agentself.cli.registry import COMMANDS, featured_metavar
 from agentself.host import ENV_IDENTITY_DIR, close_match
+from agentself.internal.next import next_object
 from agentself.local import redact_secrets
 
 _HELP = argparse.RawDescriptionHelpFormatter
@@ -31,13 +32,16 @@ class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # type: ignore[override]
         nxt = f"{self.prog} --help"
         message = redact_secrets(message)
-        self.exit(
-            2,
-            json.dumps(
-                {"ok": False, "error": "refused", "reason": message, "next": nxt}
-            )
-            + "\n",
-        )
+        payload: dict[str, object] = {
+            "ok": False,
+            "error": "refused",
+            "reason": message,
+            "next": nxt,
+        }
+        obj = next_object(nxt)
+        if obj is not None:
+            payload["_next"] = obj
+        self.exit(2, json.dumps(payload) + "\n")
 
     def parse_known_args(self, args=None, namespace=None):
         # Subparsers parse via parse_known_args, so extras would otherwise

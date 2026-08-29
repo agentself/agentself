@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Failures and diagnose keep string `next` and add `_next` when the next
+  step is an `agentself` command.
+- `commands` includes param schemas by default (`params`, `verbs`).
+- `email connect --continue --interval` polls a pending human step; the
+  first connect still returns immediately.
+- `wallet send --test` returns the send plan without broadcasting.
+- `secret get --file`, `wallet authorize --out`, and `email receive --file`
+  refuse an existing path unless `--force`, and refuse a symlink even with
+  `--force`.
+- Remote email headers and setup `message` / `action` strings drop ANSI
+  and other control characters. Mail bodies stay exact on `--file` / `--raw`.
 - README Quick start uses `--identity-dir PATH` instead of a bare `PATH`
   token that argparse treated as a command.
 - `commands` and `backends email` `next` point at `email receive` once

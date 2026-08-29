@@ -33,4 +33,5 @@ def test_set_missing_sops_json_error(tmp_path):
         "error": "error",
         "reason": "sops not on PATH",
         "next": "agentself install --tools",
+        "_next": {"command": "agentself install --tools"},
     }

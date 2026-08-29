@@ -209,6 +209,7 @@ def test_doctor_fetch_error_is_json_object(tmp_path, monkeypatch, capsys):
         "error": "error",
         "reason": "could not fetch host tools",
         "next": "agentself install --tools",
+        "_next": {"command": "agentself install --tools"},
     }
 
 

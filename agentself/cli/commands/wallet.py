@@ -3,7 +3,12 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from agentself.cli.io import load_value_file, store_value_file, value_meta
+from agentself.cli.io import (
+    ValueFileRefused,
+    load_value_file,
+    store_value_file,
+    value_meta,
+)
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import client, fail, message_from_args, value_source_error
 from agentself.internal.text import sha256_text
@@ -61,7 +66,12 @@ def authorize_wallet(args, vault: Path) -> CliOutcome:
     }
     if out_file:
         try:
-            store_value_file(out_file, token)
+            store_value_file(out_file, token, force=bool(getattr(args, "force", False)))
+        except ValueFileRefused as exc:
+            nxt = "agentself wallet authorize --out PATH"
+            if exc.reason == "file exists":
+                nxt = f"{nxt} --force"
+            return fail(args, 2, "refused", exc.reason, nxt=nxt)
         except OSError:
             return fail(
                 args,
@@ -149,6 +159,20 @@ def verify_wallet(args, vault: Path) -> CliOutcome:
 
 
 def send_wallet(args, vault: Path) -> CliOutcome:
+    if getattr(args, "test_send", False):
+        access = client(vault)
+        view = access.identity().get("wallet")
+        wallet = view if isinstance(view, dict) else {}
+        asset = (args.asset or "").strip() or str(wallet.get("asset") or "")
+        return CliSuccess(
+            {
+                "to": args.to,
+                "amount": _canonical_amount(args.amount),
+                "asset": asset,
+                "test": True,
+            },
+            redact=False,
+        )
     sent = client(vault).wallet_send(args.to, args.amount, args.asset or "")
     payload: dict[str, object] = {
         "to": args.to,

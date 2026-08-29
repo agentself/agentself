@@ -49,6 +49,7 @@ from agentself.internal.custody.errors import (
 )
 from agentself.internal.files import IdentityBusy
 from agentself.internal.log import record_diagnostic
+from agentself.internal.next import attach_next
 from agentself.internal.text import utf8_bytes
 from agentself.local import (
     IdentityStateError,
@@ -359,6 +360,9 @@ def _render(outcome: CliOutcome) -> int:
             "ok": True,
             **{key: value for key, value in outcome.payload.items() if key != "ok"},
         }
+        nxt = body.get("next")
+        if isinstance(nxt, str) and "_next" not in body:
+            attach_next(body, nxt)
         text = json.dumps(body)
         if outcome.redact:
             text = redact_secrets(text)
@@ -374,6 +378,8 @@ def _render(outcome: CliOutcome) -> int:
         for key, value in outcome.extra.items():
             if key not in payload:
                 payload[key] = value
+    if "_next" not in payload:
+        attach_next(payload, outcome.next)
     sys.stdout.write(redact_secrets(json.dumps(payload)) + "\n")
     return outcome.exit_code
 

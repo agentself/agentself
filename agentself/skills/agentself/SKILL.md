@@ -46,7 +46,8 @@ Use `--raw` only when a caller needs exact bytes from `wallet address`,
 `email receive REF`. Other `--raw` uses return a JSON refusal with exit code 2.
 
 When a flag or next step is unclear, run `agentself commands` or open the
-matching reference below. Run `agentself backends CHANNEL BACKEND` when you
+matching reference below. `commands` includes param names, types, and required flags. Failures keep string `next` and add `_next` when that next
+is an `agentself` command. Run `agentself backends CHANNEL BACKEND` when you
 need backend setup options.
 
 ## Pass input safely
@@ -74,7 +75,8 @@ safe. One directory is one identity: a second `--id` is refused, and
 
 `show` includes the age recipient and email readiness. For wallet work, inspect
 `agentself backends wallet` first. The default Base wallet is live and can move
-real funds. `wallet balance` reports the current amount. It does not identify
+real funds. Use `wallet send TO AMOUNT --test` to return the send plan without
+broadcasting. `wallet balance` reports the current amount. It does not identify
 who paid or when.
 
 Authorize with the existing identity:

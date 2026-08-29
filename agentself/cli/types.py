@@ -28,6 +28,9 @@ class EmailCommandArguments(CommandArguments, Protocol):
     do_continue: bool
     setup_state: str
     result_file: str
+    interval: float | None
+    timeout: float | None
+    force: bool
     to: str
     subject: str
     body: str | None

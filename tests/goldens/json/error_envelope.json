@@ -46,6 +46,7 @@
     "authorization",
     "created",
     "unchanged",
-    "refused"
+    "refused",
+    "_next"
   ]
 }

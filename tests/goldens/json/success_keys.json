@@ -39,7 +39,8 @@
       "store_backend",
       "package",
       "executable",
-      "next"
+      "next",
+      "_next"
     ]
   },
   "install": {
@@ -159,7 +160,7 @@
   },
   "wallet_send": {
     "required": ["ok", "to", "amount", "asset"],
-    "allowed": ["ok", "to", "amount", "asset", "hash"]
+    "allowed": ["ok", "to", "amount", "asset", "hash", "test"]
   },
   "wallet_balance": {
     "required": ["ok"],

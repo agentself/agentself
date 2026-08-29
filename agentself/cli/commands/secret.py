@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentself.cli.io import load_value_file, store_value_file, value_meta
+from agentself.cli.io import (
+    ValueFileRefused,
+    load_value_file,
+    store_value_file,
+    value_meta,
+)
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import (
     client,
@@ -78,7 +83,12 @@ def get_secret(args, vault: Path) -> CliOutcome:
         return CliSuccess({"name": name, **meta, "protected": name in protected_names})
     if path:
         try:
-            store_value_file(path, value)
+            store_value_file(path, value, force=bool(getattr(args, "force", False)))
+        except ValueFileRefused as exc:
+            nxt = "agentself secret get NAME --file PATH"
+            if exc.reason == "file exists":
+                nxt = f"{nxt} --force"
+            return fail(args, 2, "refused", exc.reason, nxt=nxt)
         except OSError:
             return fail(args, 1, "error", "file")
         return CliSuccess({"name": name, "path": path, **meta}, redact=False)

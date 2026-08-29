@@ -56,8 +56,11 @@ backend during continuation.
 
 If JSON includes `human_action_required`, relay the `action` URL and label when
 an `action` object exists. Otherwise relay `message`. After the user completes
-that external step, continue with `--result-file`. Do not run an interactive
-prompt or ask the user to paste a secret into chat. Then check the connection:
+that external step, continue with `--result-file`, or poll with
+`--continue --state STATE --interval 5` when no new file is needed. The first
+`email connect` still returns immediately so you can show the URL. Follow
+`_next.command` when present. Do not run an interactive prompt or ask the
+user to paste a secret into chat. Then check the connection:
 
 ```bash
 agentself email show

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import math
+import time
 from pathlib import Path
+from typing import cast
 
-from agentself.cli.io import load_value_file, store_value_file, value_meta
+from agentself.cli.io import (
+    ValueFileRefused,
+    load_value_file,
+    store_value_file,
+    value_meta,
+)
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import (
     client,
@@ -13,15 +21,22 @@ from agentself.cli.runtime import (
 from agentself.cli.types import EmailCommandArguments
 from agentself.internal.custody.errors import ChannelFailure
 from agentself.internal.mail_state import MAIL_LIST_CAP
+from agentself.internal.next import next_object
+from agentself.internal.sanitize import sanitize_text
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
     SETUP_FAILED,
+    SETUP_INPUT_REQUIRED,
     SETUP_PENDING,
     continue_command,
     human_action_required_of,
     setup_status_of,
 )
+
+_POLL_DEFAULT_TIMEOUT = 300.0
+_POLL_HINT_INTERVAL = 5
+_HEADER_TEXT_KEYS = ("from", "to", "subject", "reason")
 
 _SIGNUP_FAILURES = frozenset(
     {
@@ -37,14 +52,33 @@ def connect_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     answers, err = _connect_answers(args)
     if err is not None:
         return err
+    interval, timeout, poll_err = _connect_poll_window(args)
+    if poll_err is not None:
+        return poll_err
     try:
-        result = client(vault).email_connect(
-            answers=answers or None,
-            state=(args.setup_state or "").strip() or None,
-        )
+        result = _connect_once(vault, args, answers)
     except ChannelFailure as exc:
         return _email_connect_channel_fail(args, exc)
-    return _email_connect_result(args, result)
+    if interval <= 0:
+        return _email_connect_result(args, result)
+    deadline = time.monotonic() + timeout
+    while True:
+        status = setup_status_of(result)
+        if status in {SETUP_CONNECTED, SETUP_FAILED, SETUP_INPUT_REQUIRED}:
+            return _email_connect_result(args, result)
+        if time.monotonic() >= deadline:
+            extra = _setup_public(result)
+            token = str(result.get("state") or "")
+            nxt = str(result.get("continue") or "") or (
+                continue_command(token) if token else "agentself email connect --help"
+            )
+            _attach_connect_next(extra, result, status)
+            return fail(args, 1, "error", "polling timeout", nxt=nxt, extra=extra)
+        time.sleep(interval)
+        try:
+            result = _connect_once(vault, args, answers)
+        except ChannelFailure as exc:
+            return _email_connect_channel_fail(args, exc)
 
 
 def show_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
@@ -122,7 +156,9 @@ def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     if as_raw:
         body = str(messages[0].get("body", "")) if messages else ""
         return CliRaw(body)
-    file_error = _prepare_received_messages(args, messages, path)
+    file_error = _prepare_received_messages(
+        args, messages, path, force=bool(getattr(args, "force", False))
+    )
     if file_error is not None:
         return file_error
     payload: dict[str, object] = {"messages": messages}
@@ -138,6 +174,7 @@ def list_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     payload: dict[str, object] = {"messages": messages}
     if getattr(args, "_truncated", False):
         payload["truncated"] = True
+    _sanitize_message_headers(messages)
     return CliSuccess(payload)
 
 
@@ -149,6 +186,7 @@ def find_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
         acted=acted,
         rejected=rejected,
     )
+    _sanitize_message_headers(messages)
     return CliSuccess({"messages": messages})
 
 
@@ -200,16 +238,34 @@ def _list_headers(
     if len(messages) > wanted:
         messages = messages[:wanted]
     setattr(args, "_truncated", truncated)
+    _sanitize_message_headers(messages)
     return messages, None
 
 
+def _sanitize_message_headers(messages: list[dict[str, object]]) -> None:
+    for message in messages:
+        for key in _HEADER_TEXT_KEYS:
+            raw = message.get(key)
+            if isinstance(raw, str):
+                message[key] = sanitize_text(raw)
+
+
 def _prepare_received_messages(
-    args: EmailCommandArguments, messages: list[dict[str, object]], path: str
+    args: EmailCommandArguments,
+    messages: list[dict[str, object]],
+    path: str,
+    *,
+    force: bool = False,
 ) -> CliOutcome | None:
     if path and messages:
         body = str(messages[0].get("body", ""))
         try:
-            store_value_file(path, body)
+            store_value_file(path, body, force=force)
+        except ValueFileRefused as exc:
+            nxt = "agentself email receive REF --file PATH"
+            if exc.reason == "file exists":
+                nxt = f"{nxt} --force"
+            return fail(args, 2, "refused", exc.reason, nxt=nxt)
         except OSError:
             return fail(args, 1, "error", "file")
         meta = value_meta(body)
@@ -218,6 +274,7 @@ def _prepare_received_messages(
         messages[0]["body_sha256"] = meta["sha256"]
     for message in messages:
         message.pop("body", None)
+    _sanitize_message_headers(messages)
     return None
 
 
@@ -289,7 +346,10 @@ def _compact_setup_option(option: object) -> dict[str, object] | None:
         payload["choices"] = choices
     action = option.get("action")
     if isinstance(action, dict):
-        payload["action"] = action
+        cleaned: dict[str, object] = {}
+        for key, raw in action.items():
+            cleaned[key] = sanitize_text(raw) if isinstance(raw, str) else raw
+        payload["action"] = cleaned
     return payload
 
 
@@ -305,13 +365,95 @@ def _setup_public(result: dict[str, object]) -> dict[str, object]:
         )
         if key in result
     }
+    raw_message = payload.get("message")
+    if isinstance(raw_message, str):
+        payload["message"] = sanitize_text(raw_message)
     compact = _compact_setup_option(result.get("option"))
     if compact is not None:
         payload["option"] = compact
     if "continue" not in payload and result.get("state"):
         payload["continue"] = continue_command(str(result["state"]))
     payload["human_action_required"] = human_action_required_of(result)
+    _attach_connect_next(payload, result, setup_status_of(result))
     return payload
+
+
+def _connect_once(
+    vault: Path, args: EmailCommandArguments, answers: dict[str, str]
+) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        client(vault).email_connect(
+            answers=answers or None,
+            state=(args.setup_state or "").strip() or None,
+        ),
+    )
+
+
+def _connect_poll_window(
+    args: EmailCommandArguments,
+) -> tuple[float, float, CliOutcome | None]:
+    interval, err = _nonneg_seconds(args, "interval")
+    if err is not None:
+        return 0.0, 0.0, err
+    timeout, err = _nonneg_seconds(args, "timeout")
+    if err is not None:
+        return 0.0, 0.0, err
+    if interval > 0 and not args.do_continue:
+        return 0.0, 0.0, None
+    if interval > 0 and timeout <= 0:
+        timeout = _POLL_DEFAULT_TIMEOUT
+    return interval, timeout, None
+
+
+def _nonneg_seconds(
+    args: EmailCommandArguments, name: str
+) -> tuple[float, CliOutcome | None]:
+    raw = getattr(args, name, None)
+    if raw is None:
+        return 0.0, None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return 0.0, fail(
+            args,
+            2,
+            "refused",
+            f"{name} must be >= 0",
+            nxt="agentself email connect --help",
+        )
+    if not math.isfinite(seconds) or seconds < 0:
+        return 0.0, fail(
+            args,
+            2,
+            "refused",
+            f"{name} must be >= 0",
+            nxt="agentself email connect --help",
+        )
+    return seconds, None
+
+
+def _attach_connect_next(
+    payload: dict[str, object], result: dict[str, object], status: str
+) -> None:
+    token = str(result.get("state") or payload.get("state") or "")
+    if status in {SETUP_ACTION_REQUIRED, SETUP_PENDING} and token:
+        poll = (
+            f"agentself email connect --continue --state {token} "
+            f"--interval {_POLL_HINT_INTERVAL}"
+        )
+        obj = next_object(
+            poll, until="status is connected", interval=_POLL_HINT_INTERVAL
+        )
+        if obj is not None:
+            payload["_next"] = obj
+        return
+    nxt = str(payload.get("continue") or "") or (
+        continue_command(token) if token else "agentself email connect --help"
+    )
+    obj = next_object(nxt, until="status is connected" if token else None)
+    if obj is not None:
+        payload["_next"] = obj
 
 
 def _email_setup_pending(

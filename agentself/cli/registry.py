@@ -148,6 +148,12 @@ def configure_secret_get(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Allow a raw export of a protected secret",
     )
+    parser.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Replace an existing --file",
+    )
 
 
 def configure_secret_update(parser: argparse.ArgumentParser) -> None:
@@ -205,6 +211,22 @@ def configure_email_connect(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="Read the current setup answer from a file. Use - to read stdin",
     )
+    parser.add_argument(
+        "--interval",
+        dest="interval",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="With --continue, poll until setup is terminal. The first connect still returns immediately",
+    )
+    parser.add_argument(
+        "--timeout",
+        dest="timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Max seconds to poll with --interval (default 300)",
+    )
 
 
 def configure_email_send(parser: argparse.ArgumentParser) -> None:
@@ -246,6 +268,12 @@ def configure_email_receive(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="N",
         help="Max headers for a no-ref check (1-100)",
+    )
+    parser.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Replace an existing --file",
     )
 
 
@@ -336,6 +364,12 @@ def configure_wallet_authorize(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="Write the exact authorization to PATH. Cannot be -; use --raw for stdout",
     )
+    parser.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Replace an existing --out file",
+    )
 
 
 def configure_wallet_verify(parser: argparse.ArgumentParser) -> None:
@@ -376,6 +410,12 @@ def configure_wallet_send(parser: argparse.ArgumentParser) -> None:
         default="",
         metavar="ASSET",
         help="Asset to send. Omit to use the backend default",
+    )
+    parser.add_argument(
+        "--test",
+        dest="test_send",
+        action="store_true",
+        help="Validate the send plan without broadcasting",
     )
 
 
@@ -598,9 +638,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         description=(
             "Never prompts: returns a setup object and exit 3 when input or a human "
             "action is required. Continue with --continue --state STATE --result-file PATH. "
-            "Use --result-file - to read stdin."
+            "Use --result-file - to read stdin. With --continue, --interval polls until "
+            "setup is terminal. The first connect still returns immediately."
         ),
-        epilog="Examples:\n  agentself email connect\n  agentself email connect --continue --state STATE --result-file -",
+        epilog="Examples:\n  agentself email connect\n  agentself email connect --continue --state STATE --result-file -\n  agentself email connect --continue --state STATE --interval 5",
     ),
     CommandSpec(
         ("email", "show"),
@@ -723,7 +764,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Send an amount of an asset",
         f"{_H}.wallet:send_wallet",
         configure_wallet_send,
-        epilog="Examples:\n  agentself wallet send TO AMOUNT\n  agentself wallet send TO AMOUNT ASSET",
+        description="Live backends move real funds. --test returns the send plan without broadcasting.",
+        epilog="Examples:\n  agentself wallet send TO AMOUNT\n  agentself wallet send TO AMOUNT --test",
     ),
     CommandSpec(
         ("backup",),
@@ -871,21 +913,105 @@ def command_recovery(argv: Sequence[str]) -> tuple[str, str] | None:
     return f"{tokens[0]} maps to the {group} command group", default_next
 
 
+_SCHEMA_SKIP_DESTS = frozenset({"help", "as_json", "as_raw", "identity_dir", "command"})
+_SENSITIVE_DESTS = frozenset(
+    {
+        "result_file",
+        "wallet_key_file",
+        "authorization_file",
+        "to_file",
+        "out_file",
+        "body_file",
+    }
+)
+
+
+def _param_type(action: argparse.Action) -> str:
+    if action.type is int or action.type is float:
+        return "number"
+    if isinstance(action.choices, (list, tuple)) and action.choices:
+        return "choice"
+    const = getattr(action, "const", None)
+    if action.nargs == 0 or isinstance(const, bool) or action.default is False:
+        if not action.option_strings:
+            return "string"
+        return "bool"
+    return "string"
+
+
+def _param_name(action: argparse.Action) -> str:
+    if action.option_strings:
+        return action.option_strings[0]
+    raw = str(action.metavar or action.dest or "").strip()
+    return raw.upper() if raw.islower() else raw
+
+
+def _param_of(action: argparse.Action) -> dict[str, object] | None:
+    if action.dest in _SCHEMA_SKIP_DESTS:
+        return None
+    name = _param_name(action)
+    if not name:
+        return None
+    required = not action.option_strings and action.nargs not in ("?", "*", 0)
+    payload: dict[str, object] = {
+        "name": name,
+        "type": _param_type(action),
+        "required": bool(required),
+    }
+    if action.dest in _SENSITIVE_DESTS:
+        payload["sensitive"] = True
+    if isinstance(action.choices, (list, tuple)) and action.choices:
+        payload["choices"] = [str(item) for item in action.choices]
+    return payload
+
+
+def command_params(spec: CommandSpec) -> list[dict[str, object]]:
+    if spec.configure is None:
+        return []
+    parser = argparse.ArgumentParser(add_help=False)
+    spec.configure(parser)
+    params: list[dict[str, object]] = []
+    for action in parser._actions:
+        item = _param_of(action)
+        if item is not None:
+            params.append(item)
+    return params
+
+
+def _verb_schema(spec: CommandSpec) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": spec.path[-1],
+        "raw": spec.raw,
+        "params": command_params(spec),
+    }
+    if spec.next:
+        payload["next"] = spec.next
+    return payload
+
+
 def commands_payload(*, email_next: str | None = None) -> dict[str, object]:
     verbs = command_verbs()
-    featured = [
-        {
+    featured: list[dict[str, object]] = []
+    for spec in COMMANDS:
+        if len(spec.path) != 1 or spec.args is None:
+            continue
+        nxt = email_next if spec.path == ("email",) and email_next else spec.next or ""
+        item: dict[str, object] = {
             "name": spec.path[0],
             "args": list(verbs.get(spec.path[0], spec.args or ())),
-            "next": (
-                email_next
-                if spec.path == ("email",) and email_next
-                else spec.next or ""
-            ),
+            "next": nxt,
         }
-        for spec in COMMANDS
-        if len(spec.path) == 1 and spec.args is not None
-    ]
+        if spec.handler is None:
+            item["verbs"] = [
+                _verb_schema(child)
+                for child in COMMANDS
+                if len(child.path) == 2 and child.path[0] == spec.path[0]
+            ]
+        else:
+            params = command_params(spec)
+            if params:
+                item["params"] = params
+        featured.append(item)
     raw: dict[str, list[str]] = {}
     for spec in COMMANDS:
         if spec.raw and len(spec.path) >= 2:
