@@ -74,7 +74,8 @@ and `poll_interval_seconds`. Consumers should ignore unknown keys.
 `agentself commands` may include additive `params` and `verbs`.
 `email connect --interval` / `--timeout`, `wallet send --test`, and
 `--force` on secret/authorization/mail file writes are additive. Existing
-`--file` / `--out` paths now refuse to replace a file unless `--force`.
+`--file` / `--out` paths now refuse to replace a file unless `--force`, and
+refuse a symlink even with `--force`.
 
 `note` is a public CLI command group. Note values are deliberately
 non-secret and may appear in JSON output. The identity-local notes

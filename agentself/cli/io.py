@@ -39,10 +39,22 @@ def load_value_file(
     return read_text_file(Path(path), strip_newline=strip_newline, strip_bom=strip_bom)
 
 
+class ValueFileRefused(Exception):
+    """Refuse a credential write that would follow or replace a bad path."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 def store_value_file(path: str, value: str, *, force: bool = False) -> None:
     dest = Path(path)
+    # --force replaces a regular file. It does not authorize writing through
+    # or over a symlink (link-cli retrieve / --output-file).
+    if dest.is_symlink():
+        raise ValueFileRefused("file is a symlink")
     if dest.exists() and not force:
-        raise FileExistsError(path)
+        raise ValueFileRefused("file exists")
     atomic_write(dest, utf8_bytes(value), mode=0o600, private_dir=False)
 
 

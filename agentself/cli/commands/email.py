@@ -4,7 +4,12 @@ import time
 from pathlib import Path
 from typing import cast
 
-from agentself.cli.io import load_value_file, store_value_file, value_meta
+from agentself.cli.io import (
+    ValueFileRefused,
+    load_value_file,
+    store_value_file,
+    value_meta,
+)
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import (
     client,
@@ -255,14 +260,11 @@ def _prepare_received_messages(
         body = str(messages[0].get("body", ""))
         try:
             store_value_file(path, body, force=force)
-        except FileExistsError:
-            return fail(
-                args,
-                2,
-                "refused",
-                "file exists",
-                nxt="agentself email receive REF --file PATH --force",
-            )
+        except ValueFileRefused as exc:
+            nxt = "agentself email receive REF --file PATH"
+            if exc.reason == "file exists":
+                nxt = f"{nxt} --force"
+            return fail(args, 2, "refused", exc.reason, nxt=nxt)
         except OSError:
             return fail(args, 1, "error", "file")
         meta = value_meta(body)

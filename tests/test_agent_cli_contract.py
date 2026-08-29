@@ -122,6 +122,24 @@ def test_secret_file_refuses_existing_without_force(tmp_path: Path) -> None:
     assert dest.read_text(encoding="utf-8") == "secret-one"
 
 
+def test_secret_file_refuses_symlink_even_with_force(tmp_path: Path) -> None:
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["init"], env).returncode == 0
+    src = value_file(tmp_path, "secret-one", "one.txt")
+    assert run_cli(["secret", "create", "notes", "--file", src], env).returncode == 0
+    target = tmp_path / "target.txt"
+    target.write_text("other\n", encoding="utf-8")
+    dest = tmp_path / "out-link.txt"
+    dest.symlink_to(target)
+    refused = run_cli(["secret", "get", "notes", "--file", str(dest), "--force"], env)
+    assert refused.returncode == 2
+    data = json.loads(refused.stdout)
+    assert data["reason"] == "file is a symlink"
+    assert "--force" not in data["next"]
+    assert dest.is_symlink()
+    assert target.read_text(encoding="utf-8") == "other\n"
+
+
 def test_email_headers_drop_ansi(tmp_path: Path, monkeypatch, capsys) -> None:
     env = cli_env(tmp_path / "vault")
     assert run_cli(["init"], env).returncode == 0
