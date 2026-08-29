@@ -150,7 +150,12 @@ def test_email_list_limit_is_refused_out_of_range(tmp_path: Path) -> None:
     assert run_cli(["init"], env).returncode == 0
     proc = run_cli(["email", "list", "--limit", "0"], env)
     assert proc.returncode == 2
-    assert json.loads(proc.stdout)["reason"] == "limit must be 1..100"
+    data = json.loads(proc.stdout)
+    assert data["reason"] == "limit must be 1..100"
+    assert data["next"] == "agentself email list --help"
+    receive = run_cli(["email", "receive", "--limit", "0"], env)
+    assert receive.returncode == 2
+    assert json.loads(receive.stdout)["next"] == "agentself email receive --help"
 
 
 def test_diagnose_uninitialized_and_mid_connect_name_next(tmp_path: Path) -> None:

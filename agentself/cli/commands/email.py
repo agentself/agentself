@@ -168,12 +168,15 @@ def _parse_limit(args: EmailCommandArguments) -> tuple[int | None, CliOutcome | 
     if raw is None:
         return None, None
     if raw < 1 or raw > MAIL_LIST_CAP:
+        verb = getattr(args, "email_command", None) or "list"
+        if verb not in {"list", "receive"}:
+            verb = "list"
         return None, fail(
             args,
             2,
             "refused",
             "limit must be 1..100",
-            nxt="agentself email list --help",
+            nxt=f"agentself email {verb} --help",
         )
     return raw, None
 

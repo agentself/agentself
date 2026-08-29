@@ -550,6 +550,44 @@ def test_list_rejects_too_many_remote_messages(vault):
     assert len(listed) == 100
 
 
+def test_receive_explicit_id_is_not_capped_by_list(vault):
+    log = MemoryLog()
+    http = Http()
+    inbox_id = "inb_many"
+    wanted = "msg_beyond_cap"
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": inbox_id, "email": OURS}]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages",
+        200,
+        {"messages": [{"message_id": f"m{i}"} for i in range(101)]},
+    )
+    http.on_get(
+        f"{API}/v0/inboxes/{inbox_id}/messages/{quote(wanted, safe='')}",
+        200,
+        {
+            "message_id": wanted,
+            "from": "a@example.com",
+            "to": [OURS],
+            "subject": "later",
+            "text": "body-beyond-cap",
+        },
+    )
+    mb = _box(vault, log, http)
+    got = mb.receive(PRINCIPAL, credential=CANARY, address=OURS, message_id=wanted)
+    assert len(got) == 1
+    assert got[0]["id"] == wanted
+    assert got[0]["body"] == "body-beyond-cap"
+    assert got[0]["status"] == "seen"
+    list_urls = [url for url, _headers in http.gets if url.endswith("/messages")]
+    assert list_urls == []
+    _secret_absent(log)
+    _no_local_outbox(vault)
+
+
 ISSUED = "glint-otter@agentmail.to"
 
 
