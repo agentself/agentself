@@ -61,7 +61,15 @@ def authorize_wallet(args, vault: Path) -> CliOutcome:
     }
     if out_file:
         try:
-            store_value_file(out_file, token)
+            store_value_file(out_file, token, force=bool(getattr(args, "force", False)))
+        except FileExistsError:
+            return fail(
+                args,
+                2,
+                "refused",
+                "file exists",
+                nxt="agentself wallet authorize --out PATH --force",
+            )
         except OSError:
             return fail(
                 args,
@@ -149,6 +157,20 @@ def verify_wallet(args, vault: Path) -> CliOutcome:
 
 
 def send_wallet(args, vault: Path) -> CliOutcome:
+    if getattr(args, "test_send", False):
+        access = client(vault)
+        view = access.identity().get("wallet")
+        wallet = view if isinstance(view, dict) else {}
+        asset = (args.asset or "").strip() or str(wallet.get("asset") or "")
+        return CliSuccess(
+            {
+                "to": args.to,
+                "amount": _canonical_amount(args.amount),
+                "asset": asset,
+                "test": True,
+            },
+            redact=False,
+        )
     sent = client(vault).wallet_send(args.to, args.amount, args.asset or "")
     payload: dict[str, object] = {
         "to": args.to,

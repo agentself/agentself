@@ -39,8 +39,11 @@ def load_value_file(
     return read_text_file(Path(path), strip_newline=strip_newline, strip_bom=strip_bom)
 
 
-def store_value_file(path: str, value: str) -> None:
-    atomic_write(Path(path), utf8_bytes(value), mode=0o600, private_dir=False)
+def store_value_file(path: str, value: str, *, force: bool = False) -> None:
+    dest = Path(path)
+    if dest.exists() and not force:
+        raise FileExistsError(path)
+    atomic_write(dest, utf8_bytes(value), mode=0o600, private_dir=False)
 
 
 def value_meta(value: str) -> dict[str, object]:

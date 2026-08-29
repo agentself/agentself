@@ -64,6 +64,7 @@ def test_doctor_and_wallet_surface_corrupt_wallet_key(tmp_path):
         "error": "error",
         "reason": "cannot read wallet.key",
         "next": "agentself diagnose",
+        "_next": {"command": "agentself diagnose"},
     }
     js = run_cli(["--json", "wallet", "address"], env)
     assert js.returncode == 1, js.stdout + js.stderr

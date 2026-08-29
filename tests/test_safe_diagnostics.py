@@ -112,6 +112,7 @@ def test_cli_unexpected_failure_is_generic_and_diagnosable(
         "error": "error",
         "reason": "error",
         "next": "agentself diagnose",
+        "_next": {"command": "agentself diagnose"},
     }
     assert json.loads(captured.err) == {
         "operation": "show",

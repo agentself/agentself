@@ -68,7 +68,13 @@ required when the backend has no default RPC.
 
 Failure `next` is usually an `agentself` command. Wallet gas and RPC
 failures may instead name a host action (`fund ETH`,
-`set AGENTSELF_ETH_RPC_URL`).
+`set AGENTSELF_ETH_RPC_URL`). When `next` is an `agentself` command,
+JSON also includes additive `_next` with `command` and optional `until`
+and `poll_interval_seconds`. Consumers should ignore unknown keys.
+`agentself commands` may include additive `params` and `verbs`.
+`email connect --interval` / `--timeout`, `wallet send --test`, and
+`--force` on secret/authorization/mail file writes are additive. Existing
+`--file` / `--out` paths now refuse to replace a file unless `--force`.
 
 `note` is a public CLI command group. Note values are deliberately
 non-secret and may appear in JSON output. The identity-local notes

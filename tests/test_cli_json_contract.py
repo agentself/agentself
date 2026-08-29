@@ -267,10 +267,18 @@ def test_json_commands_lists_featured_verbs(tmp_path):
     assert secret["args"] == list(COMMANDS["secret"])
     assert secret["next"] == "agentself secret list"
     for item in data["commands"]:
-        assert set(item) == {"name", "args", "next"}
+        assert {"name", "args", "next"} <= set(item)
+        extra = set(item) - {"name", "args", "next", "params", "verbs"}
+        assert not extra, extra
         assert isinstance(item["args"], list)
         assert item["next"].startswith("agentself ")
         assert "--json" not in item["next"]
+        if "verbs" in item:
+            for verb in item["verbs"]:
+                assert {"name", "raw", "params"} <= set(verb)
+                for param in verb["params"]:
+                    assert {"name", "type", "required"} <= set(param)
+                    assert "value" not in json.dumps(param)
     assert set(data["raw"]) == {"secret", "note", "email", "wallet"}
     assert data["raw"]["secret"] == ["get"]
     assert data["raw"]["note"] == ["get"]
@@ -308,6 +316,7 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
     assert diagnose["ready"]["email"] is False
     assert diagnose["ready"]["store"] is True
     assert diagnose["next"] == "agentself email connect"
+    assert diagnose["_next"] == {"command": "agentself email connect"}
 
 
 def test_json_secrets_and_missing(tmp_path):
@@ -527,6 +536,8 @@ def test_json_email_connect_never_prompts_and_keeps_compact_next_step(
     assert data["next"].startswith("agentself email connect --continue --state ")
     assert data["continue"].startswith("agentself email connect --continue --state ")
     assert "--result-file PATH" in data["continue"]
+    assert data["_next"]["command"] == data["continue"]
+    assert data["_next"]["until"] == "status is connected"
 
 
 def test_json_wallet_address_and_injected_balance_send(tmp_path, monkeypatch, capsys):
@@ -655,6 +666,7 @@ def test_json_install_and_doctor_fresh(tmp_path):
     assert diagnose["wallet_backend"] is None
     assert diagnose["ready"]["email"] is False
     assert diagnose["next"] == "agentself init"
+    assert diagnose["_next"] == {"command": "agentself init"}
     installed = assert_ok(
         run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path),
         "install",

@@ -78,7 +78,15 @@ def get_secret(args, vault: Path) -> CliOutcome:
         return CliSuccess({"name": name, **meta, "protected": name in protected_names})
     if path:
         try:
-            store_value_file(path, value)
+            store_value_file(path, value, force=bool(getattr(args, "force", False)))
+        except FileExistsError:
+            return fail(
+                args,
+                2,
+                "refused",
+                "file exists",
+                nxt="agentself secret get NAME --file PATH --force",
+            )
         except OSError:
             return fail(args, 1, "error", "file")
         return CliSuccess({"name": name, "path": path, **meta}, redact=False)
