@@ -17,6 +17,13 @@ Prefer self-documenting code.
 Keep changelog notes concise and compact. Focus on the changes that
 actually impact the user.
 
+Do not add prose tests. Never assert that words, phrases, or headings
+appear in README, the skill, or other documentation. Tests drive
+shipped behavior.
+
+Keep README setup copy short. If an agent needs an explanation, put it
+in the skill. Otherwise the CLI should just work.
+
 ## Development environment
 
 - The CLI and dev tools can be installed with `uv sync`, or with a user pip
