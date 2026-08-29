@@ -56,6 +56,18 @@ Mail items retain the provider `id`; compact identity-local `ref` values are an
 additive convenience. Their private mapping is copied by backup/restore, while
 its on-disk filename layout is not a compatibility promise.
 
+`email send --file PATH` is additive; positional BODY remains. Success may
+include additive `id` and `ref`. `email list` / no-ref `email receive`
+`--limit` is additive; a full 100-message inbox returns headers with
+optional `truncated` instead of failing the verb. `email mark REF rejected`
+and message `rejected` are additive local task state; `acted` stays a
+boolean. `diagnose` may include additive `next`. Ethereum `rpc_url` is
+required when the backend has no default RPC.
+
+Failure `next` is usually an `agentself` command. Wallet gas and RPC
+failures may instead name a host action (`fund ETH`,
+`set AGENTSELF_ETH_RPC_URL`).
+
 `note` is a public CLI command group. Note values are deliberately
 non-secret and may appear in JSON output. The identity-local notes
 directory is copied by whole-identity backup/restore, but its undocumented

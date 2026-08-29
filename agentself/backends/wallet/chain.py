@@ -132,7 +132,7 @@ class ChainWalletAccess(WalletAccess):
             with exclusive(self._root):
                 self._send_once(identity_id, to, amount)
         except IdentityBusy as exc:
-            raise WalletError("rpc failed") from exc
+            raise WalletError("identity directory busy") from exc
         return wanted
 
     def payment_ref(self) -> str:

@@ -36,14 +36,16 @@ class MaildirMailboxAccess(MailboxAccess):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None:
+    ) -> str | None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
         outbox = self._outbox(identity_id)
         outbox.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path = outbox / _unique_name()
+        name = _unique_name()
+        path = outbox / name
         atomic_write_text(path, _format_message(identity_id, to, subject, body))
         self._log.record("mailbox_send", identity_id, to, "ok")
+        return name
 
     def receive(
         self,

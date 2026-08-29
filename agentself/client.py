@@ -56,7 +56,7 @@ class CustodyManager(Protocol):
 
     def email_send(
         self, caller: BoundCaller, to: str, subject: str, body: str
-    ) -> None: ...
+    ) -> dict[str, str]: ...
 
     def email_receive(
         self,
@@ -72,6 +72,8 @@ class CustodyManager(Protocol):
         *,
         status: str | None = None,
         acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]: ...
 
     def email_find(
@@ -81,10 +83,17 @@ class CustodyManager(Protocol):
         *,
         status: str | None = None,
         acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]: ...
 
     def email_mark(
-        self, caller: BoundCaller, message_id: str, *, acted: bool
+        self,
+        caller: BoundCaller,
+        message_id: str,
+        *,
+        acted: bool | None = None,
+        rejected: bool = False,
     ) -> bool: ...
 
     def email_connect(
@@ -185,9 +194,9 @@ class Client:
         caller = self._require_caller()
         self._manager.note_delete(caller, name)
 
-    def email_send(self, to: str, subject: str, body: str) -> None:
+    def email_send(self, to: str, subject: str, body: str) -> dict[str, str]:
         caller = self._require_caller()
-        self._manager.email_send(caller, to, subject, body)
+        return self._manager.email_send(caller, to, subject, body)
 
     def email_receive(
         self,
@@ -201,10 +210,17 @@ class Client:
         )
 
     def email_list(
-        self, *, status: str | None = None, acted: bool | None = None
+        self,
+        *,
+        status: str | None = None,
+        acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]:
         caller = self._require_caller()
-        return self._manager.email_list(caller, status=status, acted=acted)
+        return self._manager.email_list(
+            caller, status=status, acted=acted, rejected=rejected, limit=limit
+        )
 
     def email_find(
         self,
@@ -212,13 +228,30 @@ class Client:
         *,
         status: str | None = None,
         acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]:
         caller = self._require_caller()
-        return self._manager.email_find(caller, query, status=status, acted=acted)
+        return self._manager.email_find(
+            caller,
+            query,
+            status=status,
+            acted=acted,
+            rejected=rejected,
+            limit=limit,
+        )
 
-    def email_mark(self, message_id: str, *, acted: bool) -> bool:
+    def email_mark(
+        self,
+        message_id: str,
+        *,
+        acted: bool | None = None,
+        rejected: bool = False,
+    ) -> bool:
         caller = self._require_caller()
-        return self._manager.email_mark(caller, message_id, acted=acted)
+        return self._manager.email_mark(
+            caller, message_id, acted=acted, rejected=rejected
+        )
 
     def email_connect(
         self,

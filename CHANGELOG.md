@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- README Quick start uses `--identity-dir PATH` instead of a bare `PATH`
+  token that argparse treated as a command.
+- `commands` and `backends email` `next` point at `email receive` once
+  email is ready.
+- `diagnose` always includes `next`: `--identity-dir PATH init` when the
+  default identity is missing, `email connect` mid-setup, or `email receive`
+  when mail is ready. Ethereum `rpc_url` is required; `ready.wallet` stays
+  false without `AGENTSELF_ETH_RPC_URL`. Pass-store diagnose names gpg/pass
+  as host packages, not `install --tools`.
+- Missing identity after `--identity-dir` names that directory instead of
+  `agentself init`. Bare `restore SOURCE` refuses when `~/.agentself` is
+  missing. `vault.lock` timeout is `identity directory busy`.
+- `init --force --id` refuses a second identity in one vault.
+- `email send --file PATH` (stdin only with `--file -`) returns additive
+  `id`/`ref` when the provider supplies one. `email list` / no-ref
+  `receive` take `--limit` and cap at 100 headers without failing the
+  verb. `email mark REF rejected` is local refusal state, not `acted`.
+- Unfunded `wallet send` `next` is `fund ETH`. Typed authorize names
+  encoding help. Missing Ethereum RPC names `AGENTSELF_ETH_RPC_URL`.
+
 ## 0.2.2 - 2026-08-26
 
 - README has a short copy-paste prompt so an agent can install the CLI,

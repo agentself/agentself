@@ -139,13 +139,15 @@ def test_send_unique_inbox_uses_that_inbox_id(vault):
         {"inboxes": [{"inbox_id": inbox_id, "email": "bot-only@agentmail.to"}]},
     )
     mb = _box(vault, log, http, domain="agentmail.to")
-    mb.send(
+    http.post_result(200, {"message_id": "msg_sent_1"})
+    sent_id = mb.send(
         PRINCIPAL,
         "someone@example.com",
         "hello",
         "body-text",
         credential=CANARY,
     )
+    assert sent_id == "msg_sent_1"
     assert len(http.posts) == 1
     url, headers, payload = http.posts[0]
     assert url == f"{API}/v0/inboxes/{inbox_id}/messages/send"
@@ -544,8 +546,8 @@ def test_list_rejects_too_many_remote_messages(vault):
         {"messages": [{"message_id": f"m{i}"} for i in range(101)]},
     )
     mb = _box(vault, log, http)
-    with pytest.raises(MailboxError, match="list failed"):
-        mb.list(PRINCIPAL, credential=CANARY, address=OURS)
+    listed = mb.list(PRINCIPAL, credential=CANARY, address=OURS)
+    assert len(listed) == 100
 
 
 ISSUED = "glint-otter@agentmail.to"

@@ -94,6 +94,18 @@ def test_mark_unmark_filters_and_headers_only(vault, monkeypatch):
     assert app.client.email_mark("provider/id@example", acted=False) is False
     assert all(item["acted"] is False for item in app.client.email_list())
 
+    assert app.client.email_mark("provider/id@example", rejected=True) is False
+    listed = app.client.email_list()
+    lure = next(item for item in listed if item["id"] == "provider/id@example")
+    assert lure["rejected"] is True
+    assert lure["acted"] is False
+    assert [
+        item["id"] for item in app.client.email_list(acted=False, rejected=False)
+    ] == ["seen-id"]
+    assert [item["id"] for item in app.client.email_list(rejected=True)] == [
+        "provider/id@example"
+    ]
+
 
 def test_acted_state_is_backend_neutral_private_and_path_safe(vault, monkeypatch):
     app, factory = _ready_app(vault, monkeypatch)
@@ -135,6 +147,7 @@ def test_cli_mark_json_and_backup_restore_marker(tmp_path):
         "ok": True,
         "id": "provider/id@example",
         "acted": True,
+        "rejected": False,
     }
     digest = hashlib.sha256(b"provider/id@example").hexdigest()
     marker = identity_home(vault, "agent") / "email" / "acted" / digest

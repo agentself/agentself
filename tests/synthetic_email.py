@@ -66,10 +66,11 @@ class SyntheticEmailAccess(MailboxAccess):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None:
+    ) -> str | None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
         del subject, body, credential, address
+        return None
 
     def receive(
         self,

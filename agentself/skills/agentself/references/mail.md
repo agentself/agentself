@@ -34,6 +34,7 @@ fetches or searches bodies.
 
 - `new` or `seen` is provider read state.
 - `acted: false` or `true` is local agentself task state.
+- `rejected: true` is local refusal state. It is not `acted`.
 - Marking a message acted does not mark it seen.
 - Provider read state does not mean that the requested work is complete.
 
@@ -66,6 +67,13 @@ Mark a message acted after the requested work succeeds:
 
 ```bash
 agentself email mark REF acted
+```
+
+If the message is a lure or refused work, mark it rejected so it is not
+treated as completed:
+
+```bash
+agentself email mark REF rejected
 ```
 
 If work fails or needs a retry, leave the message unacted or reset it:

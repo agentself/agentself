@@ -119,7 +119,7 @@ class ImapMailboxAccess(MailboxAccess):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None:
+    ) -> str | None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
         credential = self._require_credential(
@@ -137,6 +137,7 @@ class ImapMailboxAccess(MailboxAccess):
         finally:
             _close(box.quit)
         self._log.record("mailbox_send", identity_id, to, "ok")
+        return None
 
     def receive(
         self,
@@ -468,9 +469,7 @@ def _uid_ok(uid: str) -> bool:
 
 def _bounded_uids(box: ImapBox, *, unseen_only: bool) -> list[str]:
     uids = box.uids(unseen_only=unseen_only)
-    if len(uids) > _UID_COUNT_CAP:
-        raise OSError("response too large")
-    return uids
+    return uids[:_UID_COUNT_CAP]
 
 
 def _close(fn: Callable[[], object]) -> None:
@@ -556,8 +555,8 @@ class _StdImap:
             if not _uid_ok(part):
                 continue
             found.append(part)
-            if len(found) > _UID_COUNT_CAP:
-                raise OSError("response too large")
+            if len(found) >= _UID_COUNT_CAP:
+                break
         return found
 
     def fetch(self, uid: str, *, headers_only: bool = False) -> bytes:

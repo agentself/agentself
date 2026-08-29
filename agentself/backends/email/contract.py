@@ -113,7 +113,7 @@ class MailboxAccess(ABC):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None: ...
+    ) -> str | None: ...
 
     @abstractmethod
     def receive(

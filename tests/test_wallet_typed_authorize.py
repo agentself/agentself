@@ -168,7 +168,8 @@ def test_cli_malformed_typed_statement_is_refused(tmp_path: Path) -> None:
     assert failed.returncode == 2
     data = json.loads(failed.stdout)
     assert data["error"] == "refused"
-    assert data["reason"] == "backend cannot authorize"
+    assert data["reason"] == "typed encoding required"
+    assert data["next"] == "agentself wallet authorize --help"
 
 
 def test_client_malformed_typed_statement_is_cannot_authorize(

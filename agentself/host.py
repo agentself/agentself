@@ -124,8 +124,9 @@ CHANNELS: dict[str, Channel] = {
                     setup_option(
                         name="rpc_url",
                         type="string",
+                        required=True,
                         source=ENV_ETH_RPC_URL,
-                        help="JSON-RPC URL override",
+                        help="JSON-RPC URL. Required when the backend has no default RPC.",
                     ),
                 ),
             ),
@@ -236,7 +237,10 @@ def backends_payload(
     command_verbs: dict[str, tuple[str, ...]],
     channel: str | None = None,
     backend: str | None = None,
+    *,
+    next_overrides: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    overrides = next_overrides or {}
     if backend:
         spec = CHANNELS[channel or ""]
         item = bind_of(spec.name, backend)
@@ -244,13 +248,21 @@ def backends_payload(
             raise UnknownBind(spec.name, backend)
         return {
             "ok": True,
-            "channel": _channel_json(spec, command_verbs, binds=(item,), options=True),
+            "channel": _channel_json(
+                spec,
+                command_verbs,
+                binds=(item,),
+                options=True,
+                next_overrides=overrides,
+            ),
         }
     if channel:
         spec = CHANNELS[channel]
         return {
             "ok": True,
-            "channel": _channel_json(spec, command_verbs, options=False),
+            "channel": _channel_json(
+                spec, command_verbs, options=False, next_overrides=overrides
+            ),
         }
     return {
         "ok": True,
@@ -258,15 +270,20 @@ def backends_payload(
         "identity_dir": ENV_IDENTITY_DIR,
         "order": "flag, then env, then identity-directory config, then default",
         "failover": False,
-        "channels": [_channel_catalog(spec) for spec in CHANNELS.values()],
+        "channels": [
+            _channel_catalog(spec, next_overrides=overrides)
+            for spec in CHANNELS.values()
+        ],
     }
 
 
-def _channel_catalog(spec: Channel) -> dict[str, object]:
+def _channel_catalog(
+    spec: Channel, *, next_overrides: dict[str, str] | None = None
+) -> dict[str, object]:
     return {
         "name": spec.name,
         "command_group": spec.command_group,
-        "next": spec.next,
+        "next": (next_overrides or {}).get(spec.name, spec.next),
         "note": spec.note,
         "backends": [item.as_summary() for item in spec.binds],
     }
@@ -278,12 +295,13 @@ def _channel_json(
     *,
     binds: tuple[Bind, ...] | None = None,
     options: bool = True,
+    next_overrides: dict[str, str] | None = None,
 ) -> dict[str, object]:
     items = binds if binds is not None else spec.binds
     return {
         "name": spec.name,
         "command_group": spec.command_group,
-        "next": spec.next,
+        "next": (next_overrides or {}).get(spec.name, spec.next),
         "env": spec.env,
         "flag": spec.flag,
         "config": spec.config_key,

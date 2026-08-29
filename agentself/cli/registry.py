@@ -210,7 +210,19 @@ def configure_email_connect(parser: argparse.ArgumentParser) -> None:
 def configure_email_send(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("to", metavar="TO", help="Recipient address")
     parser.add_argument("subject", metavar="SUBJECT", help="Subject")
-    parser.add_argument("body", metavar="BODY", help="Body")
+    parser.add_argument(
+        "body",
+        nargs="?",
+        metavar="BODY",
+        help="Body. Omit when using --file PATH",
+    )
+    parser.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Read the body from a file. Use - to read stdin",
+    )
 
 
 def configure_email_receive(parser: argparse.ArgumentParser) -> None:
@@ -226,6 +238,14 @@ def configure_email_receive(parser: argparse.ArgumentParser) -> None:
         default="",
         metavar="PATH",
         help="Write one message body to a private file; requires a ref or id",
+    )
+    parser.add_argument(
+        "--limit",
+        dest="limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max headers for a no-ref check (1-100)",
     )
 
 
@@ -250,12 +270,31 @@ def _add_mail_filters(parser: argparse.ArgumentParser) -> None:
         dest="acted_filter",
         action="store_const",
         const=False,
-        help="Keep messages not marked acted",
+        help="Keep messages not marked acted or rejected",
+    )
+    acted_filter.add_argument(
+        "--rejected",
+        dest="acted_filter",
+        action="store_const",
+        const="rejected",
+        help="Keep messages marked rejected",
+    )
+
+
+def _add_mail_limit(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--limit",
+        dest="limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max headers to return (1-100)",
     )
 
 
 def configure_email_list(parser: argparse.ArgumentParser) -> None:
     _add_mail_filters(parser)
+    _add_mail_limit(parser)
 
 
 def configure_email_find(parser: argparse.ArgumentParser) -> None:
@@ -271,7 +310,7 @@ def configure_email_mark(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "mark_state",
-        choices=("acted", "unacted"),
+        choices=("acted", "unacted", "rejected"),
         help="Local task state",
     )
 
@@ -572,8 +611,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Send a message. Needs send credentials",
         f"{_H}.email:send_email",
         configure_email_send,
-        description="Fails closed without send credentials. See agentself backends email.",
-        epilog="Examples:\n  agentself email send TO SUBJECT BODY\n  agentself backends email",
+        description=(
+            "BODY may be omitted when using --file PATH. Use --file - to read stdin. "
+            "Fails closed without send credentials. See agentself backends email."
+        ),
+        epilog="Examples:\n  agentself email send TO SUBJECT --file PATH\n  agentself email send TO SUBJECT BODY\n  agentself backends email",
     ),
     CommandSpec(
         ("email", "receive"),
@@ -612,9 +654,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_email_mark,
         description=(
             "Unknown compact refs and provider IDs that list/receive have not "
-            "stored are refused."
+            "stored are refused. rejected is local refusal state, not acted."
         ),
-        epilog="Examples:\n  agentself email mark REF acted",
+        epilog="Examples:\n  agentself email mark REF acted\n  agentself email mark REF rejected",
     ),
     CommandSpec(
         ("wallet",),
@@ -828,13 +870,17 @@ def command_recovery(argv: Sequence[str]) -> tuple[str, str] | None:
     return f"{tokens[0]} maps to the {group} command group", default_next
 
 
-def commands_payload() -> dict[str, object]:
+def commands_payload(*, email_next: str | None = None) -> dict[str, object]:
     verbs = command_verbs()
     featured = [
         {
             "name": spec.path[0],
             "args": list(verbs.get(spec.path[0], spec.args or ())),
-            "next": spec.next or "",
+            "next": (
+                email_next
+                if spec.path == ("email",) and email_next
+                else spec.next or ""
+            ),
         }
         for spec in COMMANDS
         if len(spec.path) == 1 and spec.args is not None

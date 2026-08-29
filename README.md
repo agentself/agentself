@@ -49,8 +49,8 @@ agentself install --tools
 agentself init
 agentself wallet address
 agentself secret create API_TOKEN --file ./api-token.txt
-agentself PATH note set handoff --file ./handoff.txt
-agentself PATH email connect
+agentself --identity-dir PATH note set handoff --file ./handoff.txt
+agentself --identity-dir PATH email connect
 ```
 
 Those commands emit JSON. `init` creates one identity directory. Run
@@ -108,12 +108,14 @@ new-header check: it uses the same list path, does not fetch bodies, and does
 not change provider or local seen state. Surfaced messages include the raw
 provider `id` and a stable compact identity-local `ref` such as `m1`.
 Use the ref with `email receive REF --file PATH` or
-`email mark REF acted|unacted`; raw provider IDs remain accepted after
+`email mark REF acted|unacted|rejected`; raw provider IDs remain accepted after
 `list` or `receive` has stored them. An explicit ref keeps the existing
-consuming receive. `acted` is
-independent local task state. The compact syntax is reserved: an unknown
+consuming receive. `acted` and `rejected` are independent local task
+state. The compact syntax is reserved: an unknown
 matching ref is refused instead of being sent to a provider. Acted state can be
-filtered with `email list --acted|--unacted` or the same flags on `email find`.
+filtered with `email list --acted|--unacted|--rejected` or the same flags on
+`email find`. `email list` and no-ref `email receive` accept `--limit N`
+(1-100) and stop at 100 headers instead of failing the verb.
 Bodies can contain API keys and login links; write them with `--file PATH`,
 or `--raw` when a caller needs exact body bytes (one ref or provider ID).
 

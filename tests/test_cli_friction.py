@@ -76,7 +76,7 @@ def test_identity_dir_flag_is_not_persisted_and_defaults_to_home(
     env["USERPROFILE"] = str(home)
     proc = run_cli(["show"], env)
     assert proc.returncode == 2
-    assert json.loads(proc.stdout)["next"] == "agentself init"
+    assert json.loads(proc.stdout)["next"] == "agentself --identity-dir PATH init"
     isolated = tmp_path / "isolated"
     started = run_cli(["--identity-dir", str(isolated), "init"], env)
     assert started.returncode == 0, started.stderr

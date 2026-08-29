@@ -12,12 +12,15 @@ from agentself.cli.io import load_value_file
 from agentself.cli.outcomes import CliOutcome, CliSuccess
 from agentself.cli.runtime import (
     INSTALL_TOOLS_NEXT,
+    PASS_TOOLS_NEXT,
+    PASS_TOOLS_REASON,
     bind_error,
     client,
     diagnose_tools,
     fail,
     fail_missing_tool,
     identity_fail,
+    init_next,
     not_initialized,
     registry_store_binding,
     require_bind,
@@ -26,8 +29,9 @@ from agentself.cli.runtime import (
     store_fail,
     store_from_registry,
     store_reason,
+    with_identity_dir,
 )
-from agentself.host import CHANNELS, ENV_IDENTITY_ID, UnknownBind
+from agentself.host import CHANNELS, ENV_IDENTITY_DIR, ENV_IDENTITY_ID, UnknownBind
 from agentself.internal.custody.errors import (
     HostToolMissing,
     ProtectedName,
@@ -105,10 +109,25 @@ def init_identity(args, vault: Path) -> CliOutcome:
                     nxt="agentself init --help",
                 )
             raise
+        current_id = (cfg.get("identity_id") or "").strip()
+        if current_id and current_id != identity_id:
+            return fail(
+                args,
+                2,
+                "refused",
+                "identity already initialized",
+                nxt=init_next(args),
+            )
         initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
-        if initialized and not args.force:
+        if initialized:
             blocked = _init_mutation_refused(
-                vault, args, cfg, identity_id, wallet_backend, email_backend, store
+                vault,
+                args,
+                cfg,
+                identity_id,
+                wallet_backend,
+                email_backend,
+                store,
             )
             if blocked is not None:
                 return blocked
@@ -186,7 +205,7 @@ def diagnose_host(args, vault: Path) -> CliOutcome:
         wallet_backend = (cfg.get("wallet_backend") or "").strip() or None
         email_backend = (cfg.get("email_backend") or "").strip() or None
         store_backend = store_name
-        problems, ready = _diagnose_identity(vault, cfg, store_name)
+        problems, ready = _diagnose_identity(vault, cfg, store_name, args)
     paths = runtime_paths()
     tools = diagnose_tools(store_name)
     payload: dict[str, object] = {
@@ -201,6 +220,8 @@ def diagnose_host(args, vault: Path) -> CliOutcome:
         "store_backend": store_backend,
         **paths,
     }
+    nxt = _diagnose_next(args, initialized, ready, problems)
+    payload["next"] = nxt
     if problems:
         extra = {
             **payload,
@@ -212,7 +233,7 @@ def diagnose_host(args, vault: Path) -> CliOutcome:
             1,
             "error",
             problems[0][0],
-            nxt=problems[0][1],
+            nxt=nxt,
             extra=extra,
         )
     return CliSuccess(payload)
@@ -281,12 +302,13 @@ def _init_mutation_refused(
     current_email = (cfg.get("email_backend") or "").strip()
     recorded = registry_store_binding(vault, current_id) if current_id else None
     changing = (
-        (current_id and current_id != identity_id)
-        or (current_wallet and current_wallet != wallet_backend)
+        (current_wallet and current_wallet != wallet_backend)
         or (current_email and current_email != email_backend)
         or (recorded and recorded != store)
     )
     if not changing:
+        return None
+    if args.force:
         return None
     return fail(
         args,
@@ -357,8 +379,41 @@ def _seal_init_wallet_key(access, args) -> CliOutcome | None:
     return None
 
 
+def _diagnose_next(
+    args,
+    initialized: bool,
+    ready: dict[str, bool],
+    problems: list[tuple[str, str]],
+) -> str:
+    if problems:
+        return problems[0][1]
+    if not initialized:
+        return init_next(args)
+    if not ready.get("email"):
+        return with_identity_dir(args, "email connect")
+    return with_identity_dir(args, "email receive")
+
+
+def _required_wallet_runtime(wallet_backend: str) -> list[tuple[str, str]]:
+    from agentself.host import bind_of
+
+    bind = bind_of("wallet", wallet_backend)
+    if bind is None:
+        return []
+    missing: list[tuple[str, str]] = []
+    for option in bind.options:
+        if not option.get("required"):
+            continue
+        source = str(option.get("source") or "").strip()
+        if not source:
+            continue
+        if not os.environ.get(source, "").strip():
+            missing.append((f"{source} is required", f"set {source}"))
+    return missing
+
+
 def _diagnose_identity(
-    vault: Path, cfg: dict[str, str], store_name: str
+    vault: Path, cfg: dict[str, str], store_name: str, args
 ) -> tuple[list[tuple[str, str]], dict[str, bool]]:
     from agentself.host import unknown_bind
 
@@ -376,14 +431,17 @@ def _diagnose_identity(
             )
     key_file = resolve_age_key_file(vault, cfg.get("age_key_file", ""))
     if not key_file or not Path(key_file).is_file():
-        problems.append(("age key file is missing", "agentself init"))
+        problems.append(("age key file is missing", init_next(args)))
+    tools = diagnose_tools(store_name)
+    if store_name == "pass" and not (tools.get("gpg") and tools.get("pass")):
+        problems.append((PASS_TOOLS_REASON, PASS_TOOLS_NEXT))
     if problems:
         return problems, ready
     try:
         access = client(vault)
         names = access.list()
     except UnboundCaller:
-        problems.append(("age key file is not usable", "agentself init"))
+        problems.append(("age key file is not usable", init_next(args)))
         return problems, ready
     except UnknownBind as exc:
         problems.append((str(exc), f"agentself backends {exc.channel}"))
@@ -392,7 +450,7 @@ def _diagnose_identity(
         problems.append((store_reason(exc), "agentself secret list"))
         return problems, ready
     except Exception:
-        problems.append(("identity is not usable", "agentself init"))
+        problems.append(("identity is not usable", init_next(args)))
         return problems, ready
     ready["store"] = True
     ready["email"] = "email.address" in names
@@ -402,11 +460,16 @@ def _diagnose_identity(
         problems.append((store_reason(exc), "agentself secret list"))
         return problems, ready
     except Exception:
-        problems.append(("identity is not usable", "agentself init"))
+        problems.append(("identity is not usable", init_next(args)))
         return problems, ready
     if not status.get("ready"):
         missing = str(status.get("missing") or "wallet material")
-        problems.append((f"{missing} is missing", "agentself init"))
+        problems.append((f"{missing} is missing", init_next(args)))
+        return problems, ready
+    wallet_backend = (cfg.get("wallet_backend") or "").strip()
+    rpc_missing = _required_wallet_runtime(wallet_backend)
+    if rpc_missing:
+        problems.extend(rpc_missing)
         return problems, ready
     ready["wallet"] = True
     return problems, ready
@@ -514,6 +577,17 @@ def _install_skills(args, requested: str) -> tuple[list[str], CliOutcome | None]
 def _backup_restore(vault: Path, args) -> CliOutcome:
     src = vault if args.command == "backup" else Path(args.path)
     dest = Path(args.path) if args.command == "backup" else vault
+    if args.command == "restore":
+        flagged = (getattr(args, "identity_dir", None) or "").strip()
+        env_dir = os.environ.get(ENV_IDENTITY_DIR, "").strip()
+        if not flagged and not env_dir and not config_path(vault).is_file():
+            return fail(
+                args,
+                2,
+                "refused",
+                "identity directory is missing",
+                nxt="agentself --identity-dir PATH restore PATH",
+            )
     try:
         try:
             with exclusive(vault):

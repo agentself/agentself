@@ -96,7 +96,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None:
+    ) -> str | None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
         credential = self._require_credential(
@@ -106,8 +106,9 @@ class AgentMailMailboxAccess(MailboxAccess):
         payload = json.dumps({"to": to, "subject": subject, "text": body}).encode(
             "utf-8"
         )
-        self._request(_send_url(inbox["inbox_id"]), credential, payload)
+        body_bytes = self._request(_send_url(inbox["inbox_id"]), credential, payload)
         self._log.record("mailbox_send", identity_id, to, "ok")
+        return _provider_message_id(body_bytes)
 
     def receive(
         self,
@@ -496,9 +497,8 @@ class AgentMailMailboxAccess(MailboxAccess):
             return []
         if not isinstance(messages, list):
             raise MailboxError(fail)
-        if len(messages) > _MESSAGE_COUNT_CAP:
-            raise MailboxError(fail)
-        return [item for item in messages if isinstance(item, dict)]
+        kept = [item for item in messages if isinstance(item, dict)]
+        return kept[:_MESSAGE_COUNT_CAP]
 
     def _request(
         self,
@@ -622,6 +622,21 @@ def _signup_username(identity_id: str) -> str:
     entropy = secrets.token_bytes(16)
     suffix = hashlib.sha256(identity_id.encode("utf-8") + entropy).hexdigest()[:16]
     return f"{stem[:40]}-{suffix}"
+
+
+def _provider_message_id(body: bytes) -> str | None:
+    data = _json(body)
+    if not isinstance(data, dict):
+        return None
+    for key in ("message_id", "id"):
+        value = data.get(key)
+        if (
+            isinstance(value, str)
+            and value.strip()
+            and len(value.encode("utf-8")) <= 4096
+        ):
+            return value.strip()
+    return None
 
 
 def _json(body: bytes) -> object | None:
