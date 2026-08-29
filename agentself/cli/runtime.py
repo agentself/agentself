@@ -9,6 +9,8 @@ from agentself.cli.io import load_value_file
 from agentself.cli.outcomes import CliFailure
 from agentself.host import (
     CHANNELS,
+    ENV_ETH_RPC_URL,
+    ENV_IDENTITY_DIR,
     ENV_LOG,
     UnknownBind,
     bind_of,
@@ -29,6 +31,12 @@ from agentself.local import (
 
 INSTALL_TOOLS_NEXT = "agentself install --tools"
 DIAGNOSE_NEXT = "agentself diagnose"
+PASS_TOOLS_REASON = "gpg and pass are host packages, not agentself tools"
+PASS_TOOLS_NEXT = "agentself backends store"
+FUND_ETH_NEXT = "fund ETH"
+TYPED_AUTHORIZE_NEXT = "agentself wallet authorize --help"
+RPC_URL_NEXT = f"set {ENV_ETH_RPC_URL}"
+IDENTITY_DIR_INIT_NEXT = "agentself --identity-dir PATH init"
 
 
 def fail(
@@ -48,6 +56,26 @@ def fail(
     return CliFailure(exit_code, error, reason, nxt, extra)
 
 
+def identity_dir_flag(args) -> str:
+    return str(getattr(args, "identity_dir", None) or "").strip()
+
+
+def with_identity_dir(args, command: str) -> str:
+    flagged = identity_dir_flag(args)
+    if flagged:
+        return f"agentself --identity-dir {flagged} {command}"
+    return f"agentself {command}"
+
+
+def init_next(args) -> str:
+    flagged = identity_dir_flag(args)
+    if flagged:
+        return f"agentself --identity-dir {flagged} init"
+    if os.environ.get(ENV_IDENTITY_DIR, "").strip():
+        return "agentself init"
+    return IDENTITY_DIR_INIT_NEXT
+
+
 def channel_next(args) -> str:
     command = getattr(args, "command", None)
     if command == "email":
@@ -59,6 +87,18 @@ def channel_next(args) -> str:
     if command == "note":
         return "agentself note --help"
     return "agentself --help"
+
+
+def wallet_failure_next(args, reason: str) -> str:
+    if reason in {"no_gas", "need_gas"}:
+        return FUND_ETH_NEXT
+    if reason == "rpc":
+        return RPC_URL_NEXT
+    if reason in {"cannot_authorize", "backend cannot authorize"}:
+        return TYPED_AUTHORIZE_NEXT
+    if reason == "insufficient_asset":
+        return "agentself wallet balance"
+    return channel_next(args)
 
 
 def default_json_next(args, error: str) -> str:
@@ -96,7 +136,11 @@ def identity_fail(args, exc: IdentityStateError) -> CliFailure:
 
 
 def not_initialized(args) -> CliFailure:
-    return fail(args, 2, "refused", "not initialized", nxt="agentself init")
+    return fail(args, 2, "refused", "not initialized", nxt=init_next(args))
+
+
+def identity_busy(args) -> CliFailure:
+    return fail(args, 1, "error", "identity directory busy", nxt=DIAGNOSE_NEXT)
 
 
 def require_bind(args, channel: str, value: str) -> CliFailure | None:
@@ -205,6 +249,8 @@ def tools_next(missing: list[str], store_name: str | None = None) -> str:
         installable.update(bind.installable_tools)
     if missing and all(name in installable for name in missing):
         return INSTALL_TOOLS_NEXT
+    if store_name == "pass" and missing and set(missing) <= {"gpg", "pass"}:
+        return PASS_TOOLS_NEXT
     return DIAGNOSE_NEXT
 
 
@@ -249,8 +295,11 @@ def missing_host_tool(is_init: bool, vault: Path, args) -> CliFailure | None:
     missing = [name for name in tools if not have_host_tool(name)]
     if not missing:
         return None
+    nxt = tools_next(missing, store_name)
+    if nxt == PASS_TOOLS_NEXT:
+        return fail(args, 1, "error", PASS_TOOLS_REASON, nxt=nxt)
     reason = " and ".join(missing) + " not on PATH"
-    return fail(args, 1, "error", reason, nxt=tools_next(missing, store_name))
+    return fail(args, 1, "error", reason, nxt=nxt)
 
 
 def status_json(view: dict[str, object], vault: Path) -> dict[str, object]:

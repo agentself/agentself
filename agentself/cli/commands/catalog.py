@@ -4,15 +4,29 @@ from pathlib import Path
 
 from agentself.cli.outcomes import CliOutcome, CliSuccess
 from agentself.cli.registry import command_verbs, commands_payload
-from agentself.cli.runtime import fail
+from agentself.cli.runtime import client, fail
 from agentself.host import CHANNELS, backends_payload, unknown_bind
+from agentself.local import config_path
 
 
-def list_commands(_args, _vault: Path) -> CliOutcome:
-    return CliSuccess(commands_payload())
+def _email_catalog_next(vault: Path) -> str | None:
+    if not config_path(vault).is_file():
+        return None
+    try:
+        view = client(vault).identity().get("email")
+    except Exception:
+        return None
+    email = view if isinstance(view, dict) else {}
+    if email.get("owned_address") and email.get("address"):
+        return "agentself email receive"
+    return None
 
 
-def list_backends(args, _vault: Path) -> CliOutcome:
+def list_commands(_args, vault: Path) -> CliOutcome:
+    return CliSuccess(commands_payload(email_next=_email_catalog_next(vault)))
+
+
+def list_backends(args, vault: Path) -> CliOutcome:
     channel = (args.channel or "").strip() or None
     backend = (getattr(args, "backend", None) or "").strip() or None
     if backend and not channel:
@@ -36,4 +50,8 @@ def list_backends(args, _vault: Path) -> CliOutcome:
                 bind_err,
                 nxt=f"agentself backends {channel}",
             )
-    return CliSuccess(backends_payload(command_verbs(), channel, backend))
+    email_next = _email_catalog_next(vault)
+    overrides = {"email": email_next} if email_next else None
+    return CliSuccess(
+        backends_payload(command_verbs(), channel, backend, next_overrides=overrides)
+    )

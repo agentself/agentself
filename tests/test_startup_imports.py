@@ -108,11 +108,16 @@ def test_help_does_not_load_wallet_sdks():
     assert _probe(_run_main("['--help']")) == []
 
 
-def test_help_version_commands_and_parse_fail_skip_runtime():
-    assert _runtime(_run_main("['--help']")) == []
-    assert _runtime(_run_main("['--version']")) == []
-    assert _runtime(_run_main("['commands']")) == []
-    assert _runtime(_run_main_code("['secret']", allowed="(2,)")) == []
+def test_help_version_commands_and_parse_fail_skip_runtime(tmp_path):
+    env = {
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
+        "AGENTSELF_IDENTITY_DIR": str(tmp_path / "missing-identity"),
+    }
+    assert _runtime(_run_main("['--help']"), env) == []
+    assert _runtime(_run_main("['--version']"), env) == []
+    assert _runtime(_run_main("['commands']"), env) == []
+    assert _runtime(_run_main_code("['secret']", allowed="(2,)"), env) == []
 
 
 def test_backends_does_not_load_wallet_sdks():

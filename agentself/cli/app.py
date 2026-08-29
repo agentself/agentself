@@ -22,11 +22,13 @@ from agentself.cli.runtime import (
     cli_log,
     fail,
     fail_missing_tool,
+    identity_busy,
     identity_fail,
     missing_host_tool,
     not_initialized,
     runtime_paths,
     store_fail,
+    wallet_failure_next,
 )
 from agentself.cli.types import CommandArguments, Handler
 from agentself.host import UnknownBind
@@ -45,9 +47,15 @@ from agentself.internal.custody.errors import (
     UnboundCaller,
     UnknownIdentity,
 )
+from agentself.internal.files import IdentityBusy
 from agentself.internal.log import record_diagnostic
 from agentself.internal.text import utf8_bytes
-from agentself.local import IdentityStateError, redact_secrets, resolve_identity_dir
+from agentself.local import (
+    IdentityStateError,
+    config_path,
+    redact_secrets,
+    resolve_identity_dir,
+)
 
 CLI_SCHEMA_VERSION = 2
 _SKIP_HOST_TOOLS = {
@@ -128,9 +136,10 @@ def main(argv: list[str] | None = None) -> int:
         code = exc.code
         return 0 if code is None else int(code)
     args.as_raw = bool(getattr(args, "as_raw", False) or as_raw)
-    vault = resolve_identity_dir(
-        _flag_value(raw, "--identity-dir") or getattr(args, "identity_dir", None)
-    )
+    flagged_dir = _flag_value(raw, "--identity-dir")
+    if flagged_dir:
+        args.identity_dir = flagged_dir
+    vault = resolve_identity_dir(flagged_dir or getattr(args, "identity_dir", None))
     path = _command_path(args)
     spec = spec_for(path)
     if spec is None or spec.handler is None:
@@ -150,16 +159,26 @@ def main(argv: list[str] | None = None) -> int:
         if spec.path in (("init",), ("diagnose",)):
             missing = missing_host_tool(spec.path == ("init",), vault, args)
             if missing is not None:
-                return _render(missing)
+                if spec.path == ("diagnose",) and missing.next != INSTALL_TOOLS_NEXT:
+                    missing = None
+                if missing is not None:
+                    return _render(missing)
     outcome: CliOutcome
     try:
         if spec.path == ("commands",):
-            outcome = CliSuccess(commands_payload())
+            email_next = None
+            if config_path(vault).is_file():
+                from agentself.cli.commands.catalog import _email_catalog_next
+
+                email_next = _email_catalog_next(vault)
+            outcome = CliSuccess(commands_payload(email_next=email_next))
         else:
             handler = _load_handler(spec)
             outcome = handler(args, vault)
     except IdentityStateError as exc:
         outcome = identity_fail(args, exc)
+    except IdentityBusy:
+        outcome = identity_busy(args)
     except UnboundCaller:
         outcome = not_initialized(args)
     except UnknownBind as exc:
@@ -178,13 +197,31 @@ def main(argv: list[str] | None = None) -> int:
             nxt = "agentself email list" if detail == "unknown mail ref" else None
             outcome = fail(args, 2, "refused", detail, nxt=nxt)
     except CannotAuthorize:
-        outcome = fail(args, 2, "refused", "backend cannot authorize")
+        outcome = fail(
+            args,
+            2,
+            "refused",
+            "typed encoding required",
+            nxt=wallet_failure_next(args, "cannot_authorize"),
+        )
     except CannotSend as exc:
         reason = exc.reason or "cannot_send"
-        outcome = fail(args, 2, "refused", reason)
+        outcome = fail(
+            args,
+            2,
+            "refused",
+            reason,
+            nxt=wallet_failure_next(args, reason),
+        )
     except NoGas as exc:
         reason = exc.reason or "no_gas"
-        outcome = fail(args, 2, "refused", reason)
+        outcome = fail(
+            args,
+            2,
+            "refused",
+            reason,
+            nxt=wallet_failure_next(args, reason),
+        )
     except MissingSecret:
         outcome = fail(args, 3, "missing", nxt="agentself secret list")
     except MissingNote:
@@ -194,7 +231,19 @@ def main(argv: list[str] | None = None) -> int:
     except HostToolMissing as exc:
         outcome = fail_missing_tool(args, exc, vault)
     except ChannelFailure as exc:
-        outcome = fail(args, 1, "error", exc.reason, nxt=channel_next(args))
+        reason = exc.reason
+        if reason == "busy" or reason == "identity directory busy":
+            outcome = identity_busy(args)
+        elif getattr(args, "command", None) == "wallet":
+            outcome = fail(
+                args,
+                1,
+                "error",
+                reason,
+                nxt=wallet_failure_next(args, reason),
+            )
+        else:
+            outcome = fail(args, 1, "error", reason, nxt=channel_next(args))
     except StoreFailure as exc:
         outcome = store_fail(args, exc)
     except FileNotFoundError as exc:

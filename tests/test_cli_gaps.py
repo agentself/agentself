@@ -200,7 +200,7 @@ def test_cli_wallet_send_no_eth_names_eth(tmp_path, monkeypatch, capsys):
     data = json.loads(captured.out)
     assert data["error"] == "refused"
     assert data["reason"] == "no_gas"
-    assert "ETH" not in captured.out
+    assert data["next"] == "fund ETH"
     assert "USDC" not in captured.out
 
 
@@ -260,7 +260,7 @@ def test_cli_wallet_send_rpc_is_error_rpc(tmp_path, monkeypatch, capsys):
         "ok": False,
         "error": "error",
         "reason": "rpc",
-        "next": "agentself backends wallet",
+        "next": "set AGENTSELF_ETH_RPC_URL",
     }
 
 

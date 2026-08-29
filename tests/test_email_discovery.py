@@ -282,8 +282,13 @@ def test_find_json_emits_header_objects_with_ref(monkeypatch):
     ref = "m3"
 
     class Client:
-        def email_find(self, query, *, status=None, acted=None):
-            assert (query, status, acted) == ("invoice", "new", False)
+        def email_find(self, query, *, status=None, acted=None, rejected=None):
+            assert (query, status, acted, rejected) == (
+                "invoice",
+                "new",
+                False,
+                False,
+            )
             return [
                 {
                     "id": "provider/id",

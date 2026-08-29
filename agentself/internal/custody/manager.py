@@ -44,6 +44,7 @@ from agentself.internal.custody.errors import (
 from agentself.internal.eoa import parse_secp256k1_hex
 from agentself.internal.log import Log
 from agentself.internal.mail_state import (
+    MAIL_LIST_CAP,
     ActedMailState,
     MailRefCollision,
     MailRefState,
@@ -478,14 +479,15 @@ class CustodyManager:
         to: str,
         subject: str,
         body: str,
-    ) -> None:
+    ) -> dict[str, str]:
         identity, mailbox, address, token = self._email_bound(caller, "email_send")
+        message_id = None
         try:
             desc = mailbox.describe(identity.id, credential=token, address=address)
             if not desc.get("owned_address"):
                 self._log.record("email_send", identity.id, None, "error")
                 raise EmailSendNotReady()
-            mailbox.send(
+            message_id = mailbox.send(
                 identity.id,
                 to,
                 subject,
@@ -495,7 +497,17 @@ class CustodyManager:
             )
         except MailboxError as exc:
             self._fail_mailbox("email_send", identity.id, exc)
+        payload: dict[str, str] = {}
+        if message_id:
+            try:
+                payload["id"] = message_id
+                payload["ref"] = self._mail_refs.remember(identity.id, message_id)
+            except MailRefCollision as exc:
+                self._fail_store("email_send", identity.id, "email/refs", exc)
+            except (OSError, UnicodeError, ValueError) as exc:
+                self._fail_store("email_send", identity.id, "email", exc)
         self._log.record("email_send", identity.id, None, "ok")
+        return payload
 
     def email_receive(
         self,
@@ -532,9 +544,13 @@ class CustodyManager:
         *,
         status: str | None = None,
         acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]:
         identity, mailbox, address, token = self._email_bound(caller, "email_list")
         if status is not None and status not in ("new", "seen"):
+            self._refuse("email_list", identity.id, None)
+        if limit is not None and (limit < 1 or limit > MAIL_LIST_CAP):
             self._refuse("email_list", identity.id, None)
         try:
             items = mailbox.list(identity.id, credential=token, address=address)
@@ -552,6 +568,10 @@ class CustodyManager:
             public = [item for item in public if item.get("status") == status]
         if acted is not None:
             public = [item for item in public if item.get("acted") is acted]
+        if rejected is not None:
+            public = [item for item in public if bool(item.get("rejected")) is rejected]
+        if limit is not None:
+            public = public[:limit]
         self._log.record("email_list", identity.id, None, "ok")
         return public
 
@@ -562,6 +582,8 @@ class CustodyManager:
         *,
         status: str | None = None,
         acted: bool | None = None,
+        rejected: bool | None = None,
+        limit: int | None = None,
     ) -> builtins.list[MailboxMessage]:
         identity = self._require_identity(caller, "email_find", None)
         normalized = query.strip()
@@ -573,7 +595,9 @@ class CustodyManager:
         ):
             self._refuse("email_find", identity.id, None)
         wanted = normalized.casefold()
-        messages = self.email_list(caller, status=status, acted=acted)
+        messages = self.email_list(
+            caller, status=status, acted=acted, rejected=rejected, limit=limit
+        )
         found = [
             item
             for item in messages
@@ -585,7 +609,14 @@ class CustodyManager:
         self._log.record("email_find", identity.id, None, "ok")
         return found
 
-    def email_mark(self, caller: BoundCaller, message_id: str, *, acted: bool) -> bool:
+    def email_mark(
+        self,
+        caller: BoundCaller,
+        message_id: str,
+        *,
+        acted: bool | None = None,
+        rejected: bool = False,
+    ) -> bool:
         identity = self._require_identity(caller, "email_mark", None)
         normalized = message_id.strip()
         if (
@@ -602,15 +633,22 @@ class CustodyManager:
         ):
             self._log.record("email_mark", identity.id, None, "refused")
             raise Refused("unknown mail ref") from None
+        if rejected:
+            acted = False
+        elif acted is None:
+            acted = False
         try:
             self._mail_refs.remember(identity.id, resolved_id)
-            self._acted_mail.set(identity.id, resolved_id, acted)
+            if rejected:
+                self._acted_mail.set_rejected(identity.id, resolved_id)
+            else:
+                self._acted_mail.set(identity.id, resolved_id, acted)
         except MailRefCollision as exc:
             self._fail_store("email_mark", identity.id, "email/refs", exc)
         except (OSError, UnicodeError, ValueError) as exc:
             self._fail_store("email_mark", identity.id, "email", exc)
         self._log.record("email_mark", identity.id, None, "ok")
-        return acted
+        return bool(acted)
 
     def _resolve_mail_id(
         self, identity_id: str, message_id: str | None, event: str
@@ -1236,7 +1274,9 @@ def _channel_from_wallet(exc: BaseException) -> ChannelFailure:
     msg = str(exc)
     low = msg.lower()
     tagged = getattr(exc, "reason", None)
-    if tagged == "rpc" or msg in {"rpc failed", "no RPC configured"}:
+    if msg == "identity directory busy":
+        reason = "busy"
+    elif tagged == "rpc" or msg in {"rpc failed", "no RPC configured"}:
         reason = "rpc"
     elif "missing key" in low:
         reason = "no_key"

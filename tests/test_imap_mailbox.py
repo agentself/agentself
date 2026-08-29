@@ -103,8 +103,8 @@ def test_list_rejects_too_many_uids(vault):
         messages=[{"uid": str(i), "raw": _raw(uid=str(i))} for i in range(1, 102)]
     )
     mb = _box(vault, MemoryLog(), imap, FakeSmtp())
-    with pytest.raises(MailboxError, match="rpc failed"):
-        mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
+    listed = mb.list(PRINCIPAL, credential=CANARY, address=ADDRESS)
+    assert len(listed) == 100
 
 
 class FakeSmtp:

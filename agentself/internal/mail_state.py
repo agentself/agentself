@@ -14,6 +14,7 @@ from agentself.internal.names import require_safe_token
 from agentself.internal.types import MailboxMessage
 
 MAIL_REF_PATTERN = r"m[1-9][0-9]{0,11}"
+MAIL_LIST_CAP = 100
 _MAIL_REF_RE = re.compile(rf"^{MAIL_REF_PATTERN}$")
 
 
@@ -131,15 +132,26 @@ class ActedMailState:
         self._root = Path(root)
 
     def set(self, identity_id: str, message_id: str, acted: bool) -> None:
-        marker = self._marker(identity_id, message_id)
+        self.set_task(identity_id, message_id, acted=acted, rejected=False)
+
+    def set_rejected(self, identity_id: str, message_id: str) -> None:
+        self.set_task(identity_id, message_id, acted=False, rejected=True)
+
+    def set_task(
+        self,
+        identity_id: str,
+        message_id: str,
+        *,
+        acted: bool,
+        rejected: bool,
+    ) -> None:
+        if acted:
+            rejected = False
+        acted_marker = self._marker(identity_id, message_id, "acted")
+        rejected_marker = self._marker(identity_id, message_id, "rejected")
         with exclusive(self._root):
-            if acted:
-                atomic_write_text(marker, message_id)
-                return
-            try:
-                os.unlink(marker)
-            except FileNotFoundError:
-                return
+            _write_or_unlink(acted_marker, message_id, acted)
+            _write_or_unlink(rejected_marker, message_id, rejected)
 
     def apply(
         self, identity_id: str, messages: list[MailboxMessage]
@@ -147,21 +159,34 @@ class ActedMailState:
         with exclusive(self._root):
             for message in messages:
                 message_id = str(message.get("id") or "")
-                message["acted"] = bool(message_id) and self._is_acted(
-                    identity_id, message_id
+                message["acted"] = bool(message_id) and self._is_marked(
+                    identity_id, message_id, "acted"
+                )
+                message["rejected"] = bool(message_id) and self._is_marked(
+                    identity_id, message_id, "rejected"
                 )
         return messages
 
-    def _is_acted(self, identity_id: str, message_id: str) -> bool:
-        marker = self._marker(identity_id, message_id)
+    def _is_marked(self, identity_id: str, message_id: str, kind: str) -> bool:
+        marker = self._marker(identity_id, message_id, kind)
         try:
             return marker.read_text(encoding="utf-8") == message_id
         except FileNotFoundError:
             return False
 
-    def _marker(self, identity_id: str, message_id: str) -> Path:
+    def _marker(self, identity_id: str, message_id: str, kind: str = "acted") -> Path:
         digest = hashlib.sha256(message_id.encode("utf-8")).hexdigest()
-        return _state_dir(self._root, identity_id, "acted") / digest
+        return _state_dir(self._root, identity_id, kind) / digest
+
+
+def _write_or_unlink(path: Path, message_id: str, present: bool) -> None:
+    if present:
+        atomic_write_text(path, message_id)
+        return
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        return
 
 
 def _state_dir(root: Path, identity_id: str, name: str) -> Path:

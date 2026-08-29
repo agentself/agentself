@@ -13,6 +13,7 @@ MailboxMessage = TypedDict(
         "reason": str,
         "status": str,
         "acted": bool,
+        "rejected": bool,
     },
     total=False,
 )

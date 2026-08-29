@@ -4,9 +4,15 @@ from pathlib import Path
 
 from agentself.cli.io import load_value_file, store_value_file, value_meta
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
-from agentself.cli.runtime import client, fail
+from agentself.cli.runtime import (
+    client,
+    fail,
+    value_from_file_or_arg,
+    value_source_error,
+)
 from agentself.cli.types import EmailCommandArguments
 from agentself.internal.custody.errors import ChannelFailure
+from agentself.internal.mail_state import MAIL_LIST_CAP
 from agentself.internal.setup import (
     SETUP_ACTION_REQUIRED,
     SETUP_CONNECTED,
@@ -49,14 +55,39 @@ def show_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
 
 
 def send_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
-    client(vault).email_send(args.to, args.subject, args.body)
-    return CliSuccess({"to": args.to, "subject": args.subject})
+    body, err = value_from_file_or_arg(
+        args.body,
+        getattr(args, "from_file", "") or "",
+        both_error="body and --file",
+        strip_newline=False,
+        empty_is_missing=False,
+    )
+    if err is not None or body is None:
+        return value_source_error(
+            args,
+            err or "need a value",
+            "agentself email send --help",
+        )
+    sent = client(vault).email_send(args.to, args.subject, body)
+    payload: dict[str, object] = {"to": args.to, "subject": args.subject}
+    if sent.get("id"):
+        payload["id"] = sent["id"]
+    if sent.get("ref"):
+        payload["ref"] = sent["ref"]
+    return CliSuccess(payload)
 
 
 def mark_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
+    rejected = args.mark_state == "rejected"
     acted = args.mark_state == "acted"
-    client(vault).email_mark(args.message_id, acted=acted)
-    return CliSuccess({"id": args.message_id, "acted": acted})
+    client(vault).email_mark(args.message_id, acted=acted, rejected=rejected)
+    return CliSuccess(
+        {
+            "id": args.message_id,
+            "acted": acted,
+            "rejected": rejected,
+        }
+    )
 
 
 def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
@@ -80,7 +111,9 @@ def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
             nxt="agentself email receive REF --raw",
         )
     if not ref:
-        messages = client(vault).email_list(status="new")
+        messages, trunc_err = _list_headers(args, vault, status="new")
+        if trunc_err is not None:
+            return trunc_err
     else:
         messages = client(vault).email_receive(
             message_id=args.message_id,
@@ -92,19 +125,82 @@ def receive_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
     file_error = _prepare_received_messages(args, messages, path)
     if file_error is not None:
         return file_error
-    return CliSuccess({"messages": messages})
+    payload: dict[str, object] = {"messages": messages}
+    if not ref and getattr(args, "_truncated", False):
+        payload["truncated"] = True
+    return CliSuccess(payload)
 
 
 def list_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
-    messages = client(vault).email_list(status=args.status, acted=args.acted_filter)
-    return CliSuccess({"messages": messages})
+    messages, err = _list_headers(args, vault, status=args.status)
+    if err is not None:
+        return err
+    payload: dict[str, object] = {"messages": messages}
+    if getattr(args, "_truncated", False):
+        payload["truncated"] = True
+    return CliSuccess(payload)
 
 
 def find_email(args: EmailCommandArguments, vault: Path) -> CliOutcome:
+    acted, rejected = _task_filters(args)
     messages = client(vault).email_find(
-        args.query, status=args.status, acted=args.acted_filter
+        args.query,
+        status=args.status,
+        acted=acted,
+        rejected=rejected,
     )
     return CliSuccess({"messages": messages})
+
+
+def _task_filters(args: EmailCommandArguments) -> tuple[bool | None, bool | None]:
+    raw = getattr(args, "acted_filter", None)
+    if raw == "rejected":
+        return None, True
+    if raw is True:
+        return True, None
+    if raw is False:
+        return False, False
+    return None, None
+
+
+def _parse_limit(args: EmailCommandArguments) -> tuple[int | None, CliOutcome | None]:
+    raw = getattr(args, "limit", None)
+    if raw is None:
+        return None, None
+    if raw < 1 or raw > MAIL_LIST_CAP:
+        verb = getattr(args, "email_command", None) or "list"
+        if verb not in {"list", "receive"}:
+            verb = "list"
+        return None, fail(
+            args,
+            2,
+            "refused",
+            "limit must be 1..100",
+            nxt=f"agentself email {verb} --help",
+        )
+    return raw, None
+
+
+def _list_headers(
+    args: EmailCommandArguments,
+    vault: Path,
+    *,
+    status: str | None,
+) -> tuple[list[dict[str, object]], CliOutcome | None]:
+    limit, err = _parse_limit(args)
+    if err is not None:
+        return [], err
+    acted, rejected = _task_filters(args)
+    wanted = limit if limit is not None else MAIL_LIST_CAP
+    fetch = wanted + 1 if wanted < MAIL_LIST_CAP else wanted
+    messages = client(vault).email_list(
+        status=status, acted=acted, rejected=rejected, limit=fetch
+    )
+    truncated = len(messages) > wanted or len(messages) >= MAIL_LIST_CAP
+    if len(messages) > wanted:
+        messages = messages[:wanted]
+    setattr(args, "_truncated", truncated)
+    return messages, None
 
 
 def _prepare_received_messages(

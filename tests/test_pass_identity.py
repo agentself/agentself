@@ -38,9 +38,11 @@ def test_init_store_pass_missing_tools(tmp_path):
     assert "AGE-SECRET-KEY" not in blob
     assert "setup-principal.sh" not in blob
     data = json.loads(proc.stdout)
-    assert "pass" in data["reason"]
     assert "gpg" in data["reason"]
+    assert "pass" in data["reason"]
+    assert "host packages" in data["reason"]
     assert "install --tools" not in blob
+    assert data["next"] == "agentself backends store"
     assert data["error"] == "error"
     assert proc.stderr == ""
 

@@ -307,6 +307,7 @@ def test_json_init_show_identity_doctor_recipient(tmp_path):
     assert diagnose["ready"]["wallet"] is True
     assert diagnose["ready"]["email"] is False
     assert diagnose["ready"]["store"] is True
+    assert diagnose["next"] == "agentself email connect"
 
 
 def test_json_secrets_and_missing(tmp_path):
@@ -482,12 +483,22 @@ def test_json_email_mark_contract(tmp_path):
         run_cli(["--json", "email", "mark", "provider/id", "acted"], env),
         "email_mark",
     )
-    assert marked == {"ok": True, "id": "provider/id", "acted": True}
+    assert marked == {
+        "ok": True,
+        "id": "provider/id",
+        "acted": True,
+        "rejected": False,
+    }
     unmarked = assert_ok(
         run_cli(["--json", "email", "mark", "provider/id", "unacted"], env),
         "email_mark",
     )
-    assert unmarked == {"ok": True, "id": "provider/id", "acted": False}
+    assert unmarked == {
+        "ok": True,
+        "id": "provider/id",
+        "acted": False,
+        "rejected": False,
+    }
 
 
 def test_json_email_connect_never_prompts_and_keeps_compact_next_step(
@@ -643,6 +654,7 @@ def test_json_install_and_doctor_fresh(tmp_path):
     assert diagnose["initialized"] is False
     assert diagnose["wallet_backend"] is None
     assert diagnose["ready"]["email"] is False
+    assert diagnose["next"] == "agentself init"
     installed = assert_ok(
         run_cli(["--json", "install", "--skills=agents"], env, cwd=tmp_path),
         "install",

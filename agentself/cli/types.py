@@ -13,6 +13,7 @@ class CommandArguments(Protocol):
 
     command: str | None
     as_raw: bool
+    identity_dir: str
 
 
 class Handler(Protocol):
@@ -29,10 +30,13 @@ class EmailCommandArguments(CommandArguments, Protocol):
     result_file: str
     to: str
     subject: str
-    body: str
+    body: str | None
+    from_file: str
     message_id: str | None
     body_file: str
     status: Literal["new", "seen"] | None
-    acted_filter: bool | None
+    acted_filter: bool | str | None
+    rejected_filter: bool | None
+    limit: int | None
     query: str
-    mark_state: Literal["acted", "unacted"]
+    mark_state: Literal["acted", "unacted", "rejected"]

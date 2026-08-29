@@ -96,7 +96,7 @@ class AgentMailMailboxAccess(MailboxAccess):
         body: str,
         credential: str | None = None,
         address: str | None = None,
-    ) -> None:
+    ) -> str | None:
         require_safe_token(identity_id, "identity id")
         require_addr(to)
         credential = self._require_credential(
@@ -106,8 +106,9 @@ class AgentMailMailboxAccess(MailboxAccess):
         payload = json.dumps({"to": to, "subject": subject, "text": body}).encode(
             "utf-8"
         )
-        self._request(_send_url(inbox["inbox_id"]), credential, payload)
+        body_bytes = self._request(_send_url(inbox["inbox_id"]), credential, payload)
         self._log.record("mailbox_send", identity_id, to, "ok")
+        return _provider_message_id(body_bytes)
 
     def receive(
         self,
@@ -139,42 +140,68 @@ class AgentMailMailboxAccess(MailboxAccess):
         inbox = self._inbox(identity_id, credential, address)
         inbox_id = str(inbox.get("inbox_id") or "")
         budget = [_RETRIEVAL_BYTE_BUDGET]
-        listed = self._list_messages(inbox_id, credential, "recv failed", budget)
         seen = self._seen_dir(identity_id)
         ensure_private_dir(seen)
         wanted = (message_id or "").strip()
-        messages: list[MailboxMessage] = []
-        for item in listed:
-            mid = str(item.get("message_id") or "")
-            if not mid:
-                continue
-            if wanted and mid != wanted:
-                continue
-            mark = seen / _safe_filename(mid)
-            if not wanted and mark.is_file():
-                continue
-            parsed = _meta(item)
-            if not include_body:
-                atomic_write_text(mark, mid)
-                parsed["status"] = "seen"
+        if wanted:
+            messages = self._recv_one(
+                inbox_id, credential, wanted, include_body, seen, budget
+            )
+        else:
+            messages = []
+            listed = self._list_messages(inbox_id, credential, "recv failed", budget)
+            for item in listed:
+                mid = str(item.get("message_id") or "")
+                if not mid:
+                    continue
+                mark = seen / _safe_filename(mid)
+                if mark.is_file():
+                    continue
+                parsed = _meta(item)
+                if not include_body:
+                    atomic_write_text(mark, mid)
+                    parsed["status"] = "seen"
+                    messages.append(parsed)
+                    continue
+                fetched = self._get_message(
+                    _message_url(inbox_id, mid), credential, budget
+                )
+                if fetched is None:
+                    parsed["body"] = str(item.get("preview") or "")
+                    parsed["reason"] = "mailbox_error"
+                    parsed["status"] = "seen" if mark.is_file() else "new"
+                else:
+                    parsed["body"] = _body_of(fetched)
+                    atomic_write_text(mark, mid)
+                    parsed["status"] = "seen"
                 messages.append(parsed)
-                if wanted:
-                    break
-                continue
-            fetched = self._get_message(_message_url(inbox_id, mid), credential, budget)
-            if fetched is None:
-                parsed["body"] = str(item.get("preview") or "")
-                parsed["reason"] = "mailbox_error"
-                parsed["status"] = "seen" if mark.is_file() else "new"
-            else:
-                parsed["body"] = _body_of(fetched)
-                atomic_write_text(mark, mid)
-                parsed["status"] = "seen"
-            messages.append(parsed)
-            if wanted:
-                break
         self._log.record("mailbox_recv", identity_id, None, "ok")
         return messages
+
+    def _recv_one(
+        self,
+        inbox_id: str,
+        credential: str,
+        message_id: str,
+        include_body: bool,
+        seen: Path,
+        budget: builtins.list[int],
+    ) -> builtins.list[MailboxMessage]:
+        raw = self._request(
+            _message_url(inbox_id, message_id), credential, budget=budget
+        )
+        data = _json(raw)
+        if not isinstance(data, dict):
+            raise MailboxError("recv failed")
+        parsed = _meta(data)
+        if not parsed.get("id"):
+            parsed["id"] = message_id
+        if include_body:
+            parsed["body"] = _body_of(data)
+        mark = seen / _safe_filename(str(parsed["id"]))
+        atomic_write_text(mark, str(parsed["id"]))
+        parsed["status"] = "seen"
+        return [parsed]
 
     def list(
         self,
@@ -496,9 +523,8 @@ class AgentMailMailboxAccess(MailboxAccess):
             return []
         if not isinstance(messages, list):
             raise MailboxError(fail)
-        if len(messages) > _MESSAGE_COUNT_CAP:
-            raise MailboxError(fail)
-        return [item for item in messages if isinstance(item, dict)]
+        kept = [item for item in messages if isinstance(item, dict)]
+        return kept[:_MESSAGE_COUNT_CAP]
 
     def _request(
         self,
@@ -622,6 +648,21 @@ def _signup_username(identity_id: str) -> str:
     entropy = secrets.token_bytes(16)
     suffix = hashlib.sha256(identity_id.encode("utf-8") + entropy).hexdigest()[:16]
     return f"{stem[:40]}-{suffix}"
+
+
+def _provider_message_id(body: bytes) -> str | None:
+    data = _json(body)
+    if not isinstance(data, dict):
+        return None
+    for key in ("message_id", "id"):
+        value = data.get(key)
+        if (
+            isinstance(value, str)
+            and value.strip()
+            and len(value.encode("utf-8")) <= 4096
+        ):
+            return value.strip()
+    return None
 
 
 def _json(body: bytes) -> object | None:

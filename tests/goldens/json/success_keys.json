@@ -38,7 +38,8 @@
       "email_backend",
       "store_backend",
       "package",
-      "executable"
+      "executable",
+      "next"
     ]
   },
   "install": {
@@ -114,13 +115,16 @@
     "allowed": ["ok", "address", "owned_address", "needs_domain", "ready", "status"]
   },
   "email_send": {
-    "exact": ["ok", "to", "subject"]
+    "required": ["ok", "to", "subject"],
+    "allowed": ["ok", "to", "subject", "id", "ref"]
   },
   "email_messages": {
-    "exact": ["ok", "messages"]
+    "required": ["ok", "messages"],
+    "allowed": ["ok", "messages", "truncated"]
   },
   "email_mark": {
-    "exact": ["ok", "id", "acted"]
+    "required": ["ok", "id", "acted"],
+    "allowed": ["ok", "id", "acted", "rejected"]
   },
   "wallet_address": {
     "exact": ["ok", "address"]
@@ -189,6 +193,7 @@
       "reason",
       "status",
       "acted",
+      "rejected",
       "body_file",
       "body_bytes",
       "body_sha256"
