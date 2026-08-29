@@ -79,7 +79,8 @@ def test_readme_sops_default_includes_windows() -> None:
     nearby = text[start : start + 600]
     assert "`sops`" in nearby
     assert "`pass`" in nearby
-    assert "Windows" in nearby
+    assert "including Windows" in nearby
+    assert "not the Windows default" in nearby
 
 
 def test_install_skills_tree_is_four_files() -> None:
