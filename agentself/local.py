@@ -144,21 +144,47 @@ def resolve_age_key_file(vault: Path, stored: str) -> str:
     return str(path)
 
 
-def bind_local(vault: Path) -> BoundCaller:
-    """Env first (tests and escape hatches), then the local identity file."""
+def occupied_identity_ids(vault: Path) -> tuple[str, ...]:
+    """Distinct identity names already present in this directory."""
 
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        token = name.strip()
+        if token and token not in seen:
+            seen.add(token)
+            names.append(token)
+
+    add(load_config(vault).get("identity_id") or "")
+    for name in _registry_identity_ids(vault):
+        add(name)
+    for name in _age_key_identity_ids(vault):
+        add(name)
+    return tuple(names)
+
+
+def bind_local(vault: Path) -> BoundCaller:
+    """Bind the identity this directory already holds.
+
+    A named identity in config.json is canonical. Env
+    (``AGENTSELF_IDENTITY_ID``, ``AGE_KEY_FILE``) cannot switch it; env is
+    only used when this directory has no identity yet.
+    """
+
+    cfg = load_config(vault)
+    folder_id = (cfg.get("identity_id") or "").strip()
+    folder_key = resolve_age_key_file(vault, cfg.get("age_key_file", ""))
+    if folder_id:
+        if not folder_key:
+            raise UnboundCaller("not initialized")
+        return BoundCaller(folder_id, public_recipient(folder_key))
     try:
         return bind_from_env()
     except UnboundCaller:
         pass
-    cfg = load_config(vault)
-    identity_id = (
-        os.environ.get(ENV_IDENTITY_ID, "").strip()
-        or cfg.get("identity_id", "").strip()
-    )
-    key_file = os.environ.get(ENV_AGE_KEY_FILE, "").strip() or resolve_age_key_file(
-        vault, cfg.get("age_key_file", "")
-    )
+    identity_id = os.environ.get(ENV_IDENTITY_ID, "").strip()
+    key_file = os.environ.get(ENV_AGE_KEY_FILE, "").strip()
     if not identity_id or not key_file:
         raise UnboundCaller("not initialized")
     return BoundCaller(identity_id, public_recipient(key_file))
@@ -211,6 +237,47 @@ def _ensure_age_keygen(vault: Path, identity_id: str) -> Path:
     except OSError:
         pass
     return key
+
+
+def _registry_identity_ids(vault: Path) -> tuple[str, ...]:
+    path = Path(vault) / "registry.json"
+    if not path.is_file():
+        return ()
+    try:
+        data = load_json_file(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise IdentityStateError("cannot read registry.json") from exc
+    if not isinstance(data, dict):
+        raise IdentityStateError("cannot read registry.json")
+    err = format_version_error("registry.json", data)
+    if err:
+        raise IdentityStateError(err)
+    identities = data.get("identities", {})
+    if not isinstance(identities, dict):
+        raise IdentityStateError("cannot read registry.json")
+    names: list[str] = []
+    for key in identities:
+        if isinstance(key, str) and key.strip():
+            names.append(key.strip())
+    return tuple(names)
+
+
+def _age_key_identity_ids(vault: Path) -> tuple[str, ...]:
+    root = Path(vault) / "identities"
+    try:
+        if not root.is_dir():
+            return ()
+        children = list(root.iterdir())
+    except OSError:
+        return ()
+    names: list[str] = []
+    for child in children:
+        try:
+            if child.is_dir() and (child / "agent.agekey").is_file():
+                names.append(child.name)
+        except OSError:
+            continue
+    return tuple(names)
 
 
 def _read_config(vault: Path) -> dict[str, str]:

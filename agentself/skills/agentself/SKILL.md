@@ -68,7 +68,8 @@ agentself --identity-dir PATH show
 
 The setup is complete when `show` JSON includes `id`, `address`, and
 `recipient`. `init` and `diagnose` do not fetch binaries. Repeating `init` is
-safe. Use `--force` to change an existing identity or its backends.
+safe. One directory is one identity: a second `--id` is refused, and
+`--force` only changes backends. Another agent needs `--identity-dir PATH`.
 `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`.
 
 `show` includes the age recipient and email readiness. For wallet work, inspect

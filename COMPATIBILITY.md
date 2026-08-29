@@ -31,7 +31,9 @@ state while retaining provider read state in `status`.
 `--identity-dir PATH` is an additive per-invocation selector. Precedence
 is the flag, then `AGENTSELF_IDENTITY_DIR`, then `~/.agentself`. The
 selection is not written to `config.json` and is not a current-identity
-pointer.
+pointer. One identity directory holds one named identity. A second
+`--id` in that folder is refused; another identity is another
+`--identity-dir`.
 
 `wallet authorize --out PATH` is an additive success shape: it includes
 `authorization_file` and `authorization_bytes` and omits `authorization`.

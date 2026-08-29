@@ -53,9 +53,10 @@ agentself --identity-dir PATH note set handoff --file ./handoff.txt
 agentself --identity-dir PATH email connect
 ```
 
-Those commands emit JSON. `init` creates one identity directory. Run
-`agentself show` to inspect it; repeat `init` is safe, and `--force` is
-required to change an existing identity or its backends. Email setup is
+Those commands emit JSON. `init` creates one identity in one directory.
+A second `--id` in that folder is refused; another agent needs
+`--identity-dir PATH`. Run `agentself show` to inspect it; repeat `init`
+is safe, and `--force` is required to change backends. Email setup is
 optional and does not block init.
 For AgentMail, `email connect` offers two explicit routes: connect an existing
 API key, or create an account when that external action has been authorized.
@@ -177,6 +178,9 @@ The identity directory is `~/.agentself` by default. Prefer
 agentself --identity-dir ~/.agent-a init
 agentself --identity-dir ~/.agent-b init
 ```
+
+One directory is one agent identity. There is no `identity use` switch
+inside a folder. Isolation is another `--identity-dir`.
 
 Use `AGENTSELF_EMAIL_ADDRESS` and `AGENTSELF_EMAIL_CREDENTIAL` for transient
 email configuration when appropriate. Runtime environment credentials are

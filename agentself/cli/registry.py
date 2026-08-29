@@ -29,7 +29,7 @@ def configure_init(parser: argparse.ArgumentParser) -> None:
         dest="identity_id",
         default="",
         metavar="NAME",
-        help="Name this identity (default agent)",
+        help="Name this identity on first init (default agent). A second name in this directory is refused",
     )
     for spec in CHANNELS.values():
         extra = (
@@ -46,7 +46,7 @@ def configure_init(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow identity or backend changes on an existing identity",
+        help="Allow backend changes on an existing identity",
     )
     parser.add_argument(
         "--wallet-key-file",
@@ -430,7 +430,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         args=("--id", "--wallet", "--email", "--store", "--force", "--wallet-key-file"),
         next="agentself init",
         description=(
-            "Create the local identity. Email is optional and does not block init. "
+            "Create the local identity. One identity per directory; another agent "
+            "needs --identity-dir PATH. Email is optional and does not block init. "
             "Needs host tools on PATH (agentself install --tools)."
         ),
         epilog="Examples:\n  agentself --identity-dir PATH init\n  agentself init --id NAME\n  agentself init --wallet-key-file -",

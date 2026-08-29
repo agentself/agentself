@@ -10,9 +10,11 @@ not persisted.
 
 - Use the same directory for sequential work that must keep the same wallet,
   encrypted secrets, notes, email setup, and acted-mail state. Avoid concurrent
-  writers to one directory.
+  writers to one directory. One directory is one identity; `init --id NAME`
+  cannot switch the person in that folder.
 - Use a distinct directory and `agentself --identity-dir PATH init` when agents
-  or tasks need separate custody. This creates a different wallet.
+  or tasks need separate custody. This creates a different wallet. There is no
+  `identity use` command.
 - Use `backup` and `restore` to move or clone the same identity into another
   directory. A clone contains the wallet key and every secret. Protect it as
   strongly as the source.
