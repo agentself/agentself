@@ -66,6 +66,18 @@ agentself email show
 The setup is complete when `email show` JSON reports ready. One validated
 credential completes discovery. Stop looking for alternatives.
 
+## Happy path (five JSON round-trips)
+
+1. `email connect` returns the menu with exit 3.
+2. Write the choice to a file: `existing_credential`, or `create_account` only
+   after human authorization.
+3. Continue with `--continue --state STATE --result-file PATH`.
+4. If `human_action_required`, relay `action`/`message`, wait for the OTP or
+   key in a file, and continue again.
+5. `email show` reports ready.
+
+Do not invent aliases. One claimed, forbidden, or unavailable identity stops.
+
 ## Resume interrupted setup
 
 The identity stores continuation only when setup needs opaque resume state,

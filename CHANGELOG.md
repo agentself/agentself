@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Paste prompt and skill now include host tools, PATH recovery, and
+  authorize-not-send as the first wallet action.
+
 ## 0.2.2 - 2026-08-26
 
 - README has a short copy-paste prompt so an agent can install the CLI,

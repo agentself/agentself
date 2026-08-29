@@ -1,4 +1,4 @@
-If you are an LLM, install the CLI, then run `agentself install --skills`.
+If you are an LLM, install the CLI; if it is missing from PATH, run `uv tool update-shell` and open a new shell. Then run `agentself install --skills` and `agentself install --tools` before `init`.
 
 # agentself
 
@@ -15,9 +15,14 @@ against the CLI.
 Paste this into any agent that can run commands:
 
 ```text
-Set up agentself for me. Install the CLI, install the skill, and create a
-local identity. Follow https://github.com/agentself/agentself. When you are done,
-tell me what I have and what I can do next.
+Set up agentself for me. Install the CLI; if `agentself` is missing from PATH,
+run `uv tool update-shell` and open a new shell. Then run
+`agentself install --skills` and `agentself install --tools` before `init`,
+and create a local identity. Follow https://github.com/agentself/agentself.
+When you are done, tell me the identity id, wallet address, that the default
+Base wallet is live, and that the next wallet demo is
+`wallet authorize --file` / `wallet verify` — not `wallet send`. Email is
+optional.
 ```
 
 ## Install
@@ -65,6 +70,8 @@ The account route uses the approved human email and its six-digit OTP, and
 keeps the generated API key encrypted while setup continues. If JSON includes
 `human_action_required`, `action` is an external step a person may need to
 perform; the CLI never solicits input.
+The first useful wallet action is `wallet address` plus
+`wallet authorize --file` / `wallet verify`. `wallet send` moves real funds.
 
 ## Commands
 
@@ -153,6 +160,9 @@ agentself backends store
 | Wallet | `base` | `ethereum` |
 | Email | `agentmail` | `imap` |
 | Secrets | `sops` | `pass` |
+
+`sops` is the default store on every OS, including Windows. `pass` needs
+`gpg` and is the Unix/GPG alternative, not the Windows default.
 
 Choose a backend during initialization:
 

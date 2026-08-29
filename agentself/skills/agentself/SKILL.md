@@ -24,7 +24,9 @@ reinstall its packaged skill, and run the check again. Never mix instructions
 from one schema with another executable.
 
 If `agentself` is missing, install it with `uv tool install agentself` or
-`pipx install agentself`. Then run both checks again.
+`pipx install agentself`. If it is still missing from PATH, run
+`uv tool update-shell` and open a new shell. Then run
+`agentself install --tools` before `init`, and run both checks again.
 
 The CLI writes one JSON object to stdout by default. Handled outcomes write
 nothing to stderr. Exit codes are:
@@ -67,8 +69,10 @@ agentself --identity-dir PATH show
 ```
 
 The setup is complete when `show` JSON includes `id`, `address`, and
-`recipient`. `init` and `diagnose` do not fetch binaries. Repeating `init` is
-safe. Use `--force` to change an existing identity or its backends.
+`recipient`. The first wallet demo is `wallet authorize --file` /
+`wallet verify` on this identity; do not send. `init` and `diagnose` do not
+fetch binaries. Repeating `init` is safe. Use `--force` to change an existing
+identity or its backends.
 `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`.
 
 `show` includes the age recipient and email readiness. For wallet work, inspect
