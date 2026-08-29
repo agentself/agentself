@@ -183,6 +183,39 @@ def test_concurrent_init_one_identity(tmp_path):
     assert len(keys) == 1
 
 
+def test_concurrent_init_different_ids_keep_one_identity(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    results: list = []
+
+    def worker(name: str) -> None:
+        results.append((name, run_cli(["--json", "init", "--id", name], env)))
+
+    threads = [
+        threading.Thread(target=worker, args=("alice",)),
+        threading.Thread(target=worker, args=("bob",)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    winners = [name for name, proc in results if proc.returncode == 0]
+    refused = [proc for _name, proc in results if proc.returncode == 2]
+    assert len(winners) == 1, [
+        (name, proc.returncode, proc.stdout) for name, proc in results
+    ]
+    assert len(refused) == 1
+    payload = json.loads(refused[0].stdout)
+    assert payload["reason"] == "identity already initialized"
+    assert payload["next"] == "agentself --identity-dir PATH init"
+    identities = json.loads(
+        (tmp_path / "vault" / "registry.json").read_text(encoding="utf-8")
+    )["identities"]
+    assert list(identities) == winners
+    keys = list((tmp_path / "vault").rglob("agent.agekey"))
+    assert len(keys) == 1
+    assert keys[0].parent.name == winners[0]
+
+
 def test_empty_sops_file_is_interrupted_write(app, monkeypatch):
     init_identity(app, monkeypatch)
     hold = secrets_home(app.vault, "P")
