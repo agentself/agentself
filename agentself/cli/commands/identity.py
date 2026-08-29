@@ -76,7 +76,6 @@ def show_identity(args, vault: Path) -> CliOutcome:
 def init_identity(args, vault: Path) -> CliOutcome:
     try:
         require_supported_formats(vault)
-        cfg = load_config(vault)
         store = args.store or CHANNELS["store"].default
         refused = require_bind(args, "store", store)
         if refused is not None:
@@ -99,53 +98,17 @@ def init_identity(args, vault: Path) -> CliOutcome:
         email_backend = backends["email"]
         wallet_backend = backends["wallet"]
         try:
-            identity_id = _init_identity_id(vault, args)
-        except ValueError as exc:
-            detail = str(exc).strip()
-            if detail.startswith("invalid identity id"):
-                return fail(
-                    args,
-                    2,
-                    "refused",
-                    "invalid identity id; use letters, digits, dot, underscore, or hyphen",
-                    nxt="agentself init --help",
+            # Occupancy and the first identity record share this lock so two
+            # concurrent init --id names cannot both claim an empty directory.
+            with exclusive(vault):
+                claimed = _claim_identity(
+                    args, vault, store, wallet_backend, email_backend
                 )
-            raise
-        occupied = occupied_identity_ids(vault)
-        if occupied and (len(occupied) > 1 or identity_id not in occupied):
-            return fail(
-                args,
-                2,
-                "refused",
-                "identity already initialized",
-                nxt=IDENTITY_DIR_INIT_NEXT,
-            )
-        initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
-        if initialized:
-            blocked = _init_mutation_refused(
-                vault,
-                args,
-                cfg,
-                identity_id,
-                wallet_backend,
-                email_backend,
-                store,
-            )
-            if blocked is not None:
-                return blocked
-        key = ensure_age_key(vault, identity_id)
-        cfg = load_config(vault)
-        age_key_file = _age_key_rel(vault, identity_id, cfg)
-        identity_fields = {
-            "identity_id": identity_id,
-            "age_key_file": age_key_file,
-        }
-        backend_fields = {
-            "email_backend": email_backend,
-            "wallet_backend": wallet_backend,
-        }
-        if not cfg.get("identity_id") or not cfg.get("age_key_file"):
-            merge_config(vault, identity_fields)
+        except IdentityBusy as exc:
+            raise IdentityStateError("identity directory busy") from exc
+        if not isinstance(claimed, tuple):
+            return claimed
+        identity_id, key, identity_fields, backend_fields = claimed
         recipient = public_recipient(str(key))
         access = client(
             vault,
@@ -283,6 +246,65 @@ def install_components(args, _vault: Path) -> CliOutcome:
             return skill_err
         payload["paths"] = paths
     return CliSuccess(payload)
+
+
+def _claim_identity(
+    args,
+    vault: Path,
+    store: str,
+    wallet_backend: str,
+    email_backend: str,
+) -> CliOutcome | tuple[str, Path, dict[str, str], dict[str, str]]:
+    try:
+        identity_id = _init_identity_id(vault, args)
+    except ValueError as exc:
+        detail = str(exc).strip()
+        if detail.startswith("invalid identity id"):
+            return fail(
+                args,
+                2,
+                "refused",
+                "invalid identity id; use letters, digits, dot, underscore, or hyphen",
+                nxt="agentself init --help",
+            )
+        raise
+    occupied = occupied_identity_ids(vault)
+    if occupied and (len(occupied) > 1 or identity_id not in occupied):
+        return fail(
+            args,
+            2,
+            "refused",
+            "identity already initialized",
+            nxt=IDENTITY_DIR_INIT_NEXT,
+        )
+    cfg = load_config(vault)
+    initialized = bool(cfg.get("identity_id") and cfg.get("age_key_file"))
+    if initialized:
+        blocked = _init_mutation_refused(
+            vault,
+            args,
+            cfg,
+            identity_id,
+            wallet_backend,
+            email_backend,
+            store,
+        )
+        if blocked is not None:
+            return blocked
+    key = ensure_age_key(vault, identity_id)
+    cfg = load_config(vault)
+    age_key_file = _age_key_rel(vault, identity_id, cfg)
+    identity_fields = {
+        "identity_id": identity_id,
+        "age_key_file": age_key_file,
+    }
+    backend_fields = {
+        "email_backend": email_backend,
+        "wallet_backend": wallet_backend,
+    }
+    if not cfg.get("identity_id") or not cfg.get("age_key_file"):
+        merge_config(vault, identity_fields)
+    return identity_id, key, identity_fields, backend_fields
 
 
 def _init_identity_id(vault: Path, args) -> str:

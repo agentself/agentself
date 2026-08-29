@@ -15,8 +15,9 @@
   `agentself init`. Bare `restore SOURCE` refuses when `~/.agentself` is
   missing. `vault.lock` timeout is `identity directory busy`.
 - One identity per directory. `init --id` of a second name is refused,
-  including `--force`. Isolation is `--identity-dir PATH`. `diagnose` does
-  not recommend `init` when a folder already holds more than one identity.
+  including `--force`. Isolation is `--identity-dir PATH`. Concurrent
+  `init` cannot claim two names in an empty folder. `diagnose` does not
+  recommend `init` when a folder already holds more than one identity.
 - `email send --file PATH` (stdin only with `--file -`) returns additive
   `id`/`ref` when the provider supplies one. `email list` / no-ref
   `receive` take `--limit` and cap at 100 headers without failing the
