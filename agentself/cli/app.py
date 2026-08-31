@@ -292,7 +292,7 @@ def _raw_conflict(args: CommandArguments, spec: CommandSpec) -> CliFailure | Non
             2,
             "refused",
             "--raw is not supported",
-            nxt="agentself --help",
+            nxt="agentself commands",
         )
     to_file = (getattr(args, "to_file", None) or "").strip()
     body_file = (getattr(args, "body_file", None) or "").strip()

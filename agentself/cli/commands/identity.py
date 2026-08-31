@@ -47,7 +47,12 @@ from agentself.internal.files import (
     exclusive,
     have_host_tool,
 )
-from agentself.internal.names import WALLET_KEY_NAME, require_safe_token
+from agentself.internal.names import (
+    EMAIL_ADDRESS_NAME,
+    EMAIL_CREDENTIAL_NAME,
+    WALLET_KEY_NAME,
+    require_safe_token,
+)
 from agentself.local import (
     DEFAULT_IDENTITY,
     IdentityStateError,
@@ -497,7 +502,7 @@ def _diagnose_identity(
         problems.append(("identity is not usable", init_next(args)))
         return problems, ready
     ready["store"] = True
-    ready["email"] = "email.address" in names
+    ready["email"] = EMAIL_ADDRESS_NAME in names and EMAIL_CREDENTIAL_NAME in names
     try:
         status = access.wallet_material_status()
     except StoreFailure as exc:

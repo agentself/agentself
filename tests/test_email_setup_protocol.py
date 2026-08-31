@@ -793,6 +793,50 @@ def test_runtime_credential_env_sources_cover_all_email_operations(
     assert "email.credential" not in names
 
 
+def test_agentmail_alias_connect_partial_state_is_not_diagnosed_ready(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from agentself.internal.log import MemoryLog
+
+    from tests.test_agentmail_mailbox import INBOXES, OURS, Http, _box
+
+    env = cli_env(tmp_path / "vault")
+    assert run_cli(["--json", "init"], env).returncode == 0
+    http = Http()
+    http.on_get(
+        INBOXES,
+        200,
+        {"inboxes": [{"inbox_id": "inb_alias_connect", "email": OURS}]},
+    )
+
+    def for_binding(self, binding: str):
+        del binding
+        return _box(Path(env["AGENTSELF_IDENTITY_DIR"]), MemoryLog(), http)
+
+    monkeypatch.setattr(
+        "agentself.compose.MailboxAccessFactory.for_binding",
+        for_binding,
+    )
+    apply_cli_env(monkeypatch, env)
+    monkeypatch.setenv("AGENTSELF_AGENTMAIL_API_KEY", CREDENTIAL)
+
+    assert main(["--json", "email", "connect"]) == 0
+    connected = json.loads(capsys.readouterr().out)
+    assert connected["status"] == "connected"
+    names = json.loads(run_cli(["--json", "secret", "list"], env).stdout)["names"]
+    assert "email.address" in names
+    assert "email.credential" not in names
+
+    monkeypatch.delenv("AGENTSELF_AGENTMAIL_API_KEY")
+    assert main(["--json", "email", "show"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["ready"] is False
+    assert main(["--json", "diagnose"]) == 0
+    diagnosed = json.loads(capsys.readouterr().out)
+    assert diagnosed["ready"]["email"] is False
+    assert diagnosed["next"] == "agentself email connect"
+
+
 def test_imap_alias_env_covers_send_receive_list(tmp_path: Path, monkeypatch, capsys):
     from agentself.internal.log import MemoryLog
 

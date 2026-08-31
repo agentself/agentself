@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from agentself.cli.app import main
+from agentself.internal import host_tools
 from agentself.internal.custody.errors import MissingNote, Refused
 from agentself.internal.files import identity_home
 
@@ -150,6 +152,32 @@ def test_note_cli_output_contract_and_source_refusal(tmp_path):
     missing = run_cli(["--json", "note", "exists", "handoff"], env)
     assert missing.returncode == 3
     assert json.loads(missing.stdout)["next"] == "agentself note list"
+
+
+@pytest.mark.parametrize(
+    ("args", "next_command"),
+    [
+        (["note", "set", "../escape", "value"], "agentself note set --help"),
+        (["note", "get", "../escape"], "agentself note get --help"),
+        (["note", "delete", "../escape"], "agentself note delete --help"),
+        (["note", "exists", "../escape"], "agentself note exists --help"),
+    ],
+)
+def test_note_cli_invalid_name_is_safe(
+    tmp_path, args, next_command, monkeypatch, capsys
+):
+    monkeypatch.setattr(host_tools, "ensure_host_tools", lambda fetch=False: None)
+    exit_code = main(args)
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert data["reason"] == "invalid note name"
+    assert data["next"] == next_command
+    assert data["_next"] == {"command": next_command}
+    assert "../escape" not in captured.out
+    assert not (tmp_path / "escape").exists()
 
 
 def test_notes_follow_backup_and_restore(tmp_path):

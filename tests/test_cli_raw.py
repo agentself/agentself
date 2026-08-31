@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from agentself.cli.app import main
+from agentself.internal import host_tools
+
 from tests.support import cli_env, run_cli, value_file
 
 
@@ -76,16 +81,59 @@ def test_unsupported_raw_and_conflicts(tmp_path):
     data = json.loads(refused.stdout)
     assert data["error"] == "refused"
     assert data["reason"] == "--raw is not supported"
+    assert data["next"] == "agentself commands"
+    assert data["_next"] == {"command": "agentself commands"}
     dest = tmp_path / "out.txt"
     clash = run_cli(
         ["secret", "get", "wallet.key", "--raw", "--file", str(dest), "--unsafe"],
         env,
     )
     assert clash.returncode == 2
-    assert json.loads(clash.stdout)["reason"] == "--raw cannot be used with --file"
+    clash_data = json.loads(clash.stdout)
+    assert clash_data["reason"] == "--raw cannot be used with --file"
+    assert clash_data["next"] == "agentself --help"
     meta = run_cli(["secret", "get", "wallet.key", "--raw", "--meta"], env)
     assert meta.returncode == 2
-    assert json.loads(meta.stdout)["reason"] == "--raw cannot be used with --meta"
+    meta_data = json.loads(meta.stdout)
+    assert meta_data["reason"] == "--raw cannot be used with --meta"
+    assert meta_data["next"] == "agentself --help"
+
+
+@pytest.mark.parametrize(
+    ("args", "next_command"),
+    [
+        (
+            ["secret", "create", "../escape", "value"],
+            "agentself secret create --help",
+        ),
+        (
+            ["secret", "create", "--from-files", "../escape=missing.txt"],
+            "agentself secret create --help",
+        ),
+        (["secret", "get", "../escape"], "agentself secret get --help"),
+        (
+            ["secret", "update", "../escape", "value"],
+            "agentself secret update --help",
+        ),
+        (["secret", "delete", "../escape"], "agentself secret delete --help"),
+        (["secret", "exists", "../escape"], "agentself secret exists --help"),
+    ],
+)
+def test_secret_cli_invalid_name_is_safe(
+    tmp_path, args, next_command, monkeypatch, capsys
+):
+    monkeypatch.setattr(host_tools, "ensure_host_tools", lambda fetch=False: None)
+    exit_code = main(args)
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == ""
+    data = json.loads(captured.out)
+    assert data["error"] == "refused"
+    assert data["reason"] == "invalid secret name"
+    assert data["next"] == next_command
+    assert data["_next"] == {"command": next_command}
+    assert "../escape" not in captured.out
+    assert not (tmp_path / "escape").exists()
 
 
 def test_email_receive_raw_requires_ref(tmp_path):

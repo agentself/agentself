@@ -6,7 +6,7 @@ If you are an LLM, install the CLI, then run `agentself install --skills`.
 secrets, notes, and email. It is a CLI with one
 command tree across different supported backends.
 
-Linux, macOS, and Windows. Python 3.11+. 0.2.2 is a patch of the agent-native
+Linux, macOS, and Windows. Python 3.11+. 0.2.3 is a patch of the agent-native
 CLI (`cli: 2`). Review [COMPATIBILITY.md](COMPATIBILITY.md) before automating
 against the CLI.
 

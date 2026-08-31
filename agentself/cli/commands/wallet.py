@@ -159,21 +159,10 @@ def verify_wallet(args, vault: Path) -> CliOutcome:
 
 
 def send_wallet(args, vault: Path) -> CliOutcome:
-    if getattr(args, "test_send", False):
-        access = client(vault)
-        view = access.identity().get("wallet")
-        wallet = view if isinstance(view, dict) else {}
-        asset = (args.asset or "").strip() or str(wallet.get("asset") or "")
-        return CliSuccess(
-            {
-                "to": args.to,
-                "amount": _canonical_amount(args.amount),
-                "asset": asset,
-                "test": True,
-            },
-            redact=False,
-        )
-    sent = client(vault).wallet_send(args.to, args.amount, args.asset or "")
+    is_test = bool(getattr(args, "test_send", False))
+    sent = client(vault).wallet_send(
+        args.to, args.amount, args.asset or "", test=is_test
+    )
     payload: dict[str, object] = {
         "to": args.to,
         "amount": _canonical_amount(args.amount),
@@ -181,6 +170,8 @@ def send_wallet(args, vault: Path) -> CliOutcome:
     }
     if sent.get("hash"):
         payload["hash"] = sent["hash"]
+    if is_test:
+        payload["test"] = True
     return CliSuccess(payload, redact=False)
 
 

@@ -18,6 +18,7 @@ from agentself.backends.wallet.contract import (
     WalletError,
 )
 from agentself.backends.wallet.factory import WalletAccessFactory
+from agentself.cli.app import main
 from agentself.internal.custody.errors import (
     CannotSend,
     ChannelFailure,
@@ -218,3 +219,93 @@ def test_wallet_send_invalid_amount_names_usdc(vault, monkeypatch):
     assert caught.value.reason == "invalid_amount"
     assert "USDC" not in str(caught.value)
     assert not rpc.broadcast
+
+
+@pytest.mark.parametrize(
+    ("to", "amount", "asset", "rpc", "reason"),
+    [
+        (
+            "not-an-address",
+            "1",
+            "",
+            MockRpc(eth_wei=10**18, usdc_raw=2_000_000),
+            "invalid_destination",
+        ),
+        (
+            "0x" + "11" * 20,
+            "not-an-amount",
+            "",
+            MockRpc(eth_wei=10**18, usdc_raw=2_000_000),
+            "invalid_amount",
+        ),
+        (
+            "0x" + "11" * 20,
+            "-1",
+            "",
+            MockRpc(eth_wei=10**18, usdc_raw=2_000_000),
+            "invalid_amount",
+        ),
+        (
+            "0x" + "11" * 20,
+            "1",
+            "ETH",
+            MockRpc(eth_wei=10**18, usdc_raw=2_000_000),
+            "unsupported_asset",
+        ),
+        (
+            "0x" + "11" * 20,
+            "1",
+            "",
+            MockRpc(eth_wei=10**18, usdc_raw=0),
+            "insufficient_asset",
+        ),
+        ("0x" + "11" * 20, "1", "", MockRpc(eth_wei=0, usdc_raw=2_000_000), "no_gas"),
+    ],
+)
+def test_cli_wallet_send_test_reuses_backend_validation(
+    vault, monkeypatch, capsys, to, amount, asset, rpc, reason
+):
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    monkeypatch.setattr(
+        "agentself.cli.commands.wallet.client", lambda _vault: app.client
+    )
+    monkeypatch.setattr(
+        "agentself.internal.host_tools.ensure_host_tools", lambda fetch=False: None
+    )
+
+    argv = ["--json", "wallet", "send", to, amount]
+    if asset:
+        argv.append(asset)
+    argv.append("--test")
+    assert main(argv) == 2
+    data = json.loads(capsys.readouterr().out)
+    assert data["ok"] is False
+    assert data["reason"] == reason
+    assert not rpc.broadcast
+    assert not (vault / "identities" / "P" / "wallet" / "pending-send.json").exists()
+
+
+def test_cli_wallet_send_test_returns_valid_plan_without_state_changes(
+    vault, monkeypatch, capsys
+):
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000)
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    monkeypatch.setattr(
+        "agentself.cli.commands.wallet.client", lambda _vault: app.client
+    )
+    monkeypatch.setattr(
+        "agentself.internal.host_tools.ensure_host_tools", lambda fetch=False: None
+    )
+
+    assert main(["--json", "wallet", "send", "0x" + "11" * 20, "1", "--test"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["ok"] is True
+    assert data["test"] is True
+    assert data["asset"] == "USDC"
+    assert data["amount"] == "1"
+    assert not rpc.broadcast
+    assert not any(method == "eth_sendRawTransaction" for method, _ in rpc.calls)
+    assert not any(method == "eth_getTransactionCount" for method, _ in rpc.calls)
+    assert not (vault / "identities" / "P" / "wallet" / "pending-send.json").exists()

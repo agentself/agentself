@@ -290,6 +290,10 @@ class InstrumentedWalletAccess:
         self.calls.append(("send",))
         return self.inner.send(identity_id, to, amount, asset)
 
+    def validate_send(self, identity_id, to, amount, asset):
+        self.calls.append(("validate_send",))
+        return self.inner.validate_send(identity_id, to, amount, asset)
+
     def payment_ref(self) -> str:
         getter = getattr(self.inner, "payment_ref", None)
         return getter() if callable(getter) else ""

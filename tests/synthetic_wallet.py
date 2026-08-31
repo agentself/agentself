@@ -42,6 +42,9 @@ class SyntheticWalletAccess(WalletAccess):
         return {"asset": _ASSET, "amount": "0", "address": _ADDRESS}
 
     def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+        return self.validate_send(identity_id, to, amount, asset)
+
+    def validate_send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
         require_safe_token(identity_id, "identity id")
         del to, amount
         wanted = (asset or "").strip()

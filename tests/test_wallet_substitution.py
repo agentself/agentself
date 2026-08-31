@@ -27,6 +27,25 @@ def test_omitted_asset_resolves_to_backend_default(vault, monkeypatch):
     assert app.client.wallet_send("dest", "1") == {"asset": "NOTE"}
 
 
+def test_cli_test_uses_synthetic_backend_validation(vault, monkeypatch, capsys):
+    app = build_app(vault, wallet_backend="synthetic")
+    init_identity(app, monkeypatch)
+    monkeypatch.setattr(
+        "agentself.cli.commands.wallet.client", lambda _vault: app.client
+    )
+    monkeypatch.setattr(
+        "agentself.internal.host_tools.ensure_host_tools", lambda fetch=False: None
+    )
+
+    assert main(["--json", "wallet", "send", "dest", "1", "--test"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["ok"] is True
+    assert data["test"] is True
+    assert data["asset"] == "NOTE"
+    assert ("validate_send",) in app.wallets.instances[-1].calls
+    assert ("send",) not in app.wallets.instances[-1].calls
+
+
 def test_manager_does_not_create_or_get_wallet_key(vault, monkeypatch):
     app = build_app(vault, wallet_backend="synthetic")
     init_identity(app, monkeypatch)

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-08-30
+
+- `wallet send --test` now runs backend-owned destination, amount, asset,
+  balance, gas, and estimate validation without signing or broadcasting.
+- `diagnose` no longer reports email ready when only a transient AgentMail
+  connection left a persisted address without a persisted credential.
+- Invalid note and secret names return safe command-specific guidance, and
+  unsupported `--raw` use points to the command catalog.
 - Failures and diagnose keep string `next` and add `_next` when the next
   step is an `agentself` command.
 - `commands` includes param schemas by default (`params`, `verbs`).
