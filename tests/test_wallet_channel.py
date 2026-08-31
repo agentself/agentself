@@ -154,6 +154,24 @@ def test_wallet_send_broadcasts_when_funded(vault, monkeypatch):
     _assert_key_hidden(app, key)
 
 
+@pytest.mark.parametrize("operation", ["validate_send", "send"])
+def test_chain_send_requires_eth_to_cover_estimated_gas(operation):
+    from agentself.internal.eoa import generate_secp256k1
+
+    rpc = MockRpc(eth_wei=10**14 - 1, usdc_raw=2_000_000)
+    wallet = WalletAccessFactory(MemoryLog(), rpc=rpc).for_binding("base")
+    wallet.bind_material(generate_secp256k1())
+
+    with pytest.raises(WalletCannotSend) as caught:
+        getattr(wallet, operation)("P", "0x" + "11" * 20, "1", "USDC")
+
+    assert caught.value.reason == "no_gas"
+    assert not rpc.broadcast
+    assert [method for method, _ in rpc.calls].count("eth_gasPrice") == 1
+    assert [method for method, _ in rpc.calls].count("eth_estimateGas") == 1
+    assert not any(method == "eth_getTransactionCount" for method, _ in rpc.calls)
+
+
 def test_wallet_send_refuses_without_usdc(vault, monkeypatch):
     from agentself.internal.eoa import generate_secp256k1
 

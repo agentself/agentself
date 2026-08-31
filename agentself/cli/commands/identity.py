@@ -35,6 +35,7 @@ from agentself.cli.runtime import (
 from agentself.host import CHANNELS, ENV_IDENTITY_DIR, ENV_IDENTITY_ID, UnknownBind
 from agentself.internal.custody.errors import (
     HostToolMissing,
+    MissingSecret,
     ProtectedName,
     Refused,
     StoreFailure,
@@ -489,9 +490,15 @@ def _diagnose_identity(
     try:
         access = client(vault)
         names = access.list()
+        ready["email"] = all(
+            name in names and bool(str(access.get(name) or "").strip())
+            for name in (EMAIL_ADDRESS_NAME, EMAIL_CREDENTIAL_NAME)
+        )
     except UnboundCaller:
         problems.append(("age key file is not usable", init_next(args)))
         return problems, ready
+    except MissingSecret:
+        ready["email"] = False
     except UnknownBind as exc:
         problems.append((str(exc), f"agentself backends {exc.channel}"))
         return problems, ready
@@ -502,7 +509,6 @@ def _diagnose_identity(
         problems.append(("identity is not usable", init_next(args)))
         return problems, ready
     ready["store"] = True
-    ready["email"] = EMAIL_ADDRESS_NAME in names and EMAIL_CREDENTIAL_NAME in names
     try:
         status = access.wallet_material_status()
     except StoreFailure as exc:

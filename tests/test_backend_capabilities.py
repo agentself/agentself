@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from agentself.backends.email.contract import MailboxAccess
 from agentself.backends.email.factory import MailboxAccessFactory
 from agentself.backends.store.contract import StoreAccess
@@ -129,3 +131,35 @@ def test_diagnose_imap_address_ready_after_secrets(tmp_path):
     dumped = ok.stdout + ok.stderr + json.dumps(ready)
     assert TOKEN_CANARY not in dumped
     assert ADDRESS_CANARY not in dumped
+
+
+@pytest.mark.parametrize("empty_name", ["email.address", "email.credential"])
+def test_diagnose_email_requires_nonempty_secret_values(tmp_path, empty_name):
+    vault = tmp_path / "vault"
+    env = cli_env(vault)
+    started = run_cli(["init", "--email", "imap"], env)
+    assert started.returncode == 0, started.stderr
+
+    values = {
+        "email.address": ADDRESS_CANARY,
+        "email.credential": TOKEN_CANARY,
+    }
+    values[empty_name] = ""
+    for name, value in values.items():
+        created = run_cli(
+            [
+                "secret",
+                "create",
+                name,
+                "--file",
+                value_file(tmp_path, value, f"{name}.txt"),
+            ],
+            env,
+        )
+        assert created.returncode == 0, created.stderr
+
+    diagnosed = run_cli(["--json", "diagnose"], env)
+    assert diagnosed.returncode == 0, diagnosed.stdout + diagnosed.stderr
+    data = json.loads(diagnosed.stdout)
+    assert data["ok"] is True
+    assert data["ready"]["email"] is False

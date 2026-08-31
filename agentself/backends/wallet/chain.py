@@ -134,9 +134,10 @@ class ChainWalletAccess(WalletAccess):
         require_safe_token(identity_id, "identity id")
         self._require_key()
         wanted = self._send_asset(identity_id, asset)
-        addr, _dest, _units, data = self._validate_send_once(identity_id, to, amount)
-        self._gas_price()
-        self._estimate_gas(addr, data)
+        addr, _dest, _units, data, wei = self._validate_send_once(
+            identity_id, to, amount
+        )
+        self._send_gas_preflight(identity_id, wei, addr, data)
         return wanted
 
     def _send_asset(self, identity_id: str, asset: str) -> str:
@@ -180,7 +181,7 @@ class ChainWalletAccess(WalletAccess):
         return {"valid": valid, "address": expected, "scheme": scheme}
 
     def _send_once(self, identity_id: str, to: str, amount: str) -> None:
-        addr, dest, units, data = self._validate_send_once(identity_id, to, amount)
+        addr, dest, units, data, wei = self._validate_send_once(identity_id, to, amount)
         pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, dest, units, addr, self.chain_id):
             tx_hash = str(pending.get("hash") or "")
@@ -192,11 +193,10 @@ class ChainWalletAccess(WalletAccess):
             self._finish_pending(identity_id, pending)
             self._remember_hash(tx_hash)
             return
+        gas_price, gas_limit = self._send_gas_preflight(identity_id, wei, addr, data)
         nonce = _hex_int(
             self._rpc_request("eth_getTransactionCount", [addr, "pending"])
         )
-        gas_price = self._gas_price()
-        gas_limit = self._estimate_gas(addr, data)
         tx = {
             "to": self.usdc,
             "value": 0,
@@ -229,7 +229,7 @@ class ChainWalletAccess(WalletAccess):
 
     def _validate_send_once(
         self, identity_id: str, to: str, amount: str
-    ) -> tuple[str, str, int, str]:
+    ) -> tuple[str, str, int, str, int]:
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         if wei == 0:
@@ -262,7 +262,17 @@ class ChainWalletAccess(WalletAccess):
             + _pad_address(dest)
             + format(units, "x").zfill(64)
         )
-        return addr, dest, units, data
+        return addr, dest, units, data, wei
+
+    def _send_gas_preflight(
+        self, identity_id: str, wei: int, addr: str, data: str
+    ) -> tuple[int, int]:
+        gas_price = self._gas_price()
+        gas_limit = self._estimate_gas(addr, data)
+        if wei < gas_price * gas_limit:
+            self._log.record("wallet_send", identity_id, None, "no_gas")
+            raise CannotSend("need ETH for gas", reason="no_gas")
+        return gas_price, gas_limit
 
     def _estimate_gas(self, addr: str, data: str) -> int:
         return _hex_int(
