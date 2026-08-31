@@ -88,14 +88,18 @@ def test_failure_next_object_and_host_action_stays_string(
     assert "_next" not in data
 
 
-def test_wallet_send_test_does_not_broadcast(tmp_path: Path, monkeypatch) -> None:
+def test_wallet_send_test_does_not_broadcast(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
     env = cli_env(tmp_path / "vault")
     started = json.loads(run_cli(["init"], env).stdout)
     rpc = MockRpc(eth_wei=10**18, usdc_raw=1_500_000)
+    apply_cli_env(monkeypatch, env)
     compose_with_rpc(monkeypatch, rpc)
-    proc = run_cli(["wallet", "send", started["address"], "1", "--test"], env)
-    assert proc.returncode == 0, proc.stderr
-    data = json.loads(proc.stdout)
+    code = main(["wallet", "send", started["address"], "1", "--test"])
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    data = json.loads(captured.out)
     assert data["ok"] is True
     assert data["test"] is True
     assert data["to"] == started["address"]
@@ -104,6 +108,7 @@ def test_wallet_send_test_does_not_broadcast(tmp_path: Path, monkeypatch) -> Non
     assert "hash" not in data
     assert rpc.broadcast is False
     assert not any(method == "eth_sendRawTransaction" for method, _ in rpc.calls)
+    assert not any(method == "eth_getTransactionCount" for method, _ in rpc.calls)
 
 
 def test_secret_file_refuses_existing_without_force(tmp_path: Path) -> None:

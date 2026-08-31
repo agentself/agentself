@@ -12,6 +12,7 @@ from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import (
     client,
     fail,
+    resource_name_error,
     secret_from_args,
     secret_value_error,
 )
@@ -20,8 +21,15 @@ from agentself.internal.names import WALLET_KEY_NAME
 
 
 def create_secret(args, vault: Path) -> CliOutcome:
+    name = (getattr(args, "name", None) or "").strip()
+    if name:
+        invalid = resource_name_error(
+            args, args.name, "secret", "agentself secret create --help"
+        )
+        if invalid is not None:
+            return invalid
     if _secret_bulk_requested(args):
-        return _secret_create_bulk(client(vault), args)
+        return _secret_create_bulk(vault, args)
     if not (getattr(args, "name", None) or "").strip():
         return fail(
             args,
@@ -64,6 +72,11 @@ def create_secret(args, vault: Path) -> CliOutcome:
 
 
 def get_secret(args, vault: Path) -> CliOutcome:
+    invalid = resource_name_error(
+        args, args.name, "secret", "agentself secret get --help"
+    )
+    if invalid is not None:
+        return invalid
     access = client(vault)
     name = args.name
     path = (args.to_file or "").strip()
@@ -98,6 +111,11 @@ def get_secret(args, vault: Path) -> CliOutcome:
 
 
 def update_secret(args, vault: Path) -> CliOutcome:
+    invalid = resource_name_error(
+        args, args.name, "secret", "agentself secret update --help"
+    )
+    if invalid is not None:
+        return invalid
     value, err = secret_from_args(args)
     if err is not None:
         return secret_value_error(args, err)
@@ -125,11 +143,21 @@ def list_secrets(args, vault: Path) -> CliOutcome:
 
 
 def delete_secret(args, vault: Path) -> CliOutcome:
+    invalid = resource_name_error(
+        args, args.name, "secret", "agentself secret delete --help"
+    )
+    if invalid is not None:
+        return invalid
     client(vault).delete(args.name)
     return CliSuccess({"name": args.name})
 
 
 def secret_exists(args, vault: Path) -> CliOutcome:
+    invalid = resource_name_error(
+        args, args.name, "secret", "agentself secret exists --help"
+    )
+    if invalid is not None:
+        return invalid
     found = client(vault).exists(args.name)
     if not found:
         return fail(
@@ -211,10 +239,17 @@ def _secret_create_one(access, name: str, value: str, *, unsafe: bool) -> str:
     return "unchanged" if unchanged else "created"
 
 
-def _secret_create_bulk(access, args) -> CliOutcome:
+def _secret_create_bulk(vault: Path, args) -> CliOutcome:
     items, err = _secret_bulk_items(args)
     if err is not None:
         return secret_value_error(args, err)
+    for name, _path in items:
+        invalid = resource_name_error(
+            args, name, "secret", "agentself secret create --help"
+        )
+        if invalid is not None:
+            return invalid
+    access = client(vault)
     created: list[str] = []
     unchanged: list[str] = []
     refused: list[str] = []

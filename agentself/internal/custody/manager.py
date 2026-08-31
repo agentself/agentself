@@ -734,10 +734,12 @@ class CustodyManager:
         to: str,
         amount: str,
         asset: str = "",
+        test: bool = False,
     ) -> WalletSendResult:
         identity, wallet = self._wallet_bound(caller, "wallet_send")
         try:
-            used = (wallet.send(identity.id, to, amount, asset) or "").strip()
+            operation = wallet.validate_send if test else wallet.send
+            used = (operation(identity.id, to, amount, asset) or "").strip()
         except WalletCannotSend as exc:
             reason = getattr(exc, "reason", None) or "cannot_send"
             if reason == "no_gas":
@@ -752,11 +754,12 @@ class CustodyManager:
             raise CannotSend(reason="cannot_send")
         self._log.record("wallet_send", identity.id, None, "ok")
         result: WalletSendResult = {"asset": used}
-        getter = getattr(wallet, "payment_ref", None)
-        ref = (getter() or "").strip() if callable(getter) else ""
-        hashed = _payment_hash(ref)
-        if hashed:
-            result["hash"] = hashed
+        if not test:
+            getter = getattr(wallet, "payment_ref", None)
+            ref = (getter() or "").strip() if callable(getter) else ""
+            hashed = _payment_hash(ref)
+            if hashed:
+                result["hash"] = hashed
         return result
 
     def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus:

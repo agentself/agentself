@@ -49,6 +49,10 @@ class WalletAccess(ABC):
     def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
         """Send and return the asset actually used. Empty asset is the backend default."""
 
+    @abstractmethod
+    def validate_send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+        """Validate a send without signing, reserving a nonce, or changing state."""
+
     def payment_ref(self) -> str:
         """Transaction hash from the last send, if this backend has one."""
 

@@ -20,6 +20,7 @@ from agentself.internal.custody.errors import HostToolMissing, StoreFailure
 from agentself.internal.files import have_host_tool
 from agentself.internal.format import format_version_error, load_json_file
 from agentself.internal.log import NullLog, StreamLog
+from agentself.internal.names import require_safe_token
 from agentself.local import (
     IdentityStateError,
     bind_local,
@@ -54,6 +55,14 @@ def fail(
     if nxt is None:
         nxt = default_json_next(args, error)
     return CliFailure(exit_code, error, reason, nxt, extra)
+
+
+def resource_name_error(args, name: str, resource: str, nxt: str) -> CliFailure | None:
+    try:
+        require_safe_token(name, f"{resource} name")
+    except (TypeError, ValueError):
+        return fail(args, 2, "refused", f"invalid {resource} name", nxt=nxt)
+    return None
 
 
 def identity_dir_flag(args) -> str:
