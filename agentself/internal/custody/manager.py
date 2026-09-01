@@ -719,10 +719,14 @@ class CustodyManager:
             picked["scheme"] = str(picked["scheme"])
         return picked
 
-    def wallet_balance(self, caller: BoundCaller) -> WalletBalance:
+    def wallet_balance(self, caller: BoundCaller, asset: str = "") -> WalletBalance:
         identity, wallet = self._wallet_bound(caller, "wallet_balance")
         try:
-            result = wallet.balance(identity.id)
+            result = wallet.balance(identity.id, asset)
+        except WalletCannotSend as exc:
+            reason = getattr(exc, "reason", None) or "cannot_send"
+            self._log.record("wallet_balance", identity.id, None, reason)
+            raise CannotSend(_send_message(reason), reason=reason) from None
         except WalletError as exc:
             self._fail_wallet("wallet_balance", identity.id, exc)
         self._log.record("wallet_balance", identity.id, None, "ok")
@@ -735,11 +739,12 @@ class CustodyManager:
         amount: str,
         asset: str = "",
         test: bool = False,
+        details: str = "",
     ) -> WalletSendResult:
         identity, wallet = self._wallet_bound(caller, "wallet_send")
         try:
             operation = wallet.validate_send if test else wallet.send
-            used = (operation(identity.id, to, amount, asset) or "").strip()
+            used = (operation(identity.id, to, amount, asset, details) or "").strip()
         except WalletCannotSend as exc:
             reason = getattr(exc, "reason", None) or "cannot_send"
             if reason == "no_gas":

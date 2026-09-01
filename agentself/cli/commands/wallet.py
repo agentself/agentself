@@ -30,7 +30,8 @@ def _address(args, vault: Path) -> CliOutcome:
 
 
 def wallet_balance(args, vault: Path) -> CliOutcome:
-    return CliSuccess(dict(client(vault).wallet_balance()))
+    asset = (getattr(args, "asset", None) or "").strip()
+    return CliSuccess(dict(client(vault).wallet_balance(asset)))
 
 
 def authorize_wallet(args, vault: Path) -> CliOutcome:
@@ -160,8 +161,21 @@ def verify_wallet(args, vault: Path) -> CliOutcome:
 
 def send_wallet(args, vault: Path) -> CliOutcome:
     is_test = bool(getattr(args, "test_send", False))
+    path = (getattr(args, "from_file", None) or "").strip()
+    details = ""
+    if path:
+        try:
+            details = load_value_file(path, strip_newline=True)
+        except (OSError, UnicodeDecodeError):
+            return fail(
+                args,
+                1,
+                "error",
+                "file",
+                nxt="agentself wallet send --help",
+            )
     sent = client(vault).wallet_send(
-        args.to, args.amount, args.asset or "", test=is_test
+        args.to, args.amount, args.asset or "", test=is_test, details=details
     )
     payload: dict[str, object] = {
         "to": args.to,
@@ -172,6 +186,8 @@ def send_wallet(args, vault: Path) -> CliOutcome:
         payload["hash"] = sent["hash"]
     if is_test:
         payload["test"] = True
+    if details.strip():
+        payload["details_sha256"] = sha256_text(details)
     return CliSuccess(payload, redact=False)
 
 

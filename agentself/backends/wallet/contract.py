@@ -42,15 +42,33 @@ class WalletAccess(ABC):
     def authorize(self, identity_id: str, message: str) -> str: ...
 
     @abstractmethod
-    def balance(self, identity_id: str) -> WalletBalance:
-        """Amount and asset as strings. Extra keys are allowed."""
+    def balance(self, identity_id: str, asset: str = "") -> WalletBalance:
+        """Amount and asset as strings. Empty asset is the backend default. Extra keys are allowed."""
 
     @abstractmethod
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
-        """Send and return the asset actually used. Empty asset is the backend default."""
+    def send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
+        """Send and return the asset actually used.
+
+        Empty asset is the backend default. Details are extra payment data
+        the backend interprets. Empty details are a plain transfer.
+        """
 
     @abstractmethod
-    def validate_send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+    def validate_send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
         """Validate a send without signing, reserving a nonce, or changing state."""
 
     def payment_ref(self) -> str:

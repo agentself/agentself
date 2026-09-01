@@ -76,7 +76,11 @@ safe. One directory is one identity: a second `--id` is refused, and
 `show` includes the age recipient and email readiness. For wallet work, inspect
 `agentself backends wallet` first. The default Base wallet is live and can move
 real funds. Use `wallet send TO AMOUNT --test` to return the send plan without
-broadcasting. `wallet balance` reports the current amount. It does not identify
+broadcasting. `wallet send TO AMOUNT --file PATH` is for a spend that needs
+extra payment details; the bound wallet interprets the file. A JSON object
+`{"allow": true}` grants TO pull permission when the wallet supports it. Other
+file contents stay destination-specific. `wallet balance` reports the current
+amount. `wallet balance ASSET` reports a named asset. It does not identify
 who paid or when.
 
 Authorize with the existing identity:

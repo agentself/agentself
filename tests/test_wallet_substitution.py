@@ -10,6 +10,7 @@ from agentself.backends.wallet.contract import WalletMaterial
 from agentself.cli.app import main
 from agentself.internal.custody.errors import CannotSend
 
+from tests.fiat_wallet import FiatWalletAccess
 from tests.support import (
     apply_cli_env,
     build_app,
@@ -135,6 +136,80 @@ def test_manager_retains_protection_for_multiple_wallet_material_names(
         "other.seed",
         "wallet.key",
     ]
+
+
+def test_synthetic_send_refuses_details_without_chain_strings(vault, monkeypatch):
+    app = build_app(vault, wallet_backend="synthetic")
+    init_identity(app, monkeypatch)
+    with pytest.raises(CannotSend) as caught:
+        app.client.wallet_send("dest", "1", details='{"allow": true}')
+    assert caught.value.reason == "unsupported_details"
+    blob = str(caught.value)
+    assert "ETH" not in blob
+    assert "USDC" not in blob
+    assert "approve" not in blob.lower()
+
+
+def test_fiat_wallet_send_details_and_named_balance(vault, monkeypatch):
+    fiat = FiatWalletAccess()
+    app = build_app(vault, wallet_backend="synthetic")
+    init_identity(app, monkeypatch)
+    monkeypatch.setattr(app.wallets.inner, "for_binding", lambda binding: fiat)
+
+    assert app.client.wallet_send("merchant", "10") == {"asset": "USD"}
+    assert fiat.transfers == [("merchant", "10", "USD")]
+
+    assert app.client.wallet_send("merchant", "5", details='{"allow": true}') == {
+        "asset": "USD"
+    }
+    assert fiat.allowances == [("merchant", "5", "USD")]
+
+    assert app.client.wallet_send(
+        "merchant", "3", "EUR", details='{"memo": "invoice-9"}'
+    ) == {"asset": "EUR"}
+    assert fiat.payments == [("merchant", "3", "EUR", "invoice-9")]
+
+    default = app.client.wallet_balance()
+    assert default["asset"] == "USD"
+    assert default["amount"] == "100"
+    assert "ETH" not in json.dumps(default)
+    assert "USDC" not in json.dumps(default)
+    named = app.client.wallet_balance("EUR")
+    assert named == {"asset": "EUR", "amount": "25", "address": "acct.1"}
+
+
+def test_cli_fiat_send_file_and_balance_stay_generic(tmp_path, monkeypatch, capsys):
+    env = cli_env(tmp_path / "vault")
+    started = run_cli(["init"], env)
+    assert started.returncode == 0, started.stderr
+    apply_cli_env(monkeypatch, env)
+    fiat = FiatWalletAccess()
+    monkeypatch.setattr(
+        "agentself.compose.WalletAccessFactory.for_binding",
+        lambda self, binding: fiat,
+    )
+    allow = value_file(tmp_path, '{"allow": true}\n', "allow.json")
+    code = main(["--json", "wallet", "send", "merchant", "8", "--file", allow])
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    data = json.loads(captured.out)
+    assert data["ok"] is True
+    assert data["to"] == "merchant"
+    assert data["asset"] == "USD"
+    assert data["details_sha256"]
+    assert "authorization" not in data
+    assert "ETH" not in captured.out
+    assert "USDC" not in captured.out
+    assert fiat.allowances == [("merchant", "8", "USD")]
+
+    code = main(["--json", "wallet", "balance", "EUR"])
+    captured = capsys.readouterr()
+    assert code == 0, captured.out + captured.err
+    named = json.loads(captured.out)
+    assert named["asset"] == "EUR"
+    assert named["amount"] == "25"
+    assert "ETH" not in captured.out
+    assert "USDC" not in captured.out
 
 
 def test_unsupported_asset_is_typed_without_chain_strings(vault, monkeypatch):

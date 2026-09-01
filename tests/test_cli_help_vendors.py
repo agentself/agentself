@@ -82,6 +82,15 @@ def test_nested_help_exposes_arguments_not_providers(tmp_path):
     assert "USDC" not in send.stdout
     assert "TO" in send.stdout
     assert "AMOUNT" in send.stdout
+    assert "--file" in send.stdout
+    assert "calldata" not in send.stdout.lower()
+    assert "erc-20" not in send.stdout.lower()
+    assert "approve" not in send.stdout.lower()
+
+    balance = run_cli(["wallet", "balance", "--help"], env)
+    assert balance.returncode == 0, balance.stderr
+    assert "ASSET" in balance.stdout
+    assert "USDC" not in balance.stdout
 
     wallet = run_cli(["wallet", "--help"], env)
     assert wallet.returncode == 0, wallet.stderr

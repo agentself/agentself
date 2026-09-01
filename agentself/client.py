@@ -115,7 +115,7 @@ class CustodyManager(Protocol):
         authorization: str,
     ) -> WalletAuthorization: ...
 
-    def wallet_balance(self, caller: BoundCaller) -> WalletBalance: ...
+    def wallet_balance(self, caller: BoundCaller, asset: str = "") -> WalletBalance: ...
 
     def wallet_send(
         self,
@@ -124,6 +124,7 @@ class CustodyManager(Protocol):
         amount: str,
         asset: str = "",
         test: bool = False,
+        details: str = "",
     ) -> WalletSendResult: ...
 
     def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus: ...
@@ -275,15 +276,23 @@ class Client:
         caller = self._require_caller()
         return self._manager.wallet_verify(caller, message, authorization)
 
-    def wallet_balance(self) -> WalletBalance:
+    def wallet_balance(self, asset: str = "") -> WalletBalance:
         caller = self._require_caller()
-        return self._manager.wallet_balance(caller)
+        return self._manager.wallet_balance(caller, asset)
 
     def wallet_send(
-        self, to: str, amount: str, asset: str = "", *, test: bool = False
+        self,
+        to: str,
+        amount: str,
+        asset: str = "",
+        *,
+        test: bool = False,
+        details: str = "",
     ) -> WalletSendResult:
         caller = self._require_caller()
-        return self._manager.wallet_send(caller, to, amount, asset, test=test)
+        return self._manager.wallet_send(
+            caller, to, amount, asset, test=test, details=details
+        )
 
     def wallet_material_status(self) -> WalletMaterialStatus:
         caller = self._require_caller()

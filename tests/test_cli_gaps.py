@@ -268,7 +268,10 @@ class _MissingKeyWallet:
     def required_material(self):
         return None
 
-    def send(self, identity_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset, details=""):
+        raise WalletError("missing key")
+
+    def validate_send(self, identity_id, to, amount, asset, details=""):
         raise WalletError("missing key")
 
     def address(self, identity_id):
@@ -280,7 +283,7 @@ class _MissingKeyWallet:
     def verify(self, identity_id, message, authorization):
         raise WalletError("missing key")
 
-    def balance(self, identity_id):
+    def balance(self, identity_id, asset=""):
         raise WalletError("missing key")
 
     def describe(self, identity_id):

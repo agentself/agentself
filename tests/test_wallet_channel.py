@@ -30,6 +30,7 @@ from tests.support import (
     MockRpc,
     build_app,
     init_identity,
+    value_file,
 )
 
 _HEX64 = re.compile(r"\b[0-9a-fA-F]{64}\b")
@@ -327,3 +328,126 @@ def test_cli_wallet_send_test_returns_valid_plan_without_state_changes(
     assert not any(method == "eth_sendRawTransaction" for method, _ in rpc.calls)
     assert not any(method == "eth_getTransactionCount" for method, _ in rpc.calls)
     assert not (vault / "identities" / "P" / "wallet" / "pending-send.json").exists()
+
+
+_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+_TOKEN = "0x" + "aa" * 20
+_GATEWAY = "0x" + "99" * 20
+_APPROVE = "095ea7b3"
+_PAY = "c290d691"
+
+
+def _bound_chain(rpc):
+    from agentself.internal.eoa import generate_secp256k1
+
+    wallet = WalletAccessFactory(MemoryLog(), rpc=rpc).for_binding("base")
+    wallet.bind_material(generate_secp256k1())
+    return wallet
+
+
+def _estimate_spec(rpc) -> dict:
+    estimates = [
+        params[0] for method, params in rpc.calls if method == "eth_estimateGas"
+    ]
+    assert estimates
+    spec = estimates[-1]
+    assert isinstance(spec, dict)
+    return spec
+
+
+def test_chain_allow_details_approves_spender_on_default_asset():
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=0)
+    wallet = _bound_chain(rpc)
+    used = wallet.send("P", _GATEWAY, "1", "", '{"allow": true}')
+    assert used == "USDC"
+    assert rpc.broadcast
+    spec = _estimate_spec(rpc)
+    assert spec["to"].lower() == _USDC.lower()
+    assert spec["data"].lower().startswith("0x" + _APPROVE)
+    assert _GATEWAY[2:].lower() in spec["data"].lower()
+
+
+def test_chain_call_details_spend_through_destination():
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000)
+    wallet = _bound_chain(rpc)
+    used = wallet.send(
+        "P",
+        _GATEWAY,
+        "1",
+        "USDC",
+        json.dumps({"signature": "pay(uint256)", "args": ["1"]}),
+    )
+    assert used == "USDC"
+    spec = _estimate_spec(rpc)
+    assert spec["to"].lower() == _GATEWAY.lower()
+    assert spec["data"].lower().startswith("0x" + _PAY)
+
+
+def test_chain_hex_details_are_calldata_to_destination():
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000)
+    wallet = _bound_chain(rpc)
+    data = "0x" + _PAY + "00" * 32
+    used = wallet.send("P", _GATEWAY, "1", "", data)
+    assert used == "USDC"
+    spec = _estimate_spec(rpc)
+    assert spec["to"].lower() == _GATEWAY.lower()
+    assert spec["data"].lower() == data.lower()
+
+
+def test_chain_named_token_balance_and_send():
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=0, tokens={_TOKEN: 2_500_000})
+    wallet = _bound_chain(rpc)
+    bal = wallet.balance("P", _TOKEN)
+    assert bal["asset"].lower() == _TOKEN.lower()
+    assert bal["amount"] == "2.5"
+    used = wallet.send("P", "0x" + "11" * 20, "1", _TOKEN)
+    assert used.lower() == _TOKEN.lower()
+    spec = _estimate_spec(rpc)
+    assert spec["to"].lower() == _TOKEN.lower()
+    assert spec["data"].lower().startswith("0xa9059cbb")
+
+
+def test_chain_unsupported_details_are_typed():
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000)
+    wallet = _bound_chain(rpc)
+    with pytest.raises(WalletCannotSend) as caught:
+        wallet.send("P", _GATEWAY, "1", "", "not-payment-details")
+    assert caught.value.reason == "unsupported_details"
+    assert not rpc.broadcast
+
+
+def test_cli_send_file_and_named_balance(vault, monkeypatch, capsys, tmp_path):
+    rpc = MockRpc(eth_wei=10**18, usdc_raw=2_000_000, tokens={_TOKEN: 4_000_000})
+    app = build_app(vault, rpc=rpc)
+    init_identity(app, monkeypatch)
+    monkeypatch.setattr(
+        "agentself.cli.commands.wallet.client", lambda _vault: app.client
+    )
+    monkeypatch.setattr(
+        "agentself.internal.host_tools.ensure_host_tools", lambda fetch=False: None
+    )
+    details = value_file(tmp_path, '{"allow": true}\n', "allow.json")
+    assert (
+        main(["--json", "wallet", "send", _GATEWAY, "1", "--file", details, "--test"])
+        == 0
+    )
+    data = json.loads(capsys.readouterr().out)
+    assert data["ok"] is True
+    assert data["test"] is True
+    assert data["details_sha256"]
+    assert not rpc.broadcast
+    assert not any(method == "eth_sendRawTransaction" for method, _ in rpc.calls)
+
+    assert main(["--json", "wallet", "send", _GATEWAY, "1", "--file", details]) == 0
+    sent = json.loads(capsys.readouterr().out)
+    assert sent["ok"] is True
+    assert sent["asset"] == "USDC"
+    assert rpc.broadcast
+    spec = _estimate_spec(rpc)
+    assert spec["to"].lower() == _USDC.lower()
+    assert spec["data"].lower().startswith("0x" + _APPROVE)
+
+    assert main(["--json", "wallet", "balance", _TOKEN]) == 0
+    named = json.loads(capsys.readouterr().out)
+    assert named["asset"].lower() == _TOKEN.lower()
+    assert named["amount"] == "4"

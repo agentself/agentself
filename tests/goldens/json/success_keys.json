@@ -160,7 +160,7 @@
   },
   "wallet_send": {
     "required": ["ok", "to", "amount", "asset"],
-    "allowed": ["ok", "to", "amount", "asset", "hash", "test"]
+    "allowed": ["ok", "to", "amount", "asset", "hash", "test", "details_sha256"]
   },
   "wallet_balance": {
     "required": ["ok"],

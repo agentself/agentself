@@ -63,7 +63,10 @@ def test_commands_default_schema_includes_params(tmp_path: Path) -> None:
     send = next(verb for verb in wallet["verbs"] if verb["name"] == "send")
     send_names = {item["name"] for item in send["params"]}
     assert "--test" in send_names
+    assert "--file" in send_names
     assert "TO" in send_names
+    balance = next(verb for verb in wallet["verbs"] if verb["name"] == "balance")
+    assert {item["name"] for item in balance["params"]} == {"ASSET"}
     blob = json.dumps(data)
     assert "value" not in blob
     assert "0x" not in blob
