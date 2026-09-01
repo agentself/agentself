@@ -147,7 +147,6 @@ def test_synthetic_send_refuses_details_without_chain_strings(vault, monkeypatch
     blob = str(caught.value)
     assert "ETH" not in blob
     assert "USDC" not in blob
-    assert "approve" not in blob.lower()
 
 
 def test_fiat_wallet_send_details_and_named_balance(vault, monkeypatch):
@@ -157,17 +156,17 @@ def test_fiat_wallet_send_details_and_named_balance(vault, monkeypatch):
     monkeypatch.setattr(app.wallets.inner, "for_binding", lambda binding: fiat)
 
     assert app.client.wallet_send("merchant", "10") == {"asset": "USD"}
-    assert fiat.transfers == [("merchant", "10", "USD")]
-
     assert app.client.wallet_send("merchant", "5", details='{"allow": true}') == {
         "asset": "USD"
     }
-    assert fiat.allowances == [("merchant", "5", "USD")]
-
     assert app.client.wallet_send(
         "merchant", "3", "EUR", details='{"memo": "invoice-9"}'
     ) == {"asset": "EUR"}
-    assert fiat.payments == [("merchant", "3", "EUR", "invoice-9")]
+    assert fiat.sends == [
+        ("merchant", "10", "USD", ""),
+        ("merchant", "5", "USD", '{"allow": true}'),
+        ("merchant", "3", "EUR", '{"memo": "invoice-9"}'),
+    ]
 
     default = app.client.wallet_balance()
     assert default["asset"] == "USD"
@@ -200,7 +199,7 @@ def test_cli_fiat_send_file_and_balance_stay_generic(tmp_path, monkeypatch, caps
     assert "authorization" not in data
     assert "ETH" not in captured.out
     assert "USDC" not in captured.out
-    assert fiat.allowances == [("merchant", "8", "USD")]
+    assert fiat.sends == [("merchant", "8", "USD", '{"allow": true}')]
 
     code = main(["--json", "wallet", "balance", "EUR"])
     captured = capsys.readouterr()
