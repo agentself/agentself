@@ -37,16 +37,35 @@ class SyntheticWalletAccess(WalletAccess):
         require_safe_token(identity_id, "identity id")
         return f"{_SCHEME}:{message}"
 
-    def balance(self, identity_id: str) -> dict[str, str]:
+    def balance(self, identity_id: str, asset: str = "") -> dict[str, str]:
         require_safe_token(identity_id, "identity id")
+        wanted = (asset or "").strip()
+        if wanted and wanted != _ASSET:
+            raise CannotSend("unsupported asset", reason="unsupported_asset")
         return {"asset": _ASSET, "amount": "0", "address": _ADDRESS}
 
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
-        return self.validate_send(identity_id, to, amount, asset)
+    def send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
+        return self.validate_send(identity_id, to, amount, asset, details)
 
-    def validate_send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+    def validate_send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
         require_safe_token(identity_id, "identity id")
         del to, amount
+        if (details or "").strip():
+            raise CannotSend("unsupported details", reason="unsupported_details")
         wanted = (asset or "").strip()
         if not wanted:
             wanted = _ASSET

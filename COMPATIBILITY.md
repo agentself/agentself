@@ -75,7 +75,9 @@ and `poll_interval_seconds`. Consumers should ignore unknown keys.
 `email connect --interval` / `--timeout`, `wallet send --test`, and
 `--force` on secret/authorization/mail file writes are additive. Existing
 `--file` / `--out` paths now refuse to replace a file unless `--force`, and
-refuse a symlink even with `--force`.
+refuse a symlink even with `--force`. `wallet send --file PATH` is additive
+extra payment details interpreted by the bound wallet; success may include
+`details_sha256`. `wallet balance ASSET` is an additive named-asset query.
 
 `note` is a public CLI command group. Note values are deliberately
 non-secret and may appear in JSON output. The identity-local notes

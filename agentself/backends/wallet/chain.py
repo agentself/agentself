@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -33,8 +34,21 @@ USDC_DECIMALS = 6
 ETH_DECIMALS = 18
 BALANCE_OF_SELECTOR = keccak(text="balanceOf(address)")[:4]
 TRANSFER_SELECTOR = keccak(text="transfer(address,uint256)")[:4]
+APPROVE_SELECTOR = keccak(text="approve(address,uint256)")[:4]
+DECIMALS_SELECTOR = keccak(text="decimals()")[:4]
 USDC_ASSET = "USDC"
 GAS_ASSET = "ETH"
+
+
+@dataclass(frozen=True)
+class _PreparedSend:
+    addr: str
+    dest: str
+    tx_to: str
+    units: int
+    asset: str
+    data: str
+    wei: int
 
 
 class ChainWalletAccess(WalletAccess):
@@ -69,6 +83,7 @@ class ChainWalletAccess(WalletAccess):
         self._key_hex = (key_hex or "").strip() or None
         self._root = Path(vault_root) if vault_root is not None else None
         self._payment_hash = ""
+        self._decimals = {self.usdc.lower(): USDC_DECIMALS}
 
     def required_material(self) -> WalletMaterial | None:
         return WalletMaterial(name=WALLET_KEY_NAME)
@@ -92,19 +107,41 @@ class ChainWalletAccess(WalletAccess):
         self._log.record("wallet_authorize", identity_id, None, "ok")
         return sig
 
-    def balance(self, identity_id: str) -> WalletBalance:
+    def balance(self, identity_id: str, asset: str = "") -> WalletBalance:
         require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
-        raw_result = self._rpc_request(
-            "eth_call",
-            [{"to": self.usdc, "data": _balance_of_data(addr)}, "latest"],
-        )
-        raw = _hex_int(raw_result)
-        amount = _format_usdc(raw)
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
+        wanted = (asset or "").strip()
+        if wanted == GAS_ASSET:
+            amount = _format_eth(wei)
+            self._log.record("wallet_balance", identity_id, None, "ok")
+            return {
+                "asset": GAS_ASSET,
+                "chain": self.chain_name,
+                "chain_id": str(self.chain_id),
+                "address": addr,
+                "amount": amount,
+                "raw": str(wei),
+                "gas_asset": GAS_ASSET,
+                "gas_raw": str(wei),
+                "gas_amount": amount,
+            }
+        try:
+            name, token = self._asset_token(wanted)
+            decimals = self._token_decimals(token)
+        except CannotSend:
+            self._log.record("wallet_balance", identity_id, None, "cannot_send")
+            raise
+        raw = _hex_int(
+            self._rpc_request(
+                "eth_call",
+                [{"to": token, "data": _balance_of_data(addr)}, "latest"],
+            )
+        )
+        amount = _format_units(raw, decimals)
         self._log.record("wallet_balance", identity_id, None, "ok")
         result: WalletBalance = {
-            "asset": USDC_ASSET,
+            "asset": name,
             "chain": self.chain_name,
             "chain_id": str(self.chain_id),
             "address": addr,
@@ -116,38 +153,70 @@ class ChainWalletAccess(WalletAccess):
         }
         return result
 
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+    def send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
         require_safe_token(identity_id, "identity id")
         self._require_key()
-        wanted = self._send_asset(identity_id, asset)
+        plan = self._prepare_send(identity_id, to, amount, asset, details)
         if self._root is None:
-            self._send_once(identity_id, to, amount)
-            return wanted
+            self._send_once(identity_id, plan)
+            return plan.asset
         try:
             with exclusive(self._root):
-                self._send_once(identity_id, to, amount)
+                self._send_once(identity_id, plan)
         except IdentityBusy as exc:
             raise WalletError("identity directory busy") from exc
-        return wanted
+        return plan.asset
 
-    def validate_send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+    def validate_send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
         require_safe_token(identity_id, "identity id")
         self._require_key()
-        wanted = self._send_asset(identity_id, asset)
-        addr, _dest, _units, data, wei = self._validate_send_once(
-            identity_id, to, amount
-        )
-        self._send_gas_preflight(identity_id, wei, addr, data)
-        return wanted
+        plan = self._prepare_send(identity_id, to, amount, asset, details)
+        self._send_gas_preflight(identity_id, plan)
+        return plan.asset
 
-    def _send_asset(self, identity_id: str, asset: str) -> str:
+    def _asset_token(self, asset: str) -> tuple[str, str]:
         wanted = (asset or "").strip()
-        if not wanted:
-            return USDC_ASSET
-        if wanted != USDC_ASSET:
-            self._log.record("wallet_send", identity_id, None, "cannot_send")
+        if not wanted or wanted == USDC_ASSET:
+            return USDC_ASSET, self.usdc
+        if wanted == GAS_ASSET:
             raise CannotSend("unsupported asset", reason="unsupported_asset")
-        return wanted
+        try:
+            token = to_checksum_address(wanted)
+        except (ValueError, TypeError):
+            raise CannotSend("unsupported asset", reason="unsupported_asset") from None
+        if token.lower() == self.usdc.lower():
+            return USDC_ASSET, self.usdc
+        return token, token
+
+    def _token_decimals(self, token: str) -> int:
+        key = token.lower()
+        cached = self._decimals.get(key)
+        if cached is not None:
+            return cached
+        raw = _hex_int(
+            self._rpc_request(
+                "eth_call",
+                [{"to": token, "data": _decimals_data()}, "latest"],
+            )
+        )
+        if raw < 0 or raw > 255:
+            raise CannotSend("unsupported asset", reason="unsupported_asset")
+        self._decimals[key] = raw
+        return raw
 
     def payment_ref(self) -> str:
         return self._payment_hash
@@ -180,10 +249,9 @@ class ChainWalletAccess(WalletAccess):
         self._log.record("wallet_verify", identity_id, None, "ok" if valid else "error")
         return {"valid": valid, "address": expected, "scheme": scheme}
 
-    def _send_once(self, identity_id: str, to: str, amount: str) -> None:
-        addr, dest, units, data, wei = self._validate_send_once(identity_id, to, amount)
+    def _send_once(self, identity_id: str, plan: _PreparedSend) -> None:
         pending = self._load_pending(identity_id)
-        if pending and _same_intent(pending, dest, units, addr, self.chain_id):
+        if pending and _same_intent(pending, plan, self.chain_id):
             tx_hash = str(pending.get("hash") or "")
             if self._tx_confirmed(pending):
                 self._remember_hash(tx_hash)
@@ -193,17 +261,17 @@ class ChainWalletAccess(WalletAccess):
             self._finish_pending(identity_id, pending)
             self._remember_hash(tx_hash)
             return
-        gas_price, gas_limit = self._send_gas_preflight(identity_id, wei, addr, data)
+        gas_price, gas_limit = self._send_gas_preflight(identity_id, plan)
         nonce = _hex_int(
-            self._rpc_request("eth_getTransactionCount", [addr, "pending"])
+            self._rpc_request("eth_getTransactionCount", [plan.addr, "pending"])
         )
         tx = {
-            "to": self.usdc,
+            "to": plan.tx_to,
             "value": 0,
             "gas": gas_limit,
             "gasPrice": gas_price,
             "nonce": nonce,
-            "data": data,
+            "data": plan.data,
             "chainId": self.chain_id,
         }
         try:
@@ -216,10 +284,12 @@ class ChainWalletAccess(WalletAccess):
         tx_hash = _signed_hash(signed)
         record = {
             "chain_id": self.chain_id,
-            "from": addr,
-            "to": dest,
-            "units": units,
-            "asset": USDC_ASSET,
+            "from": plan.addr,
+            "to": plan.dest,
+            "tx_to": plan.tx_to,
+            "input": plan.data,
+            "units": plan.units,
+            "asset": plan.asset,
             "nonce": nonce,
             "hash": tx_hash,
             "raw": raw_hex,
@@ -227,28 +297,24 @@ class ChainWalletAccess(WalletAccess):
         self._save_pending(identity_id, record)
         self._broadcast(identity_id, record)
 
-    def _validate_send_once(
-        self, identity_id: str, to: str, amount: str
-    ) -> tuple[str, str, int, str, int]:
+    def _prepare_send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str,
+    ) -> _PreparedSend:
+        try:
+            name, token = self._asset_token(asset)
+        except CannotSend:
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
+            raise
         addr = self._derived_address()
         wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
         if wei == 0:
             self._log.record("wallet_send", identity_id, None, "no_gas")
             raise CannotSend("need ETH for gas", reason="no_gas")
-        try:
-            units = _usdc_units(amount)
-        except CannotSend:
-            self._log.record("wallet_send", identity_id, None, "cannot_send")
-            raise
-        held = _hex_int(
-            self._rpc_request(
-                "eth_call",
-                [{"to": self.usdc, "data": _balance_of_data(addr)}, "latest"],
-            )
-        )
-        if held < units:
-            self._log.record("wallet_send", identity_id, None, "cannot_send")
-            raise CannotSend("need USDC", reason="insufficient_asset")
         try:
             dest = to_checksum_address(to)
         except (ValueError, TypeError):
@@ -256,29 +322,53 @@ class ChainWalletAccess(WalletAccess):
             raise CannotSend(
                 "invalid destination", reason="invalid_destination"
             ) from None
-        data = (
-            "0x"
-            + TRANSFER_SELECTOR.hex()
-            + _pad_address(dest)
-            + format(units, "x").zfill(64)
+        try:
+            units = _token_units(amount, self._token_decimals(token))
+            kind, call = _send_details(details)
+        except CannotSend:
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
+            raise
+        if kind == "allow":
+            tx_to = token
+            data = _approve_data(dest, units)
+        elif kind == "call":
+            tx_to = dest
+            data = call
+            self._require_held(identity_id, addr, token, units)
+        else:
+            tx_to = token
+            data = _transfer_data(dest, units)
+            self._require_held(identity_id, addr, token, units)
+        return _PreparedSend(addr, dest, tx_to, units, name, data, wei)
+
+    def _require_held(
+        self, identity_id: str, addr: str, token: str, units: int
+    ) -> None:
+        held = _hex_int(
+            self._rpc_request(
+                "eth_call",
+                [{"to": token, "data": _balance_of_data(addr)}, "latest"],
+            )
         )
-        return addr, dest, units, data, wei
+        if held < units:
+            self._log.record("wallet_send", identity_id, None, "cannot_send")
+            raise CannotSend("need funds", reason="insufficient_asset")
 
     def _send_gas_preflight(
-        self, identity_id: str, wei: int, addr: str, data: str
+        self, identity_id: str, plan: _PreparedSend
     ) -> tuple[int, int]:
         gas_price = self._gas_price()
-        gas_limit = self._estimate_gas(addr, data)
-        if wei < gas_price * gas_limit:
+        gas_limit = self._estimate_gas(plan.addr, plan.tx_to, plan.data)
+        if plan.wei < gas_price * gas_limit:
             self._log.record("wallet_send", identity_id, None, "no_gas")
             raise CannotSend("need ETH for gas", reason="no_gas")
         return gas_price, gas_limit
 
-    def _estimate_gas(self, addr: str, data: str) -> int:
+    def _estimate_gas(self, addr: str, tx_to: str, data: str) -> int:
         return _hex_int(
             self._rpc_request(
                 "eth_estimateGas",
-                [{"from": addr, "to": self.usdc, "data": data, "value": "0x0"}],
+                [{"from": addr, "to": tx_to, "data": data, "value": "0x0"}],
             )
         )
 
@@ -330,19 +420,19 @@ class ChainWalletAccess(WalletAccess):
             return False
         if not isinstance(found, dict) or not isinstance(receipt, dict):
             return False
-        expected_input = (
-            "0x"
-            + TRANSFER_SELECTOR.hex()
-            + _pad_address(str(pending.get("to") or ""))
-            + format(_stored_int(pending.get("units")), "x").zfill(64)
-        )
+        expected_to = str(pending.get("tx_to") or self.usdc)
+        expected_input = str(pending.get("input") or "")
+        if not expected_input:
+            expected_input = _transfer_data(
+                str(pending.get("to") or ""), _stored_int(pending.get("units"))
+            )
         return all(
             (
                 _same_hash(found.get("hash"), tx_hash),
                 _same_hash(receipt.get("transactionHash"), tx_hash),
                 str(found.get("from") or "").lower()
                 == str(pending.get("from") or "").lower(),
-                str(found.get("to") or "").lower() == self.usdc.lower(),
+                str(found.get("to") or "").lower() == expected_to.lower(),
                 _rpc_int(found.get("nonce")) == _stored_int(pending.get("nonce")),
                 _rpc_int(found.get("chainId")) == _stored_int(pending.get("chain_id")),
                 str(found.get("input") or "").lower() == expected_input.lower(),
@@ -490,6 +580,28 @@ def _balance_of_data(address: str) -> str:
     return "0x" + BALANCE_OF_SELECTOR.hex() + _pad_address(address)
 
 
+def _decimals_data() -> str:
+    return "0x" + DECIMALS_SELECTOR.hex()
+
+
+def _transfer_data(dest: str, units: int) -> str:
+    return (
+        "0x"
+        + TRANSFER_SELECTOR.hex()
+        + _pad_address(dest)
+        + format(units, "x").zfill(64)
+    )
+
+
+def _approve_data(spender: str, units: int) -> str:
+    return (
+        "0x"
+        + APPROVE_SELECTOR.hex()
+        + _pad_address(spender)
+        + format(units, "x").zfill(64)
+    )
+
+
 def _hex_int(value: object) -> int:
     if value in (None, "0x", ""):
         return 0
@@ -526,14 +638,14 @@ def _format_units(raw: int, decimals: int) -> str:
     return f"{sign}{whole}.{frac:0{decimals}d}".rstrip("0")
 
 
-def _usdc_units(amount: str) -> int:
+def _token_units(amount: str, decimals: int) -> int:
     try:
         value = Decimal(str(amount).strip())
     except (InvalidOperation, ValueError, ArithmeticError) as exc:
         raise CannotSend("invalid amount", reason="invalid_amount") from exc
     if not value.is_finite() or value <= 0:
         raise CannotSend("invalid amount", reason="invalid_amount")
-    scaled = value * (Decimal(10) ** USDC_DECIMALS)
+    scaled = value * (Decimal(10) ** decimals)
     integral = scaled.to_integral_value()
     if scaled != integral:
         raise CannotSend("invalid amount", reason="invalid_amount")
@@ -584,21 +696,139 @@ def _signed_hash(signed: object) -> str:
 
 
 def _same_intent(
-    pending: dict[str, object],
-    dest: str,
-    units: int,
-    addr: str,
-    chain_id: int,
+    pending: dict[str, object], plan: _PreparedSend, chain_id: int
 ) -> bool:
     try:
         pending_units = int(str(pending.get("units")))
         pending_chain = int(str(pending.get("chain_id")))
     except (TypeError, ValueError):
         return False
+    pending_input = str(pending.get("input") or "")
+    if pending_input:
+        input_ok = pending_input.lower() == plan.data.lower()
+    else:
+        input_ok = plan.data.lower() == _transfer_data(plan.dest, plan.units).lower()
+    pending_tx_to = str(pending.get("tx_to") or "")
+    tx_ok = pending_tx_to.lower() == plan.tx_to.lower() if pending_tx_to else True
     return (
-        str(pending.get("to") or "") == dest
-        and pending_units == units
-        and str(pending.get("asset") or "") == USDC_ASSET
-        and str(pending.get("from") or "") == addr
+        str(pending.get("to") or "") == plan.dest
+        and pending_units == plan.units
+        and str(pending.get("asset") or "") == plan.asset
+        and str(pending.get("from") or "") == plan.addr
         and pending_chain == chain_id
+        and input_ok
+        and tx_ok
     )
+
+
+def _send_details(details: str) -> tuple[str, str]:
+    text = (details or "").strip()
+    if not text:
+        return "transfer", ""
+    if _hex_calldata(text):
+        return "call", hex_0x(text[2:])
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        raise CannotSend("unsupported details", reason="unsupported_details") from None
+    if not isinstance(payload, dict):
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    allow = payload.get("allow")
+    signature = payload.get("signature")
+    args = payload.get("args")
+    if allow is True and signature is None and args is None:
+        return "allow", ""
+    if allow is True:
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    if isinstance(signature, str) and signature.strip():
+        if not isinstance(args, list):
+            raise CannotSend("unsupported details", reason="unsupported_details")
+        return "call", _encode_signature(signature.strip(), args)
+    raise CannotSend("unsupported details", reason="unsupported_details")
+
+
+def _hex_calldata(text: str) -> bool:
+    raw = text.strip()
+    if not raw.startswith(("0x", "0X")) or len(raw) < 2 or len(raw) % 2:
+        return False
+    return all(ch in "0123456789abcdefABCDEF" for ch in raw[2:])
+
+
+def _encode_signature(signature: str, args: list[object]) -> str:
+    from eth_abi import encode
+
+    _name, types = _abi_signature_parts(signature)
+    del _name
+    if len(types) != len(args):
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    try:
+        encoded = encode(
+            types, [_abi_arg(typ, value) for typ, value in zip(types, args)]
+        )
+    except (CannotSend, ValueError, TypeError):
+        raise CannotSend("unsupported details", reason="unsupported_details") from None
+    except Exception:
+        raise CannotSend("unsupported details", reason="unsupported_details") from None
+    return hex_0x(keccak(text=signature)[:4].hex() + encoded.hex())
+
+
+def _abi_signature_parts(signature: str) -> tuple[str, list[str]]:
+    text = signature.strip()
+    open_at = text.find("(")
+    if open_at <= 0 or not text.endswith(")"):
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    name = text[:open_at].strip()
+    inner = text[open_at + 1 : -1].strip()
+    if not name:
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    if not inner:
+        return name, []
+    return name, _abi_types(inner)
+
+
+def _abi_types(inner: str) -> list[str]:
+    types: list[str] = []
+    depth = 0
+    start = 0
+    for index, char in enumerate(inner):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            types.append(inner[start:index].strip())
+            start = index + 1
+    types.append(inner[start:].strip())
+    if depth != 0 or any(not item for item in types):
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    return types
+
+
+def _abi_arg(typ: str, value: object) -> object:
+    wanted = typ.strip()
+    if wanted == "address":
+        return to_checksum_address(str(value))
+    if wanted == "bool":
+        if isinstance(value, bool):
+            return value
+        raise CannotSend("unsupported details", reason="unsupported_details")
+    if wanted.startswith("uint") or wanted.startswith("int"):
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise CannotSend("unsupported details", reason="unsupported_details")
+        text = str(value).strip()
+        if text.startswith(("0x", "0X", "-0x", "-0X")):
+            return int(text, 16)
+        return int(text)
+    if wanted == "string":
+        return str(value)
+    if wanted == "bytes" or wanted.startswith("bytes"):
+        text = str(value).strip()
+        if not text.startswith(("0x", "0X")) or len(text) % 2:
+            raise CannotSend("unsupported details", reason="unsupported_details")
+        return bytes.fromhex(text[2:])
+    if wanted.startswith("(") and wanted.endswith(")") and isinstance(value, list):
+        inner = _abi_types(wanted[1:-1])
+        if len(inner) != len(value):
+            raise CannotSend("unsupported details", reason="unsupported_details")
+        return tuple(_abi_arg(part, item) for part, item in zip(inner, value))
+    raise CannotSend("unsupported details", reason="unsupported_details")

@@ -282,17 +282,17 @@ class InstrumentedWalletAccess:
         self.calls.append(("verify",))
         return self.inner.verify(identity_id, message, authorization)
 
-    def balance(self, identity_id):
+    def balance(self, identity_id, asset=""):
         self.calls.append(("balance",))
-        return self.inner.balance(identity_id)
+        return self.inner.balance(identity_id, asset)
 
-    def send(self, identity_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset, details=""):
         self.calls.append(("send",))
-        return self.inner.send(identity_id, to, amount, asset)
+        return self.inner.send(identity_id, to, amount, asset, details)
 
-    def validate_send(self, identity_id, to, amount, asset):
+    def validate_send(self, identity_id, to, amount, asset, details=""):
         self.calls.append(("validate_send",))
-        return self.inner.validate_send(identity_id, to, amount, asset)
+        return self.inner.validate_send(identity_id, to, amount, asset, details)
 
     def payment_ref(self) -> str:
         getter = getattr(self.inner, "payment_ref", None)
@@ -323,9 +323,19 @@ class InstrumentedWalletFactory:
 class MockRpc:
     """Test RPC. Default tests never hit the network."""
 
-    def __init__(self, eth_wei: int = 0, usdc_raw: int = 0) -> None:
+    def __init__(
+        self,
+        eth_wei: int = 0,
+        usdc_raw: int = 0,
+        tokens: dict[str, int] | None = None,
+        token_decimals: dict[str, int] | None = None,
+    ) -> None:
         self.eth_wei = eth_wei
         self.usdc_raw = usdc_raw
+        self.tokens = {key.lower(): int(value) for key, value in (tokens or {}).items()}
+        self.token_decimals = {
+            key.lower(): int(value) for key, value in (token_decimals or {}).items()
+        }
         self.calls: list[tuple] = []
         self.broadcast = False
         self.sent_raw: list[str] = []
@@ -354,7 +364,14 @@ class MockRpc:
         if method == "eth_getBalance":
             return hex(self.eth_wei)
         if method == "eth_call":
-            return "0x" + format(self.usdc_raw, "x").zfill(64)
+            spec = params[0] if params and isinstance(params[0], dict) else {}
+            to = str(spec.get("to") or "").lower()
+            data = str(spec.get("data") or "").lower()
+            if data.startswith("0x313ce567"):
+                decimals = self.token_decimals.get(to, 6)
+                return "0x" + format(decimals, "x").zfill(64)
+            raw = self.tokens.get(to, self.usdc_raw)
+            return "0x" + format(raw, "x").zfill(64)
         if method == "eth_getTransactionCount":
             return hex(len(self.sent_raw))
         if method == "eth_gasPrice":

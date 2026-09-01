@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `wallet send --file PATH` attaches extra payment details interpreted by
+  the bound wallet. `{"allow": true}` grants pull permission when the
+  wallet supports it. `wallet balance ASSET` reports a named asset.
+
 ## 0.2.3 - 2026-08-30
 
 - `wallet send --test` now runs backend-owned destination, amount, asset,

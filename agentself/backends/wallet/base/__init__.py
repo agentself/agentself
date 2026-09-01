@@ -16,9 +16,16 @@ class BaseWalletAccess(ChainWalletAccess):
     )
     usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 
-    def send(self, identity_id: str, to: str, amount: str, asset: str) -> str:
+    def send(
+        self,
+        identity_id: str,
+        to: str,
+        amount: str,
+        asset: str,
+        details: str = "",
+    ) -> str:
         try:
-            return super().send(identity_id, to, amount, asset)
+            return super().send(identity_id, to, amount, asset, details)
         except CannotSend as exc:
             if exc.reason == "no_gas" and not isinstance(exc, NoEthForGas):
                 raise NoEthForGas() from None

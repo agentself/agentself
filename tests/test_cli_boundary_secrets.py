@@ -112,7 +112,7 @@ class _LeakWallet:
     def authorize(self, identity_id, message):
         raise WalletCannotSend(f"need USDC; key={WALLET_CANARY}")
 
-    def balance(self, identity_id):
+    def balance(self, identity_id, asset=""):
         return {
             "asset": "USDC",
             "amount": "0",
@@ -121,7 +121,10 @@ class _LeakWallet:
             "credential": TOKEN_CANARY,
         }
 
-    def send(self, identity_id, to, amount, asset):
+    def send(self, identity_id, to, amount, asset, details=""):
+        raise WalletCannotSend(f"need USDC; key={WALLET_CANARY}")
+
+    def validate_send(self, identity_id, to, amount, asset, details=""):
         raise WalletCannotSend(f"need USDC; key={WALLET_CANARY}")
 
     def describe(self, identity_id):

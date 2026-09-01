@@ -401,6 +401,16 @@ def configure_wallet_verify(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_wallet_balance(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "asset",
+        nargs="?",
+        default="",
+        metavar="ASSET",
+        help="Asset to report. Omit to use the backend default",
+    )
+
+
 def configure_wallet_send(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("to", metavar="TO", help="Destination id")
     parser.add_argument("amount", metavar="AMOUNT", help="Amount to send")
@@ -410,6 +420,13 @@ def configure_wallet_send(parser: argparse.ArgumentParser) -> None:
         default="",
         metavar="ASSET",
         help="Asset to send. Omit to use the backend default",
+    )
+    parser.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Extra payment details. The bound wallet interprets the file. Use - to read stdin",
     )
     parser.add_argument(
         "--test",
@@ -730,6 +747,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("wallet", "balance"),
         "Print the bound balance",
         f"{_H}.wallet:wallet_balance",
+        configure_wallet_balance,
+        description="Omit ASSET to use the backend default. Named assets are backend-interpreted ids.",
+        epilog="Examples:\n  agentself wallet balance\n  agentself wallet balance ASSET",
     ),
     CommandSpec(
         ("wallet", "authorize"),
@@ -764,8 +784,13 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "Send an amount of an asset",
         f"{_H}.wallet:send_wallet",
         configure_wallet_send,
-        description="Live backends move real funds. --test returns the send plan without broadcasting.",
-        epilog="Examples:\n  agentself wallet send TO AMOUNT\n  agentself wallet send TO AMOUNT --test",
+        description=(
+            "Live backends move real funds. --test returns the send plan without "
+            "broadcasting. --file is extra payment details interpreted by the bound "
+            'wallet. A JSON object {"allow": true} grants TO pull permission when '
+            "the wallet supports it."
+        ),
+        epilog="Examples:\n  agentself wallet send TO AMOUNT\n  agentself wallet send TO AMOUNT --file PATH\n  agentself wallet send TO AMOUNT --test",
     ),
     CommandSpec(
         ("backup",),

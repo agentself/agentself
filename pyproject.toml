@@ -74,7 +74,7 @@ warn_redundant_casts = true
 files = ["agentself"]
 
 [[tool.mypy.overrides]]
-module = ["eth_account", "eth_account.*", "eth_utils"]
+module = ["eth_account", "eth_account.*", "eth_abi", "eth_abi.*", "eth_utils"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
