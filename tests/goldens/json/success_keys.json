@@ -80,6 +80,9 @@
   "secret_exists": {
     "exact": ["ok", "name", "exists"]
   },
+  "secret_run": {
+    "exact": ["ok", "exit", "names", "env", "stdout", "stderr"]
+  },
   "note_set": {
     "exact": ["ok", "name", "status"]
   },

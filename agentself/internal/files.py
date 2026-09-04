@@ -80,6 +80,22 @@ def host_env(env: Mapping[str, str] | None = None) -> dict[str, str] | None:
     return env_map
 
 
+def run_captured(
+    argv: Sequence[str],
+    *,
+    env: Mapping[str, str],
+) -> tuple[int, bytes, bytes]:
+    """Run argv with env. Does not rewrite argv[0]."""
+
+    proc = subprocess.run(
+        list(argv),
+        env=host_env(env),
+        capture_output=True,
+        check=False,
+    )
+    return int(proc.returncode), proc.stdout, proc.stderr
+
+
 def run_resolved(
     argv: Sequence[str],
     *,

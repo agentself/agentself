@@ -83,3 +83,8 @@ extra payment details interpreted by the bound wallet; success may include
 non-secret and may appear in JSON output. The identity-local notes
 directory is copied by whole-identity backup/restore, but its undocumented
 filename layout is not a compatibility promise.
+
+`secret run --env VAR=NAME -- COMMAND` is an additive verb under CLI
+schema 2. Success includes `exit`, `names`, `env`, `stdout`, and
+`stderr`. Secret values are redacted from that JSON. `secret get`,
+`--file`, and `--raw` remain. Consumers should ignore unknown keys.

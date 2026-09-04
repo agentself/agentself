@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a
+  child environment for one process. Success JSON reports exit, names,
+  env var names, and captured output with secret values redacted.
+  `secret get` / `--file` / `--raw` are unchanged.
 - `wallet send --file PATH` attaches extra payment details interpreted by
   the bound wallet. `{"allow": true}` grants pull permission when the
   wallet supports it. `wallet balance ASSET` reports a named asset.

@@ -266,6 +266,9 @@ def test_json_commands_lists_featured_verbs(tmp_path):
     secret = next(item for item in data["commands"] if item["name"] == "secret")
     assert secret["args"] == list(COMMANDS["secret"])
     assert secret["next"] == "agentself secret list"
+    run = next(item for item in secret["verbs"] if item["name"] == "run")
+    env_param = next(item for item in run["params"] if item["name"] == "--env")
+    assert env_param["required"] is True
     for item in data["commands"]:
         assert {"name", "args", "next"} <= set(item)
         extra = set(item) - {"name", "args", "next", "params", "verbs"}
@@ -434,6 +437,53 @@ def test_json_secrets_and_missing(tmp_path):
     )
     assert "protected" in protected["reason"]
     assert protected["next"] == "agentself secret list"
+
+
+def test_json_secret_run_contract(tmp_path):
+    _vault, env, _started = _init(tmp_path)
+    created = assert_ok(
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "one-shot-contract-value"),
+            ],
+            env,
+        ),
+        "secret_write",
+    )
+    assert created == {"ok": True, "name": "notes"}
+    ran = assert_ok(
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "run",
+                "--env",
+                "API_KEY=notes",
+                "--",
+                sys.executable,
+                "-c",
+                "import os, sys; sys.stdout.write('pre ' + os.environ['API_KEY'] + ' post')",
+            ],
+            env,
+        ),
+        "secret_run",
+    )
+    assert ran["exit"] == 0
+    assert ran["names"] == ["notes"]
+    assert ran["env"] == ["API_KEY"]
+    assert ran["stdout"] == "pre [redacted] post"
+    assert ran["stderr"] == ""
+    assert "one-shot-contract-value" not in json.dumps(ran)
+    got = assert_ok(
+        run_cli(["--json", "secret", "get", "notes"], env),
+        "secret_get",
+    )
+    assert got["value"] == "one-shot-contract-value"
 
 
 def test_json_notes_contract(tmp_path):

@@ -117,6 +117,10 @@ def test_unsupported_raw_and_conflicts(tmp_path):
         ),
         (["secret", "delete", "../escape"], "agentself secret delete --help"),
         (["secret", "exists", "../escape"], "agentself secret exists --help"),
+        (
+            ["secret", "run", "--env", "API_KEY=../escape"],
+            "agentself secret run --help",
+        ),
     ],
 )
 def test_secret_cli_invalid_name_is_safe(

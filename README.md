@@ -74,7 +74,7 @@ external step a person may need to perform; the CLI never solicits input.
 | Area | Commands |
 | --- | --- |
 | Identity | `init`, `show`, `diagnose` |
-| Secrets | `secret create`, `get`, `update`, `list`, `delete`, `exists` |
+| Secrets | `secret create`, `get`, `run`, `update`, `list`, `delete`, `exists` |
 | Non-secret notes | `note set`, `get`, `list`, `delete`, `exists` |
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list`, `find`, `mark` |
@@ -100,6 +100,9 @@ Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
 `secret get NAME` is JSON with the value. Prefer `--file PATH`. `--raw`
 writes stored secret bytes with no JSON and no added newline; protected
 names (`wallet.key`) still need `--unsafe`.
+`secret run --env VAR=NAME -- COMMAND` decrypts named secrets into the
+child environment for one process. Success JSON includes the child exit
+code and captured output; secret values are redacted from that JSON.
 
 `note set` is an idempotent upsert for printable, non-secret handoff context.
 It accepts `VALUE` or `--file PATH`; file input drops a leading UTF-8 BOM and
@@ -237,7 +240,7 @@ it into the user skill directory. Neither path is the identity directory.
 
 - Secret values are encrypted at rest by the configured store.
 - Notes are non-secret and printable; private file modes are defense in depth, not encryption.
-- Secret listings return names, not values. Prefer `secret get NAME --file PATH`. Default JSON includes the value; `--raw` writes stored bytes. `wallet.key` also requires `--unsafe`.
+- Secret listings return names, not values. Prefer `secret get NAME --file PATH` when the agent needs the value, or `secret run --env VAR=NAME -- COMMAND` for one child process. Default JSON includes the value; `--raw` writes stored bytes. `wallet.key` also requires `--unsafe`.
 - Email bodies stay off default JSON; use `email receive REF --file PATH` or `--raw`.
 - Logs and structured errors redact secret values.
 - Missing credentials and host tools fail instead of silently switching backends.

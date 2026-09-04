@@ -17,6 +17,7 @@
         "verbs": [
           "create",
           "get",
+          "run",
           "update",
           "list",
           "delete",
@@ -33,6 +34,7 @@
         "verbs": [
           "create",
           "get",
+          "run",
           "update",
           "list",
           "delete",

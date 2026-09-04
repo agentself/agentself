@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 
@@ -35,6 +36,20 @@ def test_identity_secret_and_cli_contract(cli) -> None:
     printed = cli.run("secret", "get", "demo.token", "--raw").expect(0)
     assert printed.stdout == canary
     assert printed.stderr == ""
+
+    ran = cli.json(
+        "secret",
+        "run",
+        "--env",
+        "API_KEY=demo.token",
+        "--",
+        sys.executable,
+        "-c",
+        "import os, sys; sys.stdout.write('pre ' + os.environ['API_KEY'] + ' post')",
+    )
+    assert ran.payload["exit"] == 0
+    assert ran.payload["stdout"] == "pre [redacted] post"
+    assert canary not in ran.output
 
     cli.json("secret", "delete", "demo.token")
     missing = cli.json("secret", "exists", "demo.token", expected_code=3)

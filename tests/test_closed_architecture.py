@@ -295,7 +295,7 @@ def test_secret_commands_do_not_select_a_store():
     }
     assert "--store" in init_flags
     secret_cmds = commands["secret"]._subparsers._group_actions[0].choices
-    for name in ("create", "get", "update", "delete"):
+    for name in ("create", "get", "run", "update", "delete"):
         flags = {
             option
             for action in secret_cmds[name]._actions
