@@ -122,7 +122,7 @@ def default_json_next(args, error: str) -> str:
             return "agentself secret create --help"
         if verb == "update":
             return "agentself secret update --help"
-        if verb in ("get", "delete", "list", "exists"):
+        if verb in ("get", "run", "delete", "list", "exists"):
             return "agentself secret list"
         return "agentself --help"
     if error == "refused":

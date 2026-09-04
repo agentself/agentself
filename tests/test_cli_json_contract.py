@@ -436,6 +436,53 @@ def test_json_secrets_and_missing(tmp_path):
     assert protected["next"] == "agentself secret list"
 
 
+def test_json_secret_run_contract(tmp_path):
+    _vault, env, _started = _init(tmp_path)
+    created = assert_ok(
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "create",
+                "notes",
+                "--file",
+                value_file(tmp_path, "one-shot-contract-value"),
+            ],
+            env,
+        ),
+        "secret_write",
+    )
+    assert created == {"ok": True, "name": "notes"}
+    ran = assert_ok(
+        run_cli(
+            [
+                "--json",
+                "secret",
+                "run",
+                "--env",
+                "API_KEY=notes",
+                "--",
+                sys.executable,
+                "-c",
+                "import os, sys; sys.stdout.write('pre ' + os.environ['API_KEY'] + ' post')",
+            ],
+            env,
+        ),
+        "secret_run",
+    )
+    assert ran["exit"] == 0
+    assert ran["names"] == ["notes"]
+    assert ran["env"] == ["API_KEY"]
+    assert ran["stdout"] == "pre [redacted] post"
+    assert ran["stderr"] == ""
+    assert "one-shot-contract-value" not in json.dumps(ran)
+    got = assert_ok(
+        run_cli(["--json", "secret", "get", "notes"], env),
+        "secret_get",
+    )
+    assert got["value"] == "one-shot-contract-value"
+
+
 def test_json_notes_contract(tmp_path):
     _vault, env, _started = _init(tmp_path)
     set_result = assert_ok(

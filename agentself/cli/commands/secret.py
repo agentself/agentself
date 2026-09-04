@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import re
+import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from agentself.cli.io import (
@@ -17,7 +21,12 @@ from agentself.cli.runtime import (
     secret_value_error,
 )
 from agentself.internal.custody.errors import ProtectedName, Refused
+from agentself.internal.files import host_env
 from agentself.internal.names import WALLET_KEY_NAME
+from agentself.local import redact_secrets
+
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RUN_HELP = "agentself secret run --help"
 
 
 def create_secret(args, vault: Path) -> CliOutcome:
@@ -110,6 +119,55 @@ def get_secret(args, vault: Path) -> CliOutcome:
     return CliSuccess({"name": name, "value": value}, redact=False)
 
 
+def run_secret(args, vault: Path) -> CliOutcome:
+    bindings, err = _secret_env_bindings(args)
+    if err is not None:
+        return fail(args, 2, "refused", err, nxt=_RUN_HELP)
+    for _var, name in bindings:
+        invalid = resource_name_error(args, name, "secret", _RUN_HELP)
+        if invalid is not None:
+            return invalid
+    child = _child_argv(args)
+    if not child:
+        return fail(args, 2, "refused", "need a command", nxt=_RUN_HELP)
+    access = client(vault)
+    protected_names = frozenset(access.protected_secret_names())
+    unsafe = bool(getattr(args, "unsafe", False))
+    for _var, name in bindings:
+        if name in protected_names and not unsafe:
+            return fail(
+                args,
+                2,
+                "refused",
+                f"{name} is protected",
+                nxt="agentself secret run --env VAR=NAME --unsafe -- COMMAND",
+            )
+    child_env = host_env(os.environ.copy())
+    assert child_env is not None
+    values: list[str] = []
+    env_names: list[str] = []
+    secret_names: list[str] = []
+    for var, name in bindings:
+        value = access.get(name)
+        child_env[var] = value
+        values.append(value)
+        env_names.append(var)
+        secret_names.append(name)
+    try:
+        proc = subprocess.run(child, env=child_env, capture_output=True, check=False)
+    except OSError:
+        return fail(args, 1, "error", "command", nxt=_RUN_HELP)
+    return CliSuccess(
+        {
+            "exit": int(proc.returncode),
+            "names": secret_names,
+            "env": env_names,
+            "stdout": _redact_captured(proc.stdout, values),
+            "stderr": _redact_captured(proc.stderr, values),
+        }
+    )
+
+
 def update_secret(args, vault: Path) -> CliOutcome:
     invalid = resource_name_error(
         args, args.name, "secret", "agentself secret update --help"
@@ -168,6 +226,49 @@ def secret_exists(args, vault: Path) -> CliOutcome:
             extra={"name": args.name, "exists": False},
         )
     return CliSuccess({"name": args.name, "exists": True})
+
+
+def _child_argv(args) -> list[str]:
+    argv = [str(part) for part in (getattr(args, "child", None) or [])]
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    return argv
+
+
+def _parse_env_binding(raw: str) -> tuple[str, str] | None:
+    text = (raw or "").strip()
+    if "=" not in text:
+        return None
+    var, name = text.split("=", 1)
+    var = var.strip()
+    name = name.strip()
+    if not var or not name or not _ENV_NAME.fullmatch(var):
+        return None
+    return var, name
+
+
+def _secret_env_bindings(args) -> tuple[list[tuple[str, str]], str | None]:
+    items: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw in getattr(args, "env_bindings", None) or []:
+        pair = _parse_env_binding(raw)
+        if pair is None:
+            return [], "need VAR=NAME"
+        var, _name = pair
+        if var in seen:
+            return [], "duplicate env"
+        seen.add(var)
+        items.append(pair)
+    if not items:
+        return [], "need VAR=NAME"
+    return items, None
+
+
+def _redact_captured(data: bytes, values: Sequence[str]) -> str:
+    blob = data
+    for value in sorted((item for item in values if item), key=len, reverse=True):
+        blob = blob.replace(value.encode("utf-8"), b"[redacted]")
+    return redact_secrets(blob.decode("utf-8", errors="replace"))
 
 
 def _secret_bulk_requested(args) -> bool:

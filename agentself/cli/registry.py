@@ -156,6 +156,28 @@ def configure_secret_get(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_secret_run(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--env",
+        dest="env_bindings",
+        action="append",
+        default=[],
+        metavar="VAR=NAME",
+        help="Set VAR from secret NAME in the child environment. Repeat",
+    )
+    parser.add_argument(
+        "--unsafe",
+        action="store_true",
+        help="Allow a protected secret",
+    )
+    parser.add_argument(
+        "child",
+        nargs=argparse.REMAINDER,
+        metavar="COMMAND",
+        help="Child process. Prefer -- COMMAND so flags stay with the child",
+    )
+
+
 def configure_secret_update(parser: argparse.ArgumentParser) -> None:
     _add_secret_write_args(parser)
     parser.add_argument(
@@ -533,14 +555,15 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("secret",),
         "Named secrets",
         None,
-        args=("create", "get", "update", "list", "delete", "exists"),
+        args=("create", "get", "run", "update", "list", "delete", "exists"),
         next="agentself secret list",
         dest="secret_command",
         description=(
             "Named secrets. list prints names only. "
+            "run sets env vars for one child process and does not print values. "
             "wallet.key cannot be deleted and needs --unsafe to export or replace."
         ),
-        epilog="Examples:\n  agentself secret create NAME VALUE\n  agentself secret get NAME --raw",
+        epilog="Examples:\n  agentself secret create NAME VALUE\n  agentself secret get NAME --raw\n  agentself secret run --env VAR=NAME -- COMMAND",
     ),
     CommandSpec(
         ("secret", "create"),
@@ -561,6 +584,25 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "wallet.key also requires --unsafe."
         ),
         epilog="Examples:\n  agentself secret get NAME\n  agentself secret get NAME --raw",
+    ),
+    CommandSpec(
+        ("secret", "run"),
+        "Run a command with secrets in its environment",
+        f"{_H}.secret:run_secret",
+        configure_secret_run,
+        description=(
+            "Decrypt named secrets into the child environment for one process. "
+            "JSON reports exit, names, env var names, and captured output. "
+            "Secret values are redacted from that JSON. "
+            "wallet.key also requires --unsafe. "
+            "secret get / --file / --raw stay available when the agent needs the value."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  agentself secret run --env API_KEY=NAME -- COMMAND\n"
+            "  agentself secret run --env API_KEY=NAME -- sh -c "
+            "'curl -s -H \"Authorization: Bearer $API_KEY\" URL'"
+        ),
     ),
     CommandSpec(
         ("secret", "update"),
@@ -978,6 +1020,8 @@ def _param_of(action: argparse.Action) -> dict[str, object] | None:
     if not name:
         return None
     required = not action.option_strings and action.nargs not in ("?", "*", 0)
+    if action.option_strings and getattr(action, "required", False):
+        required = True
     payload: dict[str, object] = {
         "name": name,
         "type": _param_type(action),

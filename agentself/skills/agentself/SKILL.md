@@ -127,6 +127,17 @@ agentself secret get NAME --file PATH
 Default `secret get NAME` returns JSON with the value. Use `--raw` for exact
 bytes. `wallet.key` also needs `--unsafe`.
 
+When a child process only needs the secret in its environment for one
+invocation, prefer:
+
+```bash
+agentself secret run --env VAR=NAME -- COMMAND
+```
+
+Success JSON includes the child exit code and captured output. Secret
+values are redacted from that JSON. `secret get`, `--file`, and `--raw`
+remain when the agent must read or write the value.
+
 Use notes for printable, non-secret context:
 
 ```bash
