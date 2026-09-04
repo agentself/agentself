@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from agentself.cli.runtime import (
     secret_value_error,
 )
 from agentself.internal.custody.errors import ProtectedName, Refused
-from agentself.internal.files import host_env
+from agentself.internal.files import run_captured
 from agentself.internal.names import WALLET_KEY_NAME
 from agentself.local import redact_secrets
 
@@ -142,8 +141,7 @@ def run_secret(args, vault: Path) -> CliOutcome:
                 f"{name} is protected",
                 nxt="agentself secret run --env VAR=NAME --unsafe -- COMMAND",
             )
-    child_env = host_env(os.environ.copy())
-    assert child_env is not None
+    child_env = os.environ.copy()
     values: list[str] = []
     env_names: list[str] = []
     secret_names: list[str] = []
@@ -154,16 +152,16 @@ def run_secret(args, vault: Path) -> CliOutcome:
         env_names.append(var)
         secret_names.append(name)
     try:
-        proc = subprocess.run(child, env=child_env, capture_output=True, check=False)
+        exit_code, stdout, stderr = run_captured(child, env=child_env)
     except OSError:
         return fail(args, 1, "error", "command", nxt=_RUN_HELP)
     return CliSuccess(
         {
-            "exit": int(proc.returncode),
+            "exit": exit_code,
             "names": secret_names,
             "env": env_names,
-            "stdout": _redact_captured(proc.stdout, values),
-            "stderr": _redact_captured(proc.stderr, values),
+            "stdout": _redact_captured(stdout, values),
+            "stderr": _redact_captured(stderr, values),
         }
     )
 

@@ -21,7 +21,13 @@ def _init(tmp_path: Path) -> dict[str, str]:
 
 def _create(env: dict[str, str], tmp_path: Path, name: str, value: str) -> None:
     created = run_cli(
-        ["secret", "create", name, "--file", value_file(tmp_path, value, name + ".txt")],
+        [
+            "secret",
+            "create",
+            name,
+            "--file",
+            value_file(tmp_path, value, name + ".txt"),
+        ],
         env,
     )
     assert created.returncode == 0, created.stderr
