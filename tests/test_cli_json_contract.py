@@ -266,6 +266,9 @@ def test_json_commands_lists_featured_verbs(tmp_path):
     secret = next(item for item in data["commands"] if item["name"] == "secret")
     assert secret["args"] == list(COMMANDS["secret"])
     assert secret["next"] == "agentself secret list"
+    run = next(item for item in secret["verbs"] if item["name"] == "run")
+    env_param = next(item for item in run["params"] if item["name"] == "--env")
+    assert env_param["required"] is True
     for item in data["commands"]:
         assert {"name", "args", "next"} <= set(item)
         extra = set(item) - {"name", "args", "next", "params", "verbs"}

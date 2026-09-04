@@ -150,12 +150,14 @@ def test_secret_run_multiple_env_and_nonzero_child_exit(tmp_path: Path) -> None:
             "--",
             sys.executable,
             "-c",
-            "raise SystemExit(7)",
+            "import os, sys; sys.stderr.write(os.environ['API_KEY']); raise SystemExit(7)",
         ],
         env,
     )
     assert failed.returncode == 0, failed.stdout + failed.stderr
-    assert json.loads(failed.stdout)["exit"] == 7
+    failed_payload = json.loads(failed.stdout)
+    assert failed_payload["exit"] == 7
+    assert failed_payload["stderr"] == "[redacted]"
     assert CANARY not in failed.stdout + failed.stderr
 
 
@@ -187,8 +189,15 @@ def test_secret_run_refuses_protected_and_missing(tmp_path: Path) -> None:
 def test_secret_run_usage_errors_stay_closed(tmp_path: Path) -> None:
     env = _init(tmp_path)
     _create(env, tmp_path, "demo.token", CANARY)
+    missing_env = run_cli(["secret", "run"], env)
+    assert missing_env.returncode == 2
+    assert missing_env.stderr == ""
+    missing_payload = json.loads(missing_env.stdout)
+    assert missing_payload["error"] == "refused"
+    assert "required: --env" in missing_payload["reason"]
+    assert missing_payload["next"] == "agentself secret run --help"
+    assert CANARY not in missing_env.stdout
     cases = (
-        (["secret", "run"], "need VAR=NAME"),
         (["secret", "run", "--env", "API_KEY=demo.token"], "need a command"),
         (["secret", "run", "--env", "not-a-binding"], "need VAR=NAME"),
         (["secret", "run", "--env", "1BAD=demo.token"], "need VAR=NAME"),

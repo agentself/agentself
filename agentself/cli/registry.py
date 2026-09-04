@@ -162,6 +162,7 @@ def configure_secret_run(parser: argparse.ArgumentParser) -> None:
         dest="env_bindings",
         action="append",
         default=[],
+        required=True,
         metavar="VAR=NAME",
         help="Set VAR from secret NAME in the child environment. Repeat",
     )
