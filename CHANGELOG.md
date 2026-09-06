@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `wallet limit` shows or sets an identity-local spend limit. `max` caps one
+  send; `reserve` is the minimum remaining balance of the sent asset;
+  `assets` is an allowlist when present. Missing limit leaves `wallet send`
+  unlimited. `show` / `diagnose` report `limit`. `--test` uses the same
+  checks. Raising a set limit needs `--force`.
+
 ## 0.2.4 - 2026-09-04
 
 - `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a

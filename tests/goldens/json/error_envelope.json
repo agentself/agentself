@@ -23,7 +23,8 @@
     "store_backend",
     "problems",
     "package",
-    "executable"
+    "executable",
+    "limit"
   ],
   "setup_extra": [
     "status",
@@ -47,6 +48,7 @@
     "created",
     "unchanged",
     "refused",
-    "_next"
+    "_next",
+    "remaining"
   ]
 }

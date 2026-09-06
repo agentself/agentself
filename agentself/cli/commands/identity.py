@@ -34,6 +34,7 @@ from agentself.cli.runtime import (
 )
 from agentself.host import CHANNELS, ENV_IDENTITY_DIR, ENV_IDENTITY_ID, UnknownBind
 from agentself.internal.custody.errors import (
+    CannotSend,
     HostToolMissing,
     MissingSecret,
     ProtectedName,
@@ -75,8 +76,11 @@ _SKILL_TARGETS = {
 
 
 def show_identity(args, vault: Path) -> CliOutcome:
-    view = client(vault).identity()
-    return CliSuccess(status_json(view, vault))
+    access = client(vault)
+    view = access.identity()
+    payload = status_json(view, vault)
+    payload["limit"] = _limit_field(access.wallet_limit())
+    return CliSuccess(payload)
 
 
 def init_identity(args, vault: Path) -> CliOutcome:
@@ -199,6 +203,7 @@ def diagnose_host(args, vault: Path) -> CliOutcome:
         "store_backend": store_backend,
         **paths,
     }
+    payload["limit"] = _diagnose_limit(vault, initialized, problems)
     nxt = _diagnose_next(args, initialized, ready, problems)
     payload["next"] = nxt
     if problems:
@@ -528,6 +533,27 @@ def _diagnose_identity(
         return problems, ready
     ready["wallet"] = True
     return problems, ready
+
+
+def _limit_field(view: dict[str, object]) -> object:
+    if not view.get("limit"):
+        return False
+    return {key: value for key, value in view.items() if key != "limit"}
+
+
+def _diagnose_limit(
+    vault: Path, initialized: bool, problems: list[tuple[str, str]]
+) -> object:
+    if not initialized:
+        return False
+    try:
+        return _limit_field(client(vault).wallet_limit())
+    except CannotSend as exc:
+        if getattr(exc, "reason", "") == "spend_limit":
+            problems.append(("cannot read spend limit", "agentself wallet limit"))
+        return False
+    except Exception:
+        return False
 
 
 def _bundled_skill() -> Path:

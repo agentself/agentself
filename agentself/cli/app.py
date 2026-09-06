@@ -207,12 +207,17 @@ def main(argv: list[str] | None = None) -> int:
         )
     except CannotSend as exc:
         reason = exc.reason or "cannot_send"
+        extra = None
+        leftover = getattr(exc, "remaining", None)
+        if leftover:
+            extra = {"remaining": leftover}
         outcome = fail(
             args,
             2,
             "refused",
             reason,
             nxt=wallet_failure_next(args, reason),
+            extra=extra,
         )
     except NoGas as exc:
         reason = exc.reason or "no_gas"

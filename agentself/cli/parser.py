@@ -15,6 +15,7 @@ _MUTATING_COMMANDS = {
     "connect",
     "create",
     "delete",
+    "limit",
     "mark",
     "restore",
     "send",

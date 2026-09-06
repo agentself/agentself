@@ -16,5 +16,5 @@
   "secret": ["create", "get", "run", "update", "list", "delete", "exists"],
   "note": ["set", "get", "list", "delete", "exists"],
   "email": ["connect", "show", "send", "receive", "list", "find", "mark"],
-  "wallet": ["show", "address", "balance", "authorize", "verify", "send"]
+  "wallet": ["show", "address", "balance", "limit", "authorize", "verify", "send"]
 }

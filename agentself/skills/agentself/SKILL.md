@@ -73,15 +73,23 @@ safe. One directory is one identity: a second `--id` is refused, and
 `--force` only changes backends. Another agent needs `--identity-dir PATH`.
 `AGENTSELF_FETCH_TOOLS=0` refuses a fetch even for `--tools`.
 
-`show` includes the age recipient and email readiness. For wallet work, inspect
-`agentself backends wallet` first. The default Base wallet is live and can move
-real funds. Use `wallet send TO AMOUNT --test` to return the send plan without
-broadcasting. `wallet send TO AMOUNT --file PATH` is for a spend that needs
-extra payment details; the bound wallet interprets the file. A JSON object
-`{"allow": true}` grants TO pull permission when the wallet supports it. Other
-file contents stay destination-specific. `wallet balance` reports the current
-amount. `wallet balance ASSET` reports a named asset. It does not identify
-who paid or when.
+`show` includes the age recipient, email readiness, and spend `limit`. For
+wallet work, inspect `agentself backends wallet` first. The default Base
+wallet is live and can move real funds. Set a spend limit before asking a
+human to fund: `wallet limit --file PATH` with a `reserve` (max-only does
+not bound a loop of valid sends). Do not request funds when `limit` is
+`false`. `wallet limit` is informational; `remaining` is `balance` minus
+`reserve`. It is not permission to send. Use `wallet send TO AMOUNT --test`
+to return the send plan without broadcasting; live send uses the same
+limit checks. Replacing a set limit needs `--force`. Do not `--force` a
+wider limit after funding. Exporting `wallet.key` bypasses the CLI; do
+not claim the wallet is sandboxed.
+`wallet send TO AMOUNT --file PATH` is for a spend that needs extra payment
+details; the bound wallet interprets the file. A JSON object
+`{"allow": true}` grants TO pull permission when the wallet supports it.
+Other file contents stay destination-specific. `wallet balance` reports
+the current amount. `wallet balance ASSET` reports a named asset. It does
+not identify who paid or when.
 
 Authorize with the existing identity:
 

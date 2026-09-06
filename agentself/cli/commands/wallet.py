@@ -11,6 +11,7 @@ from agentself.cli.io import (
 )
 from agentself.cli.outcomes import CliOutcome, CliRaw, CliSuccess
 from agentself.cli.runtime import client, fail, message_from_args, value_source_error
+from agentself.internal.custody.errors import Refused
 from agentself.internal.text import sha256_text
 
 
@@ -189,6 +190,38 @@ def send_wallet(args, vault: Path) -> CliOutcome:
     if details.strip():
         payload["details_sha256"] = sha256_text(details)
     return CliSuccess(payload, redact=False)
+
+
+def wallet_limit(args, vault: Path) -> CliOutcome:
+    path = (getattr(args, "from_file", None) or "").strip()
+    access = client(vault)
+    if path:
+        try:
+            details = load_value_file(path, strip_newline=True)
+        except (OSError, UnicodeDecodeError):
+            return fail(
+                args,
+                1,
+                "error",
+                "file",
+                nxt="agentself wallet limit --help",
+            )
+        try:
+            view = access.wallet_limit_set(
+                details, force=bool(getattr(args, "force", False))
+            )
+        except Refused as exc:
+            if str(exc) == "file exists":
+                return fail(
+                    args,
+                    2,
+                    "refused",
+                    "file exists",
+                    nxt="agentself wallet limit --file PATH --force",
+                )
+            raise
+        return CliSuccess(dict(view))
+    return CliSuccess(dict(access.wallet_limit()))
 
 
 def _canonical_amount(value: str) -> str:
