@@ -131,7 +131,13 @@ CHANNELS: dict[str, Channel] = {
                 ),
             ),
         ),
-        note=f"RPC override: {ENV_ETH_RPC_URL}",
+        note=(
+            f"RPC override: {ENV_ETH_RPC_URL}. "
+            "wallet send --file is extra payment details this backend interprets. "
+            '{"allow": true} grants TO pull permission. '
+            'Other files may be 0x call data or {"signature", "args"} sent to TO. '
+            "wallet balance ASSET accepts the default asset or a token id."
+        ),
     ),
     "email": Channel(
         name="email",

@@ -150,8 +150,9 @@ refused; stdout transport is `--raw`. `wallet send --test` returns the send
 plan without broadcasting. Live `wallet send` can move real funds.
 `wallet send TO AMOUNT --file PATH` attaches extra payment details; the bound
 wallet interprets the file. A JSON object `{"allow": true}` grants TO pull
-permission when that wallet supports it. `wallet balance ASSET` reports a
-named asset; omit ASSET for the backend default.
+permission when that wallet supports it. Other file contents are
+destination-specific; see `agentself backends wallet`. `wallet balance ASSET`
+reports a named asset; omit ASSET for the backend default.
 
 Stdin is never implicit. Pass `--file -`, `--result-file -`, or
 `--wallet-key-file -`. Missing explicit input is JSON, exit 3.

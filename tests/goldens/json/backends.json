@@ -9,7 +9,7 @@
       "name": "wallet",
       "command_group": "wallet",
       "next": "agentself wallet address",
-      "note": "RPC override: AGENTSELF_ETH_RPC_URL",
+      "note": "RPC override: AGENTSELF_ETH_RPC_URL. wallet send --file is extra payment details this backend interprets. {\"allow\": true} grants TO pull permission. Other files may be 0x call data or {\"signature\", \"args\"} sent to TO. wallet balance ASSET accepts the default asset or a token id.",
       "backends": [
         {
           "name": "base",

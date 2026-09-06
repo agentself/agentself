@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `agentself backends wallet` names how this backend interprets
+  `wallet send --file`: portable `{"allow": true}`, plus destination-specific
+  call data. Generic send help points there.
+
 ## 0.2.4 - 2026-09-04
 
 - `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a

@@ -141,6 +141,26 @@ def test_operation_help_stays_provider_neutral(tmp_path):
             assert not _has_token(text, provider), (args, provider, text)
 
 
+def test_backend_wallet_discovery_includes_send_file_encoding(tmp_path):
+    env = cli_env(tmp_path / "vault")
+    proc = run_cli(["backends", "wallet"], env)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr == ""
+    note = json.loads(proc.stdout)["channel"]["note"]
+    assert '{"allow": true}' in note
+    assert "signature" in note
+    assert "args" in note
+    assert "0x" in note
+    one = run_cli(["backends", "wallet", "base"], env)
+    assert one.returncode == 0, one.stderr
+    assert json.loads(one.stdout)["channel"]["note"] == note
+    send = run_cli(["wallet", "send", "--help"], env)
+    assert send.returncode == 0, send.stderr
+    assert "backends wallet" in send.stdout
+    assert "USDC" not in send.stdout
+    assert "0x" not in send.stdout
+
+
 def test_backend_email_discovery_includes_first_run_stop_rules(tmp_path):
     proc = run_cli(["backends", "email", "agentmail"], cli_env(tmp_path / "vault"))
     assert proc.returncode == 0, proc.stderr
