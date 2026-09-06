@@ -71,7 +71,11 @@ class CannotAuthorize(CustodyError):
 
 class CannotSend(CustodyError):
     def __init__(
-        self, message: str = "backend cannot send", reason: str = "cannot_send"
+        self,
+        message: str = "backend cannot send",
+        reason: str = "cannot_send",
+        remaining: str | None = None,
     ) -> None:
         self.reason = reason
+        self.remaining = remaining
         super().__init__(message)

@@ -76,7 +76,7 @@ external step a person may need to perform; the CLI never solicits input.
 | Identity | `init`, `show`, `diagnose` |
 | Secrets | `secret create`, `get`, `run`, `update`, `list`, `delete`, `exists` |
 | Non-secret notes | `note set`, `get`, `list`, `delete`, `exists` |
-| Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
+| Wallet | `wallet show`, `address`, `balance`, `limit`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list`, `find`, `mark` |
 | Backends | `backends [CHANNEL [BACKEND]]` |
 | Commands | `commands` |
@@ -148,6 +148,11 @@ placed on argv. Positional MESSAGE and JSON `authorization` remain for
 CLI 2 compatibility. Do not create another wallet to sign. `--out -` is
 refused; stdout transport is `--raw`. `wallet send --test` returns the send
 plan without broadcasting. Live `wallet send` can move real funds.
+`wallet limit` prints the identity spend limit. `--file PATH` writes it;
+replacing an existing file needs `--force`. `max` is per send. `reserve` is
+the minimum remaining of the sent asset after a send. When `assets` is
+present it is an allowlist. Missing limit leaves send unlimited. Inspect
+`remaining` is not permission to send; use `wallet send --test`.
 `wallet send TO AMOUNT --file PATH` attaches extra payment details; the bound
 wallet interprets the file. A JSON object `{"allow": true}` grants TO pull
 permission when that wallet supports it. `wallet balance ASSET` reports a

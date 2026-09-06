@@ -459,6 +459,21 @@ def configure_wallet_send(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_wallet_limit(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--file",
+        dest="from_file",
+        default="",
+        metavar="PATH",
+        help="Replace the spend limit from a file. Use - to read stdin",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing spend limit",
+    )
+
+
 def configure_backup(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("path", metavar="PATH", help="Destination directory")
     parser.add_argument(
@@ -762,9 +777,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         ("wallet",),
-        "Show, address, balance, authorize (sign), and send",
+        "Show, address, balance, limit, authorize (sign), and send",
         None,
-        args=("show", "address", "balance", "authorize", "verify", "send"),
+        args=("show", "address", "balance", "limit", "authorize", "verify", "send"),
         next="agentself wallet address",
         dest="wallet_command",
         description=(
@@ -793,6 +808,20 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_wallet_balance,
         description="Omit ASSET to use the backend default. Named assets are backend-interpreted ids.",
         epilog="Examples:\n  agentself wallet balance\n  agentself wallet balance ASSET",
+    ),
+    CommandSpec(
+        ("wallet", "limit"),
+        "Show or set the identity spend limit",
+        f"{_H}.wallet:wallet_limit",
+        configure_wallet_limit,
+        description=(
+            "No file prints the current limit. Missing file is unlimited. "
+            "--file PATH writes the limit; replacing one needs --force. "
+            "max is per send. reserve is the minimum remaining balance of the "
+            "sent asset after a send. assets is an allowlist when present. "
+            "Inspect remaining is not permission to send; use wallet send --test."
+        ),
+        epilog="Examples:\n  agentself wallet limit\n  agentself wallet limit --file PATH\n  agentself wallet limit --file PATH --force",
     ),
     CommandSpec(
         ("wallet", "authorize"),

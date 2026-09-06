@@ -22,7 +22,8 @@
       "email_backend",
       "identity_dir",
       "email",
-      "ready"
+      "ready",
+      "limit"
     ]
   },
   "diagnose": {
@@ -40,7 +41,8 @@
       "package",
       "executable",
       "next",
-      "_next"
+      "_next",
+      "limit"
     ]
   },
   "install": {
@@ -164,6 +166,19 @@
   "wallet_send": {
     "required": ["ok", "to", "amount", "asset"],
     "allowed": ["ok", "to", "amount", "asset", "hash", "test", "details_sha256"]
+  },
+  "wallet_limit": {
+    "required": ["ok", "limit"],
+    "allowed": [
+      "ok",
+      "limit",
+      "max",
+      "reserve",
+      "to",
+      "assets",
+      "balance",
+      "remaining"
+    ]
   },
   "wallet_balance": {
     "required": ["ok"],

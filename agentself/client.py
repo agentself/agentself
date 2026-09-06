@@ -13,6 +13,7 @@ from agentself.internal.types import (
     Identity,
     IdentityView,
     MailboxMessage,
+    SpendLimitView,
     WalletAuthorization,
     WalletBalance,
     WalletMaterialStatus,
@@ -126,6 +127,12 @@ class CustodyManager(Protocol):
         test: bool = False,
         details: str = "",
     ) -> WalletSendResult: ...
+
+    def wallet_limit(self, caller: BoundCaller) -> SpendLimitView: ...
+
+    def wallet_limit_set(
+        self, caller: BoundCaller, details: str, *, force: bool = False
+    ) -> SpendLimitView: ...
 
     def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus: ...
 
@@ -293,6 +300,14 @@ class Client:
         return self._manager.wallet_send(
             caller, to, amount, asset, test=test, details=details
         )
+
+    def wallet_limit(self) -> SpendLimitView:
+        caller = self._require_caller()
+        return self._manager.wallet_limit(caller)
+
+    def wallet_limit_set(self, details: str, *, force: bool = False) -> SpendLimitView:
+        caller = self._require_caller()
+        return self._manager.wallet_limit_set(caller, details, force=force)
 
     def wallet_material_status(self) -> WalletMaterialStatus:
         caller = self._require_caller()

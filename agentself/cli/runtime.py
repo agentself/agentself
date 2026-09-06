@@ -107,6 +107,15 @@ def wallet_failure_next(args, reason: str) -> str:
         return TYPED_AUTHORIZE_NEXT
     if reason == "insufficient_asset":
         return "agentself wallet balance"
+    if reason == "spend_reserve":
+        return "agentself wallet balance"
+    if reason in {
+        "spend_max",
+        "spend_asset",
+        "spend_destination",
+        "spend_limit",
+    }:
+        return "agentself wallet limit"
     return channel_next(args)
 
 

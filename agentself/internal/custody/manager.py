@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
@@ -42,6 +43,7 @@ from agentself.internal.custody.errors import (
     UnknownIdentity,
 )
 from agentself.internal.eoa import parse_secp256k1_hex
+from agentself.internal.files import exclusive
 from agentself.internal.log import Log
 from agentself.internal.mail_state import (
     MAIL_LIST_CAP,
@@ -79,6 +81,19 @@ from agentself.internal.setup import (
     public_setup_option,
     setup_status_of,
 )
+from agentself.internal.spend import (
+    AssetRule,
+    LimitError,
+    LimitExists,
+    LimitStorage,
+    SpendLimit,
+    canonical_amount,
+    destination_allowed,
+    parse_decimal,
+    parse_limit,
+    public_limit,
+    remaining_of,
+)
 from agentself.internal.types import (
     BoundCaller,
     EmailConnectView,
@@ -86,6 +101,7 @@ from agentself.internal.types import (
     IdentityView,
     MailboxMessage,
     MailboxView,
+    SpendLimitView,
     WalletAuthorization,
     WalletBalance,
     WalletMaterialStatus,
@@ -163,9 +179,11 @@ class CustodyManager:
         self._wallets = wallets
         self._email_backend = email_backend or "agentmail"
         self._wallet_backend = wallet_backend or "base"
-        self._acted_mail = ActedMailState(Path(vault_root))
-        self._mail_refs = MailRefState(Path(vault_root))
-        self._notes = NoteStorage(Path(vault_root))
+        self._vault_root = Path(vault_root)
+        self._acted_mail = ActedMailState(self._vault_root)
+        self._mail_refs = MailRefState(self._vault_root)
+        self._notes = NoteStorage(self._vault_root)
+        self._limits = LimitStorage(self._vault_root)
         # Test fallback; production compose injects CHANNELS["store"].names.
         self._allowed_store_bindings = (
             frozenset(allowed_store_bindings)
@@ -742,6 +760,74 @@ class CustodyManager:
         details: str = "",
     ) -> WalletSendResult:
         identity, wallet = self._wallet_bound(caller, "wallet_send")
+        with exclusive(self._vault_root):
+            return self._wallet_send_locked(
+                identity, wallet, to, amount, asset, test, details
+            )
+
+    def wallet_limit(self, caller: BoundCaller) -> SpendLimitView:
+        identity = self._require_identity(caller, "wallet_limit", None)
+        try:
+            policy = self._limits.load(identity.id)
+        except LimitError as exc:
+            self._log.record("wallet_limit", identity.id, None, "spend_limit")
+            raise CannotSend("spend_limit", reason="spend_limit") from exc
+        if policy is None:
+            self._log.record("wallet_limit", identity.id, None, "ok")
+            return {"limit": False}
+        view = cast(SpendLimitView, public_limit(policy))
+        try:
+            wallet = self._ready_wallet(identity, "wallet_limit")
+            self._fill_remaining(view, identity, wallet, policy)
+        except (
+            WalletError,
+            WalletCannotSend,
+            CannotSend,
+            ChannelFailure,
+            StoreFailure,
+            HostToolMissing,
+        ):
+            pass
+        self._log.record("wallet_limit", identity.id, None, "ok")
+        return view
+
+    def wallet_limit_set(
+        self, caller: BoundCaller, details: str, *, force: bool = False
+    ) -> SpendLimitView:
+        identity = self._require_identity(caller, "wallet_limit", None)
+        try:
+            data = json.loads(details) if details.strip() else {}
+            policy = parse_limit(data)
+        except (json.JSONDecodeError, LimitError) as exc:
+            self._log.record("wallet_limit", identity.id, None, "spend_limit")
+            raise CannotSend("spend_limit", reason="spend_limit") from exc
+        try:
+            self._limits.save(identity.id, policy, force=force)
+        except LimitExists as exc:
+            self._log.record("wallet_limit", identity.id, None, "exists")
+            raise Refused("file exists") from exc
+        except LimitError as exc:
+            self._log.record("wallet_limit", identity.id, None, "spend_limit")
+            raise CannotSend("spend_limit", reason="spend_limit") from exc
+        return self.wallet_limit(caller)
+
+    def _wallet_send_locked(
+        self,
+        identity: Identity,
+        wallet: WalletAccess,
+        to: str,
+        amount: str,
+        asset: str,
+        test: bool,
+        details: str,
+    ) -> WalletSendResult:
+        try:
+            policy = self._limits.load(identity.id)
+        except LimitError as exc:
+            self._log.record("wallet_send", identity.id, None, "spend_limit")
+            raise CannotSend("spend_limit", reason="spend_limit") from exc
+        if policy is not None:
+            self._enforce_limit(identity, wallet, policy, to, amount, asset)
         try:
             operation = wallet.validate_send if test else wallet.send
             used = (operation(identity.id, to, amount, asset, details) or "").strip()
@@ -766,6 +852,115 @@ class CustodyManager:
             if hashed:
                 result["hash"] = hashed
         return result
+
+    def _enforce_limit(
+        self,
+        identity: Identity,
+        wallet: WalletAccess,
+        policy: SpendLimit,
+        to: str,
+        amount: str,
+        asset: str,
+    ) -> None:
+        if policy.to and not destination_allowed(to, policy.to):
+            self._log.record("wallet_send", identity.id, None, "spend_destination")
+            raise CannotSend("spend_destination", reason="spend_destination")
+        wanted = self._limit_asset(identity, wallet, asset)
+        row = policy.row_for(wanted)
+        if row is None:
+            self._log.record("wallet_send", identity.id, None, "spend_asset")
+            raise CannotSend("spend_asset", reason="spend_asset")
+        value = parse_decimal(amount)
+        extra = self._limit_remaining(identity, wallet, wanted, row)
+        if value is not None and row.max is not None and value > row.max:
+            self._log.record("wallet_send", identity.id, None, "spend_max")
+            raise CannotSend("spend_max", reason="spend_max", remaining=extra)
+        if value is None or row.reserve is None:
+            return
+        held = self._limit_balance(identity, wallet, wanted)
+        if held is None:
+            self._log.record("wallet_send", identity.id, None, "spend_reserve")
+            raise CannotSend("spend_reserve", reason="spend_reserve", remaining=extra)
+        if held - value < row.reserve:
+            self._log.record("wallet_send", identity.id, None, "spend_reserve")
+            raise CannotSend("spend_reserve", reason="spend_reserve", remaining=extra)
+
+    def _limit_asset(self, identity: Identity, wallet: WalletAccess, asset: str) -> str:
+        wanted = (asset or "").strip()
+        if wanted:
+            return wanted
+        try:
+            view = wallet.describe(identity.id)
+        except WalletCannotSend as exc:
+            reason = getattr(exc, "reason", None) or "cannot_send"
+            self._log.record("wallet_send", identity.id, None, reason)
+            raise CannotSend(_send_message(reason), reason=reason) from None
+        except WalletError as exc:
+            self._fail_wallet("wallet_send", identity.id, exc)
+        return str(view.get("asset") or "").strip()
+
+    def _limit_balance(
+        self, identity: Identity, wallet: WalletAccess, asset: str
+    ) -> Decimal | None:
+        try:
+            result = wallet.balance(identity.id, asset)
+        except (WalletCannotSend, WalletError):
+            return None
+        return parse_decimal(str(result.get("amount") or ""))
+
+    def _limit_remaining(
+        self,
+        identity: Identity,
+        wallet: WalletAccess,
+        asset: str,
+        row: AssetRule,
+    ) -> str | None:
+        if row.reserve is None:
+            if row.max is not None:
+                return canonical_amount(row.max)
+            return None
+        held = self._limit_balance(identity, wallet, asset)
+        if held is None:
+            return None
+        return canonical_amount(remaining_of(held, row.reserve))
+
+    def _fill_remaining(
+        self,
+        view: SpendLimitView,
+        identity: Identity,
+        wallet: WalletAccess,
+        policy: SpendLimit,
+    ) -> None:
+        default = self._limit_asset(identity, wallet, "")
+        if policy.assets is None:
+            self._fill_row_remaining(
+                view, identity, wallet, default, policy.row_for(default)
+            )
+            return
+        assets = view.get("assets")
+        if not isinstance(assets, dict):
+            return
+        for name, raw_row in list(assets.items()):
+            if not isinstance(raw_row, dict):
+                continue
+            row = policy.row_for(name)
+            self._fill_row_remaining(raw_row, identity, wallet, name, row)
+
+    def _fill_row_remaining(
+        self,
+        target: object,
+        identity: Identity,
+        wallet: WalletAccess,
+        asset: str,
+        row: AssetRule | None,
+    ) -> None:
+        if row is None or row.reserve is None or not isinstance(target, dict):
+            return
+        held = self._limit_balance(identity, wallet, asset)
+        if held is None:
+            return
+        target["balance"] = canonical_amount(held)
+        target["remaining"] = canonical_amount(remaining_of(held, row.reserve))
 
     def wallet_material_status(self, caller: BoundCaller) -> WalletMaterialStatus:
         identity = self._require_identity(caller, "wallet_material", None)

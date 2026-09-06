@@ -85,6 +85,23 @@ class WalletMaterialStatus(TypedDict):
     missing: str | None
 
 
+class SpendAssetLimitView(TypedDict, total=False):
+    max: str
+    reserve: str
+    balance: str
+    remaining: str
+
+
+class SpendLimitView(TypedDict, total=False):
+    limit: bool
+    max: str
+    reserve: str
+    to: list[str]
+    assets: dict[str, SpendAssetLimitView]
+    balance: str
+    remaining: str
+
+
 class IdentityView(TypedDict):
     id: str
     recipient: str

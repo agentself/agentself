@@ -78,6 +78,13 @@ and `poll_interval_seconds`. Consumers should ignore unknown keys.
 refuse a symlink even with `--force`. `wallet send --file PATH` is additive
 extra payment details interpreted by the bound wallet; success may include
 `details_sha256`. `wallet balance ASSET` is an additive named-asset query.
+`wallet limit` is an additive wallet verb under CLI schema 2. Missing
+limit leaves `wallet send` unlimited. Success may include `max`,
+`reserve`, `to`, `assets`, `balance`, and `remaining`. `show` and
+`diagnose` may include additive `limit`. Send refusals may use reasons
+`spend_max`, `spend_reserve`, `spend_asset`, `spend_destination`, and
+`spend_limit`, and may include additive `remaining`. Consumers should
+ignore unknown keys.
 
 `note` is a public CLI command group. Note values are deliberately
 non-secret and may appear in JSON output. The identity-local notes
