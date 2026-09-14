@@ -56,6 +56,8 @@ from agentself.internal.names import (
     EMAIL_CREDENTIAL_NAME,
     PROTECTED_SECRET_NAMES,
     WALLET_KEY_NAME,
+    canonical_secret_name,
+    is_protected_secret_name,
     is_reserved_secret_name,
     require_safe_token,
 )
@@ -212,6 +214,7 @@ class CustodyManager:
         value: str,
     ) -> bool:
         identity = self._require_identity(caller, "create", name)
+        name = canonical_secret_name(name, identity.wallet_material_names)
         if is_reserved_secret_name(name):
             self._refuse("create", identity.id, name)
         value = self._prepare_secret_value("create", identity.id, name, value)
@@ -236,6 +239,7 @@ class CustodyManager:
         name: str,
     ) -> str:
         identity = self._require_identity(caller, "get", name)
+        name = canonical_secret_name(name, identity.wallet_material_names)
         if is_reserved_secret_name(name):
             self._missing("get", identity.id, name)
         store = self._store_for(identity, "get", name)
@@ -257,6 +261,7 @@ class CustodyManager:
         unsafe: bool = False,
     ) -> None:
         identity = self._require_identity(caller, "update", name)
+        name = canonical_secret_name(name, identity.wallet_material_names)
         if is_reserved_secret_name(name):
             self._missing("update", identity.id, name)
         if name in self._protected_secret_names(identity, "update") and not unsafe:
@@ -291,7 +296,7 @@ class CustodyManager:
         caller: BoundCaller,
         name: str,
     ) -> bool:
-        return name in self.list(caller)
+        return canonical_secret_name(name) in self.list(caller)
 
     def delete(
         self,
@@ -299,6 +304,7 @@ class CustodyManager:
         name: str,
     ) -> None:
         identity = self._require_identity(caller, "delete", name)
+        name = canonical_secret_name(name, identity.wallet_material_names)
         if is_reserved_secret_name(name):
             self._missing("delete", identity.id, name)
         if name in self._protected_secret_names(identity, "delete"):
@@ -878,7 +884,7 @@ class CustodyManager:
                 continue
             persist_as = str(option.get("persist_as") or "").strip()
             key = persist_as or f"email.{self._email_backend}.{name}"
-            if is_reserved_secret_name(key) or key in PROTECTED_SECRET_NAMES:
+            if is_reserved_secret_name(key) or is_protected_secret_name(key):
                 self._refuse("email_connect", identity.id, key)
             try:
                 require_safe_token(key, "name")
@@ -1114,7 +1120,7 @@ class CustodyManager:
     def _prepare_secret_value(
         self, operation: str, identity_id: str, name: str, value: str
     ) -> str:
-        if name != WALLET_KEY_NAME:
+        if canonical_secret_name(name) != WALLET_KEY_NAME:
             return value
         parsed = parse_secp256k1_hex(value)
         if parsed is None:
@@ -1141,7 +1147,7 @@ class CustodyManager:
             require_safe_token(name, "wallet material name")
         except ValueError:
             self._refuse(operation, identity.id, name)
-        if name in PROTECTED_SECRET_NAMES or name in identity.wallet_material_names:
+        if is_protected_secret_name(name) or name in identity.wallet_material_names:
             return identity
         try:
             return self._identities.add_wallet_material_name(identity.id, name)

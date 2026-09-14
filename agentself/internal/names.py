@@ -1,4 +1,5 @@
 import re
+from collections.abc import Iterable
 
 _SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _WIN_DEVICES = frozenset(
@@ -21,7 +22,26 @@ PROTECTED_SECRET_NAMES = frozenset({WALLET_KEY_NAME})
 
 
 def is_reserved_secret_name(name: str) -> bool:
-    return name.startswith(INTERNAL_PREFIX)
+    return name.casefold().startswith(INTERNAL_PREFIX)
+
+
+def is_protected_secret_name(name: str, extra: Iterable[str] = ()) -> bool:
+    folded = name.casefold()
+    for item in (*PROTECTED_SECRET_NAMES, *extra):
+        if item.casefold() == folded:
+            return True
+    return False
+
+
+def canonical_secret_name(name: str, extra: Iterable[str] = ()) -> str:
+    folded = name.casefold()
+    for item in PROTECTED_SECRET_NAMES:
+        if item.casefold() == folded:
+            return item
+    for item in extra:
+        if item.casefold() == folded:
+            return item
+    return name
 
 
 def require_safe_token(value: str, label: str) -> str:
