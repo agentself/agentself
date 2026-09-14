@@ -32,6 +32,7 @@ _SOPS_FOREIGN_KEYS = (
     "AGE_SECRET_KEY",
     "SOPS_AGE_KEY_FILE",
     "SOPS_AGE_RECIPIENTS",
+    "SOPS_CONFIG",
     "SOPS_PGP_FP",
     "SOPS_KMS_ARN",
     "SOPS_GCP_KMS_IDS",
@@ -39,6 +40,11 @@ _SOPS_FOREIGN_KEYS = (
     "SOPS_VAULT_URIS",
     "SOPS_HUAWEICLOUD_KMS_IDS",
 )
+
+
+def _sops_cmd(*args: str) -> list[str]:
+    # --config os.devnull disables cwd .sops.yaml and SOPS_CONFIG discovery.
+    return ["sops", "--config", os.devnull, *args]
 
 
 def _sops_env(*, key_file: Path | None = None) -> dict[str, str]:
@@ -157,8 +163,7 @@ class SopsStoreAccess(StoreAccess):
                 os.fsync(handle.fileno())
             os.chmod(tmp_name, 0o600)
             proc = run_cmd(
-                [
-                    "sops",
+                _sops_cmd(
                     "--encrypt",
                     "--age",
                     recipient,
@@ -167,7 +172,7 @@ class SopsStoreAccess(StoreAccess):
                     "--output-type",
                     "binary",
                     tmp_name,
-                ],
+                ),
                 env=_sops_env(),
             )
             if proc.returncode != 0 or not proc.stdout:
@@ -180,15 +185,14 @@ class SopsStoreAccess(StoreAccess):
         key = self._key_file(identity_id)
         env = _sops_env(key_file=key)
         proc = run_cmd(
-            [
-                "sops",
+            _sops_cmd(
                 "--decrypt",
                 "--input-type",
                 "binary",
                 "--output-type",
                 "binary",
                 str(path),
-            ],
+            ),
             env=env,
         )
         if proc.returncode != 0:

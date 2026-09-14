@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- sops encrypt/decrypt ignore host `SOPS_CONFIG` and cwd `.sops.yaml`.
+
 ## 0.2.4 - 2026-09-04
 
 - `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a
