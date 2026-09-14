@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `backup` and `restore` refuse symlink nodes instead of recreating them.
+
 ## 0.2.4 - 2026-09-04
 
 - `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a

@@ -141,6 +141,53 @@ def test_copy_force_survives_dest_dir_rename_failure(
     assert json.loads(leftover_addr.stdout)["address"] != dest_addr
 
 
+def test_copy_refuses_file_symlink_without_touching_dest(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    (src / "config.json").write_text('{"format_version": 1}\n', encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret-from-outside", encoding="utf-8")
+    os.symlink(outside, src / "linked.txt")
+    dest.mkdir()
+    (dest / "config.json").write_text("keep", encoding="utf-8")
+    with pytest.raises(IdentityStateError, match="symlink"):
+        _copy_identity_dir(src, dest, force=True)
+    assert (dest / "config.json").read_text(encoding="utf-8") == "keep"
+    assert not (dest / "linked.txt").exists()
+    assert not dest.with_name(dest.name + ".agentself-staging").exists()
+
+
+def test_copy_refuses_directory_symlink(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    dest = tmp_path / "dest"
+    src.mkdir()
+    (src / "config.json").write_text('{"format_version": 1}\n', encoding="utf-8")
+    outside = tmp_path / "outside-dir"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("outside", encoding="utf-8")
+    os.symlink(outside, src / "notes", target_is_directory=True)
+    with pytest.raises(IdentityStateError, match="symlink"):
+        _copy_identity_dir(src, dest, force=False)
+    assert not dest.exists()
+    assert not dest.with_name(dest.name + ".agentself-staging").exists()
+
+
+def test_backup_refuses_symlink_in_identity(tmp_path: Path) -> None:
+    vault, env, addr = _init(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret-from-outside", encoding="utf-8")
+    os.symlink(outside, vault / "planted")
+    dest = tmp_path / "backup"
+    proc = run_cli(["--json", "backup", str(dest)], env)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "symlink" in json.loads(proc.stdout)["reason"]
+    assert not dest.exists()
+    shown = run_cli(["--json", "wallet", "address"], env)
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout)["address"] == addr
+
+
 def test_copy_does_not_require_lock_file_in_source(tmp_path: Path) -> None:
     src = tmp_path / "src"
     dest = tmp_path / "dest"
