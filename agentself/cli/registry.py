@@ -831,7 +831,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "Live backends move real funds. --test returns the send plan without "
             "broadcasting. --file is extra payment details interpreted by the bound "
             'wallet. A JSON object {"allow": true} grants TO pull permission when '
-            "the wallet supports it."
+            "the wallet supports it. Other file contents are destination-specific; "
+            "see agentself backends wallet."
         ),
         epilog="Examples:\n  agentself wallet send TO AMOUNT\n  agentself wallet send TO AMOUNT --file PATH\n  agentself wallet send TO AMOUNT --test",
     ),

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `agentself backends wallet` names how this backend interprets
+  `wallet send --file`: portable `{"allow": true}`, plus destination-specific
+  call data. Generic send help points there.
 - Protected `wallet.key` and reserved `internal.*` secret names match
   case-insensitively. `Wallet.key` is the same object as `wallet.key`.
 

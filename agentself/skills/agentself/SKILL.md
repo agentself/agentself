@@ -79,7 +79,8 @@ real funds. Use `wallet send TO AMOUNT --test` to return the send plan without
 broadcasting. `wallet send TO AMOUNT --file PATH` is for a spend that needs
 extra payment details; the bound wallet interprets the file. A JSON object
 `{"allow": true}` grants TO pull permission when the wallet supports it. Other
-file contents stay destination-specific. `wallet balance` reports the current
+file contents stay destination-specific; this wallet's encoding is in
+`agentself backends wallet`. `wallet balance` reports the current
 amount. `wallet balance ASSET` reports a named asset. It does not identify
 who paid or when.
 
