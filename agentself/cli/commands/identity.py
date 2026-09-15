@@ -664,8 +664,14 @@ def _backup_restore(vault: Path, args) -> CliOutcome:
 
 
 def _ignore_identity_junk(directory: str, names: list[str]) -> set[str]:
-    del directory
-    return {name for name in names if name.endswith(".tmp") or name == LOCK_NAME}
+    skipped = {name for name in names if name.endswith(".tmp") or name == LOCK_NAME}
+    for name in names:
+        if name in skipped:
+            continue
+        path = os.path.join(directory, name)
+        if os.path.islink(path):
+            raise IdentityStateError(f"refusing to copy symlink {path}")
+    return skipped
 
 
 def _copy_identity_file(src: str, dest: str, *, follow_symlinks: bool = True) -> str:
@@ -675,10 +681,7 @@ def _copy_identity_file(src: str, dest: str, *, follow_symlinks: bool = True) ->
     except OSError:
         return dest
     if stat.S_ISLNK(mode):
-        if os.path.lexists(dest):
-            os.unlink(dest)
-        os.symlink(os.readlink(src), dest)
-        return dest
+        raise IdentityStateError(f"refusing to copy symlink {src}")
     if not stat.S_ISREG(mode):
         return dest
     shutil.copy2(src, dest, follow_symlinks=False)
@@ -735,6 +738,8 @@ def _replace_tree_contents(staging: Path, dest: Path) -> None:
 
 
 def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
+    if src.is_symlink():
+        raise IdentityStateError(f"refusing to copy symlink {src}")
     if not src.is_dir():
         raise IdentityStateError("identity directory is missing")
     try:
@@ -750,6 +755,8 @@ def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
         raise IdentityStateError("destination contains the identity directory")
     if not (src / "config.json").is_file():
         raise IdentityStateError("identity directory is missing")
+    if dest.is_symlink():
+        raise IdentityStateError(f"refusing to copy symlink {dest}")
     if dest.exists():
         if dest.is_file():
             raise IdentityStateError("destination exists")
@@ -775,7 +782,7 @@ def _copy_identity_dir(src: Path, dest: Path, *, force: bool) -> None:
             staging,
             copy_function=_copy_identity_file,
             ignore=_ignore_identity_junk,
-            symlinks=True,
+            symlinks=False,
         )
         _install_staged(staging, dest)
     except Exception:
