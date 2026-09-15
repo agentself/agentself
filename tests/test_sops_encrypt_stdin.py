@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -33,6 +34,7 @@ def test_create_encrypts_from_tempfile_then_unlinks(tmp_path, monkeypatch):
                 cmd, 0, stdout=(FAKE_RECIPIENT + "\n").encode(), stderr=b""
             )
         if cmd[0] == "sops":
+            assert cmd[1:3] == ["--config", os.devnull]
             assert "/dev/stdin" not in cmd
             assert "-i" not in cmd
             assert stdin is None
@@ -80,7 +82,9 @@ def test_encrypt_strips_parent_sops_key_and_recipient_env(tmp_path, monkeypatch)
     monkeypatch.setenv("SOPS_AGE_KEY", "AGE-SECRET-KEY-1PARENT")
     monkeypatch.setenv("AGE_SECRET_KEY", "AGE-SECRET-KEY-1PARENTAGE")
     monkeypatch.setenv("SOPS_AGE_KEY_FILE", "/tmp/not-the-identity-key")
+    monkeypatch.setenv("SOPS_CONFIG", "/tmp/attacker.sops.yaml")
     seen_env: list[dict | None] = []
+    seen_cmds: list[list[str]] = []
 
     def fake_run_cmd(argv, *, env=None, stdin=None, timeout=30):
         cmd = list(argv)
@@ -89,19 +93,27 @@ def test_encrypt_strips_parent_sops_key_and_recipient_env(tmp_path, monkeypatch)
                 cmd, 0, stdout=(FAKE_RECIPIENT + "\n").encode(), stderr=b""
             )
         if cmd[0] == "sops":
+            seen_cmds.append(cmd)
             seen_env.append(None if env is None else dict(env))
             return subprocess.CompletedProcess(cmd, 0, stdout=CIPHERTEXT, stderr=b"")
         raise AssertionError(f"unexpected command {cmd}")
 
     monkeypatch.setattr("agentself.backends.store.sops.run_cmd", fake_run_cmd)
-    SopsStoreAccess(vault, MemoryLog()).create(identity_id, "token", "plain")
+    store = SopsStoreAccess(vault, MemoryLog())
+    store.create(identity_id, "token", "plain")
+    store.get(identity_id, "token")
     assert seen_env
+    assert seen_cmds
     for env in seen_env:
         assert env is not None
         assert "SOPS_AGE_RECIPIENTS" not in env
         assert "SOPS_AGE_KEY" not in env
         assert "AGE_SECRET_KEY" not in env
+        assert "SOPS_CONFIG" not in env
         assert env.get("SOPS_AGE_KEY_FILE") != "/tmp/not-the-identity-key"
+    for cmd in seen_cmds:
+        assert cmd[1:3] == ["--config", os.devnull]
+        assert cmd[-1] not in {"--config", os.devnull}
 
 
 def test_create_failed_does_not_leak_secret_or_leave_plaintext(tmp_path, monkeypatch):

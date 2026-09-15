@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- sops encrypt/decrypt ignore host `SOPS_CONFIG` and cwd `.sops.yaml`.
 - `agentself backends wallet` names how this backend interprets
   `wallet send --file`: portable `{"allow": true}`, plus destination-specific
   call data. Generic send help points there.
