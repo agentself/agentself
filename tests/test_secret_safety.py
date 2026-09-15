@@ -130,6 +130,65 @@ def test_secret_plaintext_json_includes_value(tmp_path: Path) -> None:
     assert raw.stdout == "alpha"
 
 
+def test_wallet_key_protection_is_case_insensitive(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    refused = run_cli(["--json", "secret", "get", "Wallet.key"], env)
+    assert refused.returncode == 2
+    payload = json.loads(refused.stdout)
+    assert payload["error"] == "refused"
+    assert "protected" in payload["reason"]
+    exported = run_cli(["--json", "secret", "get", "Wallet.key", "--unsafe"], env)
+    assert exported.returncode == 0
+    got = json.loads(exported.stdout)
+    assert got["name"] == "wallet.key"
+    assert got["value"].startswith("0x")
+    updated = run_cli(
+        [
+            "--json",
+            "secret",
+            "update",
+            "Wallet.key",
+            "--file",
+            value_file(tmp_path, "0x" + "ab" * 32, "alias-key.txt"),
+        ],
+        env,
+    )
+    assert updated.returncode == 2, updated.stdout + updated.stderr
+    assert "protected" in json.loads(updated.stdout)["reason"]
+    created = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "Wallet.key",
+            "--file",
+            value_file(tmp_path, "0x" + "cd" * 32, "alias-create.txt"),
+        ],
+        env,
+    )
+    assert created.returncode == 2
+    assert json.loads(created.stdout)["error"] == "refused"
+
+
+def test_reserved_secret_names_are_case_insensitive(tmp_path: Path) -> None:
+    env = _init(tmp_path)
+    proc = run_cli(
+        [
+            "--json",
+            "secret",
+            "create",
+            "Internal.setup.demo",
+            "--file",
+            value_file(tmp_path, "x"),
+        ],
+        env,
+    )
+    assert proc.returncode == 2
+    assert json.loads(proc.stdout)["error"] == "refused"
+    listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
+    assert all(not item.casefold().startswith("internal.") for item in listed["names"])
+
+
 def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
     env = _init(tmp_path)
     proc = run_cli(
@@ -147,6 +206,22 @@ def test_reserved_secret_names_are_hidden(tmp_path: Path) -> None:
     assert json.loads(proc.stdout)["error"] == "refused"
     listed = json.loads(run_cli(["--json", "secret", "list"], env).stdout)
     assert all(not item.startswith("internal.") for item in listed["names"])
+
+
+def test_client_update_wallet_key_alias_requires_unsafe(app, monkeypatch) -> None:
+    init_identity(app, monkeypatch)
+    app.client.wallet_address()
+    current = app.client.get("wallet.key")
+    replacement = "0x" + "ab" * 32
+    with pytest.raises(ProtectedName):
+        app.client.update("Wallet.key", replacement)
+    assert app.client.get("Wallet.key") == current
+    store_updates = [
+        call
+        for call in app.stores.calls
+        if call[0] == "update" and call[2] in {"wallet.key", "Wallet.key"}
+    ]
+    assert store_updates == []
 
 
 def test_client_update_wallet_key_requires_unsafe(app, monkeypatch) -> None:

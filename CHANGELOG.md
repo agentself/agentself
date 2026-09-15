@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Protected `wallet.key` and reserved `internal.*` secret names match
+  case-insensitively. `Wallet.key` is the same object as `wallet.key`.
+
 ## 0.2.4 - 2026-09-04
 
 - `secret run --env VAR=NAME -- COMMAND` decrypts named secrets into a

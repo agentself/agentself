@@ -21,7 +21,11 @@ from agentself.cli.runtime import (
 )
 from agentself.internal.custody.errors import ProtectedName, Refused
 from agentself.internal.files import run_captured
-from agentself.internal.names import WALLET_KEY_NAME
+from agentself.internal.names import (
+    WALLET_KEY_NAME,
+    canonical_secret_name,
+    is_protected_secret_name,
+)
 from agentself.local import redact_secrets
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -50,7 +54,8 @@ def create_secret(args, vault: Path) -> CliOutcome:
     if err is not None:
         return secret_value_error(args, err)
     assert value is not None
-    if args.name == WALLET_KEY_NAME and not getattr(args, "unsafe", False):
+    name = canonical_secret_name(args.name)
+    if is_protected_secret_name(name) and not getattr(args, "unsafe", False):
         return fail(
             args,
             2,
@@ -60,7 +65,7 @@ def create_secret(args, vault: Path) -> CliOutcome:
         )
     access = client(vault)
     try:
-        unchanged = access.create(args.name, value)
+        unchanged = access.create(name, value)
     except Refused:
         return fail(
             args,
@@ -75,7 +80,7 @@ def create_secret(args, vault: Path) -> CliOutcome:
             "refused",
             nxt="agentself secret update NAME",
         )
-    payload: dict[str, object] = {"name": args.name}
+    payload: dict[str, object] = {"name": name}
     return CliSuccess(payload)
 
 
@@ -86,9 +91,9 @@ def get_secret(args, vault: Path) -> CliOutcome:
     if invalid is not None:
         return invalid
     access = client(vault)
-    name = args.name
-    path = (args.to_file or "").strip()
     protected_names = frozenset(access.protected_secret_names())
+    name = canonical_secret_name(args.name, protected_names)
+    path = (args.to_file or "").strip()
     as_raw = bool(getattr(args, "as_raw", False))
     if name in protected_names and not args.unsafe and not args.meta:
         return fail(
@@ -132,7 +137,9 @@ def run_secret(args, vault: Path) -> CliOutcome:
     access = client(vault)
     protected_names = frozenset(access.protected_secret_names())
     unsafe = bool(getattr(args, "unsafe", False))
-    for _var, name in bindings:
+    resolved: list[tuple[str, str]] = []
+    for var, name in bindings:
+        name = canonical_secret_name(name, protected_names)
         if name in protected_names and not unsafe:
             return fail(
                 args,
@@ -141,11 +148,12 @@ def run_secret(args, vault: Path) -> CliOutcome:
                 f"{name} is protected",
                 nxt="agentself secret run --env VAR=NAME --unsafe -- COMMAND",
             )
+        resolved.append((var, name))
     child_env = os.environ.copy()
     values: list[str] = []
     env_names: list[str] = []
     secret_names: list[str] = []
-    for var, name in bindings:
+    for var, name in resolved:
         value = access.get(name)
         child_env[var] = value
         values.append(value)
@@ -178,23 +186,26 @@ def update_secret(args, vault: Path) -> CliOutcome:
     assert value is not None
     access = client(vault)
     protected_names = frozenset(access.protected_secret_names())
-    if args.name in protected_names and not getattr(args, "unsafe", False):
+    name = canonical_secret_name(args.name, protected_names)
+    if name in protected_names and not getattr(args, "unsafe", False):
         return fail(
             args,
             2,
             "refused",
-            f"{args.name} is protected",
+            f"{name} is protected",
             nxt="agentself secret update NAME --unsafe",
         )
-    access.update(args.name, value, unsafe=bool(getattr(args, "unsafe", False)))
-    return CliSuccess({"name": args.name})
+    access.update(name, value, unsafe=bool(getattr(args, "unsafe", False)))
+    return CliSuccess({"name": name})
 
 
 def list_secrets(args, vault: Path) -> CliOutcome:
     access = client(vault)
     names = access.list()
     protected_names = frozenset(access.protected_secret_names())
-    protected = [name for name in names if name in protected_names]
+    protected = [
+        name for name in names if is_protected_secret_name(name, protected_names)
+    ]
     return CliSuccess({"names": names, "protected": protected})
 
 
@@ -204,8 +215,9 @@ def delete_secret(args, vault: Path) -> CliOutcome:
     )
     if invalid is not None:
         return invalid
-    client(vault).delete(args.name)
-    return CliSuccess({"name": args.name})
+    name = canonical_secret_name(args.name)
+    client(vault).delete(name)
+    return CliSuccess({"name": name})
 
 
 def secret_exists(args, vault: Path) -> CliOutcome:
@@ -214,16 +226,17 @@ def secret_exists(args, vault: Path) -> CliOutcome:
     )
     if invalid is not None:
         return invalid
-    found = client(vault).exists(args.name)
+    name = canonical_secret_name(args.name)
+    found = client(vault).exists(name)
     if not found:
         return fail(
             args,
             3,
             "missing",
             nxt="agentself secret list",
-            extra={"name": args.name, "exists": False},
+            extra={"name": name, "exists": False},
         )
-    return CliSuccess({"name": args.name, "exists": True})
+    return CliSuccess({"name": name, "exists": True})
 
 
 def _child_argv(args) -> list[str]:
@@ -325,7 +338,8 @@ def _secret_bulk_items(args) -> tuple[list[tuple[str, str]], str | None]:
 
 
 def _secret_create_one(access, name: str, value: str, *, unsafe: bool) -> str:
-    if name == WALLET_KEY_NAME and not unsafe:
+    name = canonical_secret_name(name)
+    if is_protected_secret_name(name) and not unsafe:
         return "refused"
     try:
         unchanged = access.create(name, value)
