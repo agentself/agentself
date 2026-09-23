@@ -174,6 +174,7 @@ def test_pull_requests_skip_macos_and_second_windows() -> None:
     assert "if: github.event_name != 'pull_request'" in jobs["test-full"]
     assert "timeout-minutes:" in jobs["lint"]
     assert "timeout-minutes:" in jobs["test"]
-    assert "cache: pip" in jobs["test"]
+    assert "enable-cache: true" in jobs["test"]
+    assert 'version: "0.11.14"' in jobs["test"]
     assert "retention-days: 7" in jobs["artifact"]
     assert "test-full" not in jobs["artifact"]

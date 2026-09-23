@@ -89,6 +89,7 @@ from agentself.internal.types import (
     MailboxMessage,
     MailboxView,
     WalletAuthorization,
+    WalletAuthorizationResult,
     WalletBalance,
     WalletMaterialStatus,
     WalletSendResult,
@@ -702,6 +703,40 @@ class CustodyManager:
         self._log.record("wallet_authorize", identity.id, None, "ok")
         return signature
 
+    def wallet_authorize_result(
+        self,
+        caller: BoundCaller,
+        message: str,
+    ) -> WalletAuthorizationResult:
+        identity, wallet = self._wallet_bound(caller, "wallet_authorize")
+        try:
+            signature = wallet.authorize(identity.id, message)
+        except WalletCannotAuthorize:
+            self._log.record("wallet_authorize", identity.id, None, "cannot_authorize")
+            raise CannotAuthorize() from None
+        except WalletError as exc:
+            self._fail_wallet("wallet_authorize", identity.id, exc)
+        try:
+            described = wallet.describe(identity.id)
+        except WalletError as exc:
+            self._fail_wallet("wallet_authorize", identity.id, exc)
+        try:
+            checked = wallet.verify(identity.id, message, signature)
+        except WalletError as exc:
+            self._fail_wallet("wallet_authorize", identity.id, exc)
+        picked = _pick(checked, ("valid", "address", "scheme"))
+        address = str(picked.get("address") or described.get("address") or "")
+        scheme = str(picked.get("scheme") or described.get("scheme") or "")
+        network = str(described.get("chain") or "")
+        self._log.record("wallet_authorize", identity.id, None, "ok")
+        return {
+            "authorization": signature,
+            "address": address,
+            "scheme": scheme,
+            "network": network,
+            "valid": bool(picked.get("valid")),
+        }
+
     def wallet_verify(
         self,
         caller: BoundCaller,
@@ -790,12 +825,7 @@ class CustodyManager:
 
     def identity(self, caller: BoundCaller) -> IdentityView:
         identity = self._require_identity(caller, "identity", None)
-        mailbox = self._mailbox_for(identity, "identity")
-        address, token, _sources = self._resolve_email_inputs(identity, {}, "identity")
-        try:
-            email = mailbox.describe(identity.id, credential=token, address=address)
-        except MailboxError as exc:
-            self._fail_mailbox("identity", identity.id, exc)
+        email = self._described_email(identity, "identity")
         wallet = self._ready_wallet(identity, "identity")
         try:
             wallet_view = wallet.describe(identity.id)
@@ -805,11 +835,26 @@ class CustodyManager:
         return {
             "id": identity.id,
             "recipient": identity.recipient,
-            "email": _email_view(email),
+            "email": email,
             "wallet": _wallet_view(wallet_view),
             "email_backend": self._email_backend,
             "wallet_backend": self._wallet_backend,
         }
+
+    def email_status(self, caller: BoundCaller) -> MailboxView:
+        identity = self._require_identity(caller, "email_status", None)
+        email = self._described_email(identity, "email_status")
+        self._log.record("email_status", identity.id, None, "ok")
+        return email
+
+    def _described_email(self, identity: Identity, operation: str) -> MailboxView:
+        mailbox = self._mailbox_for(identity, operation)
+        address, token, _sources = self._resolve_email_inputs(identity, {}, operation)
+        try:
+            email = mailbox.describe(identity.id, credential=token, address=address)
+        except MailboxError as exc:
+            self._fail_mailbox(operation, identity.id, exc)
+        return _email_view(email)
 
     def _resolve_email_inputs(
         self,

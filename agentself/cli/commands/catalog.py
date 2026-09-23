@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agentself.cli.outcomes import CliOutcome, CliSuccess
-from agentself.cli.registry import command_verbs, commands_payload
+from agentself.cli.registry import command_verbs, commands_payload, lookup_command
 from agentself.cli.runtime import client, fail
 from agentself.host import CHANNELS, backends_payload, unknown_bind
 from agentself.local import config_path
@@ -13,7 +13,7 @@ def _email_catalog_next(vault: Path) -> str | None:
     if not config_path(vault).is_file():
         return None
     try:
-        view = client(vault).identity().get("email")
+        view = client(vault).email_status()
     except Exception:
         return None
     email = view if isinstance(view, dict) else {}
@@ -22,7 +22,14 @@ def _email_catalog_next(vault: Path) -> str | None:
     return None
 
 
-def list_commands(_args, vault: Path) -> CliOutcome:
+def list_commands(args, vault: Path) -> CliOutcome:
+    group = (getattr(args, "group", None) or "").strip()
+    verb = (getattr(args, "verb", None) or "").strip()
+    if group or verb:
+        found = lookup_command(group, verb)
+        if found.payload is None:
+            return fail(args, 2, "refused", found.reason, nxt=found.next_command)
+        return CliSuccess(found.payload)
     return CliSuccess(commands_payload(email_next=_email_catalog_next(vault)))
 
 

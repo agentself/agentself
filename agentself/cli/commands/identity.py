@@ -62,10 +62,11 @@ from agentself.local import (
     load_config,
     merge_config,
     occupied_identity_ids,
+    read_config,
     redact_secrets,
     require_supported_formats,
     resolve_age_key_file,
-    resolve_setting,
+    setting_from,
 )
 
 _SKILL_TARGETS = {
@@ -87,11 +88,12 @@ def init_identity(args, vault: Path) -> CliOutcome:
         if refused is not None:
             return refused
         backends: dict[str, str] = {}
+        snapshot = read_config(vault)
         for channel, spec in CHANNELS.items():
             if spec.env is None:
                 continue
-            value = resolve_setting(
-                vault,
+            value = setting_from(
+                snapshot,
                 spec.config_key or f"{channel}_backend",
                 spec.env or "",
                 spec.default,
@@ -121,11 +123,12 @@ def init_identity(args, vault: Path) -> CliOutcome:
             email_backend=email_backend,
             wallet_backend=wallet_backend,
         )
-        access.init(store)
-        sealed = _seal_init_wallet_key(access, args)
-        if sealed is not None:
-            return sealed
-        addr = access.wallet_address()
+        with access.operation():
+            access.init(store)
+            sealed = _seal_init_wallet_key(access, args)
+            if sealed is not None:
+                return sealed
+            addr = access.wallet_address()
         merge_config(vault, {**identity_fields, **backend_fields})
         return CliSuccess(
             {
@@ -487,35 +490,37 @@ def _diagnose_identity(
         problems.append((PASS_TOOLS_REASON, PASS_TOOLS_NEXT))
     if problems:
         return problems, ready
+    access = client(vault)
     try:
-        access = client(vault)
-        names = access.list()
-        ready["email"] = all(
-            name in names and bool(str(access.get(name) or "").strip())
-            for name in (EMAIL_ADDRESS_NAME, EMAIL_CREDENTIAL_NAME)
-        )
+        with access.operation():
+            try:
+                names = access.list()
+                ready["email"] = all(
+                    name in names and bool(str(access.get(name) or "").strip())
+                    for name in (EMAIL_ADDRESS_NAME, EMAIL_CREDENTIAL_NAME)
+                )
+            except MissingSecret:
+                ready["email"] = False
+            except UnknownBind as exc:
+                problems.append((str(exc), f"agentself backends {exc.channel}"))
+                return problems, ready
+            except StoreFailure as exc:
+                problems.append((store_reason(exc), "agentself secret list"))
+                return problems, ready
+            except Exception:
+                problems.append(("identity is not usable", init_next(args)))
+                return problems, ready
+            ready["store"] = True
+            try:
+                status = access.wallet_material_status()
+            except StoreFailure as exc:
+                problems.append((store_reason(exc), "agentself secret list"))
+                return problems, ready
+            except Exception:
+                problems.append(("identity is not usable", init_next(args)))
+                return problems, ready
     except UnboundCaller:
         problems.append(("age key file is not usable", init_next(args)))
-        return problems, ready
-    except MissingSecret:
-        ready["email"] = False
-    except UnknownBind as exc:
-        problems.append((str(exc), f"agentself backends {exc.channel}"))
-        return problems, ready
-    except StoreFailure as exc:
-        problems.append((store_reason(exc), "agentself secret list"))
-        return problems, ready
-    except Exception:
-        problems.append(("identity is not usable", init_next(args)))
-        return problems, ready
-    ready["store"] = True
-    try:
-        status = access.wallet_material_status()
-    except StoreFailure as exc:
-        problems.append((store_reason(exc), "agentself secret list"))
-        return problems, ready
-    except Exception:
-        problems.append(("identity is not usable", init_next(args)))
         return problems, ready
     if not status.get("ready"):
         missing = str(status.get("missing") or "wallet material")

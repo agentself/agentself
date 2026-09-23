@@ -23,10 +23,8 @@ from agentself.internal.log import NullLog, StreamLog
 from agentself.internal.names import require_safe_token
 from agentself.local import (
     IdentityStateError,
-    bind_local,
     config_path,
     load_config,
-    mail_domain,
     redact_secrets,
 )
 
@@ -185,13 +183,7 @@ def _compose():
 
 
 def client(vault: Path, **compose_kw):
-    return _compose()(
-        vault,
-        log=cli_log(),
-        mail_domain=mail_domain(vault),
-        bind=lambda: bind_local(vault),
-        **compose_kw,
-    )
+    return _compose()(vault, log=cli_log(), **compose_kw)
 
 
 def runtime_paths() -> dict[str, str]:

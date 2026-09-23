@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Protocol
 
 from agentself.bind import bind_from_env
@@ -13,11 +15,14 @@ from agentself.internal.types import (
     Identity,
     IdentityView,
     MailboxMessage,
+    MailboxView,
     WalletAuthorization,
+    WalletAuthorizationResult,
     WalletBalance,
     WalletMaterialStatus,
     WalletSendResult,
 )
+from agentself.local import ConfigSnapshot, bind_local
 
 
 class CustodyManager(Protocol):
@@ -108,6 +113,10 @@ class CustodyManager(Protocol):
 
     def wallet_authorize(self, caller: BoundCaller, message: str) -> str: ...
 
+    def wallet_authorize_result(
+        self, caller: BoundCaller, message: str
+    ) -> WalletAuthorizationResult: ...
+
     def wallet_verify(
         self,
         caller: BoundCaller,
@@ -131,6 +140,8 @@ class CustodyManager(Protocol):
 
     def identity(self, caller: BoundCaller) -> IdentityView: ...
 
+    def email_status(self, caller: BoundCaller) -> MailboxView: ...
+
 
 class Client:
     def __init__(
@@ -138,10 +149,37 @@ class Client:
         manager: CustodyManager,
         log: Log,
         bind: Callable[[], BoundCaller] | None = None,
+        *,
+        vault: Path | None = None,
+        snapshot: ConfigSnapshot | None = None,
     ) -> None:
         self._manager = manager
         self._log = log
-        self._bind = bind or bind_from_env
+        self._bind = bind
+        self._vault = vault
+        # First operation reuses the construction snapshot. Later operations read again.
+        self._snapshot_pending = snapshot if bind is None else None
+        self._held: BoundCaller | None = None
+        self._hold_depth = 0
+
+    @contextmanager
+    def operation(self) -> Iterator[Client]:
+        """Bind the caller once for the enclosed calls, then drop that binding."""
+
+        if self._hold_depth:
+            self._hold_depth += 1
+            try:
+                yield self
+            finally:
+                self._hold_depth -= 1
+            return
+        self._held = self._resolve_fresh()
+        self._hold_depth = 1
+        try:
+            yield self
+        finally:
+            self._hold_depth = 0
+            self._held = None
 
     def init(self, store_binding: str = "sops") -> dict[str, str]:
         caller = self._require_caller()
@@ -272,6 +310,10 @@ class Client:
         caller = self._require_caller()
         return self._manager.wallet_authorize(caller, message)
 
+    def wallet_authorize_result(self, message: str) -> WalletAuthorizationResult:
+        caller = self._require_caller()
+        return self._manager.wallet_authorize_result(caller, message)
+
     def wallet_verify(self, message: str, authorization: str) -> WalletAuthorization:
         caller = self._require_caller()
         return self._manager.wallet_verify(caller, message, authorization)
@@ -302,9 +344,27 @@ class Client:
         caller = self._require_caller()
         return self._manager.identity(caller)
 
+    def email_status(self) -> MailboxView:
+        caller = self._require_caller()
+        return self._manager.email_status(caller)
+
     def _require_caller(self) -> BoundCaller:
+        if self._held is not None:
+            return self._held
+        return self._resolve_fresh()
+
+    def _resolve_fresh(self) -> BoundCaller:
         try:
-            return self._bind()
+            if self._bind is not None:
+                return self._bind()
+            if self._vault is not None and self._snapshot_pending is not None:
+                snapshot = self._snapshot_pending
+                caller = bind_local(self._vault, snapshot)
+                self._snapshot_pending = None
+                return caller
+            if self._vault is not None:
+                return bind_local(self._vault)
+            return bind_from_env()
         except UnboundCaller:
             self._log.record("bind", None, None, "unbound")
             raise

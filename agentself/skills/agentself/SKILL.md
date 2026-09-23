@@ -45,8 +45,17 @@ Use `--raw` only when a caller needs exact bytes from `wallet address`,
 `wallet show`, `wallet authorize`, `secret get NAME`, `note get NAME`, or
 `email receive REF`. Other `--raw` uses return a JSON refusal with exit code 2.
 
-When a flag or next step is unclear, run `agentself commands` or open the
-matching reference below. `commands` includes param names, types, and required flags. Failures keep string `next` and add `_next` when that next
+When a flag or next step is unclear, ask for the one command you need:
+
+```bash
+agentself commands wallet
+agentself commands wallet authorize
+```
+
+Use plain `agentself commands` only when you need the whole catalog. A targeted
+schema includes parameter help, types, required inputs, choices, repeats,
+alternatives, conflicts, constraints, and the global flags that apply. It does
+not need an initialized identity. `commands` includes param names, types, and required flags. Failures keep string `next` and add `_next` when that next
 is an `agentself` command. Run `agentself backends CHANNEL BACKEND` when you
 need backend setup options.
 

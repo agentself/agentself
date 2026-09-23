@@ -79,12 +79,14 @@ external step a person may need to perform; the CLI never solicits input.
 | Wallet | `wallet show`, `address`, `balance`, `authorize`, `verify`, `send` |
 | Email | `email connect`, `show`, `send`, `receive`, `list`, `find`, `mark` |
 | Backends | `backends [CHANNEL [BACKEND]]` |
-| Commands | `commands` |
+| Commands | `commands [GROUP [VERB]]` |
 | Recovery | `backup`, `restore` |
 | Setup | `install --tools`, `install --skills` |
 
 `agentself commands` is the machine catalog: featured verbs, params, and
-types. Failures keep string `next` and add `_next` when that next is an
+types. `agentself commands wallet` and `agentself commands wallet authorize`
+return one group or verb, including help, conflicts, and input alternatives,
+without reading an identity. Failures keep string `next` and add `_next` when that next is an
 `agentself` command (`command`, optional `until`, optional
 `poll_interval_seconds`). Host actions such as `fund ETH` stay string-only.
 Use `--help` for prose:
@@ -261,7 +263,7 @@ provider-specific CLI verbs. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ```bash
 git clone https://github.com/agentself/agentself
 cd agentself
-uv sync
+uv sync --locked
 uv run pytest
 uv run ruff check .
 uv run mypy agentself

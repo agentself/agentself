@@ -52,17 +52,14 @@ def authorize_wallet(args, vault: Path) -> CliOutcome:
             nxt="agentself wallet authorize --help",
         )
     access = client(vault)
-    token = access.wallet_authorize(message)
     if getattr(args, "as_raw", False):
-        return CliRaw(token)
-    addr = access.wallet_address()
-    view = access.identity().get("wallet")
-    wallet = view if isinstance(view, dict) else {}
-    checked = access.wallet_verify(message, token)
+        return CliRaw(access.wallet_authorize(message))
+    result = access.wallet_authorize_result(message)
+    token = result["authorization"]
     payload: dict[str, object] = {
-        "address": addr,
-        "scheme": str(checked.get("scheme") or wallet.get("scheme") or ""),
-        "network": str(wallet.get("chain") or ""),
+        "address": result["address"],
+        "scheme": result["scheme"],
+        "network": result["network"],
         "message_sha256": sha256_text(message),
     }
     if out_file:

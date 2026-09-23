@@ -42,3 +42,28 @@ and `workflow_dispatch`. GitHub bills macOS minutes at 10x Linux and Windows at
 
 A new push to an open pull request cancels the previous run. To run the full
 matrix on a branch before merge, use workflow_dispatch on that ref.
+
+## Dependencies
+
+Runtime dependencies in `pyproject.toml` stay ranges. `uv.lock` pins the
+development, lint, and build tools used in this repository and in CI. The lock
+is not copied into wheel metadata.
+
+CI installs uv 0.11.14 and runs `uv lock --check` plus `uv sync --locked`.
+Generate or refresh the lock with that uv version:
+
+```text
+uv lock
+uv lock --upgrade
+uv lock --upgrade-package eth-account
+```
+
+`uv lock` updates the lock after a range change. `uv lock --upgrade` moves
+packages inside their ranges. CI fails when `pyproject.toml` and `uv.lock`
+disagree instead of resolving newer releases on its own.
+
+Locked CI covers one resolved set on the existing OS and Python matrix. It
+does not prove every version inside a published range. `eth-account` remains
+`>=0.13.7,<0.15` for installers. The wheel acceptance job installs that wheel
+with pip in a clean environment, so it resolves the published range rather
+than the lockfile.

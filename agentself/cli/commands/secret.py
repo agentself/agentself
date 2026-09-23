@@ -91,19 +91,20 @@ def get_secret(args, vault: Path) -> CliOutcome:
     if invalid is not None:
         return invalid
     access = client(vault)
-    protected_names = frozenset(access.protected_secret_names())
-    name = canonical_secret_name(args.name, protected_names)
-    path = (args.to_file or "").strip()
-    as_raw = bool(getattr(args, "as_raw", False))
-    if name in protected_names and not args.unsafe and not args.meta:
-        return fail(
-            args,
-            2,
-            "refused",
-            f"{name} is protected",
-            nxt="agentself secret get NAME --unsafe",
-        )
-    value = access.get(name)
+    with access.operation():
+        protected_names = frozenset(access.protected_secret_names())
+        name = canonical_secret_name(args.name, protected_names)
+        path = (args.to_file or "").strip()
+        as_raw = bool(getattr(args, "as_raw", False))
+        if name in protected_names and not args.unsafe and not args.meta:
+            return fail(
+                args,
+                2,
+                "refused",
+                f"{name} is protected",
+                nxt="agentself secret get NAME --unsafe",
+            )
+        value = access.get(name)
     meta = value_meta(value)
     if args.meta:
         return CliSuccess({"name": name, **meta, "protected": name in protected_names})
@@ -135,30 +136,31 @@ def run_secret(args, vault: Path) -> CliOutcome:
     if not child:
         return fail(args, 2, "refused", "need a command", nxt=_RUN_HELP)
     access = client(vault)
-    protected_names = frozenset(access.protected_secret_names())
-    unsafe = bool(getattr(args, "unsafe", False))
-    resolved: list[tuple[str, str]] = []
-    for var, name in bindings:
-        name = canonical_secret_name(name, protected_names)
-        if name in protected_names and not unsafe:
-            return fail(
-                args,
-                2,
-                "refused",
-                f"{name} is protected",
-                nxt="agentself secret run --env VAR=NAME --unsafe -- COMMAND",
-            )
-        resolved.append((var, name))
-    child_env = os.environ.copy()
-    values: list[str] = []
-    env_names: list[str] = []
-    secret_names: list[str] = []
-    for var, name in resolved:
-        value = access.get(name)
-        child_env[var] = value
-        values.append(value)
-        env_names.append(var)
-        secret_names.append(name)
+    with access.operation():
+        protected_names = frozenset(access.protected_secret_names())
+        unsafe = bool(getattr(args, "unsafe", False))
+        resolved: list[tuple[str, str]] = []
+        for var, name in bindings:
+            name = canonical_secret_name(name, protected_names)
+            if name in protected_names and not unsafe:
+                return fail(
+                    args,
+                    2,
+                    "refused",
+                    f"{name} is protected",
+                    nxt="agentself secret run --env VAR=NAME --unsafe -- COMMAND",
+                )
+            resolved.append((var, name))
+        child_env = os.environ.copy()
+        values: list[str] = []
+        env_names: list[str] = []
+        secret_names: list[str] = []
+        for var, name in resolved:
+            value = access.get(name)
+            child_env[var] = value
+            values.append(value)
+            env_names.append(var)
+            secret_names.append(name)
     try:
         exit_code, stdout, stderr = run_captured(child, env=child_env)
     except OSError:
@@ -185,24 +187,26 @@ def update_secret(args, vault: Path) -> CliOutcome:
         return secret_value_error(args, err)
     assert value is not None
     access = client(vault)
-    protected_names = frozenset(access.protected_secret_names())
-    name = canonical_secret_name(args.name, protected_names)
-    if name in protected_names and not getattr(args, "unsafe", False):
-        return fail(
-            args,
-            2,
-            "refused",
-            f"{name} is protected",
-            nxt="agentself secret update NAME --unsafe",
-        )
-    access.update(name, value, unsafe=bool(getattr(args, "unsafe", False)))
+    with access.operation():
+        protected_names = frozenset(access.protected_secret_names())
+        name = canonical_secret_name(args.name, protected_names)
+        if name in protected_names and not getattr(args, "unsafe", False):
+            return fail(
+                args,
+                2,
+                "refused",
+                f"{name} is protected",
+                nxt="agentself secret update NAME --unsafe",
+            )
+        access.update(name, value, unsafe=bool(getattr(args, "unsafe", False)))
     return CliSuccess({"name": name})
 
 
 def list_secrets(args, vault: Path) -> CliOutcome:
     access = client(vault)
-    names = access.list()
-    protected_names = frozenset(access.protected_secret_names())
+    with access.operation():
+        names = access.list()
+        protected_names = frozenset(access.protected_secret_names())
     protected = [
         name for name in names if is_protected_secret_name(name, protected_names)
     ]

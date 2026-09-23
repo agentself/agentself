@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -40,6 +40,15 @@ _SECRET = re.compile(r"AGE-SECRET-KEY-[A-Za-z0-9-]+")
 _HEXKEY = re.compile(r"(?i)(?<![0-9a-f])0x[0-9a-f]{64}(?![0-9a-f])")
 
 
+class ConfigSnapshot:
+    """One validated config.json read. A missing file is an empty map."""
+
+    __slots__ = ("values",)
+
+    def __init__(self, values: Mapping[str, str]) -> None:
+        self.values = values
+
+
 class IdentityStateError(Exception):
     """config.json exists but is not a usable identity file. Fail closed."""
 
@@ -66,7 +75,11 @@ def config_path(vault: Path) -> Path:
 
 
 def load_config(vault: Path) -> dict[str, str]:
-    return _read_config(Path(vault))
+    return dict(read_config(vault).values)
+
+
+def read_config(vault: Path) -> ConfigSnapshot:
+    return ConfigSnapshot(_read_config(Path(vault)))
 
 
 def save_config(vault: Path, data: dict[str, str]) -> None:
@@ -111,6 +124,18 @@ def resolve_setting(
 ) -> str:
     """Flag, then env, then config.json. Empty string is unset."""
 
+    return setting_from(read_config(vault), key, env_name, default, explicit)
+
+
+def setting_from(
+    snapshot: ConfigSnapshot,
+    key: str,
+    env_name: str,
+    default: str = "",
+    explicit: str | None = None,
+) -> str:
+    """Flag, then env, then one config snapshot. Empty string is unset."""
+
     if explicit is not None:
         value = explicit.strip()
         if value:
@@ -118,7 +143,7 @@ def resolve_setting(
     env = os.environ.get(env_name, "").strip()
     if env:
         return env
-    return load_config(vault).get(key, "").strip() or default
+    return snapshot.values.get(key, "").strip() or default
 
 
 def mail_domain(vault: Path, explicit: str | None = None) -> str:
@@ -164,7 +189,7 @@ def occupied_identity_ids(vault: Path) -> tuple[str, ...]:
     return tuple(names)
 
 
-def bind_local(vault: Path) -> BoundCaller:
+def bind_local(vault: Path, snapshot: ConfigSnapshot | None = None) -> BoundCaller:
     """Bind the identity this directory already holds.
 
     A named identity in config.json is canonical. Env
@@ -172,7 +197,7 @@ def bind_local(vault: Path) -> BoundCaller:
     only used when this directory has no identity yet.
     """
 
-    cfg = load_config(vault)
+    cfg = load_config(vault) if snapshot is None else snapshot.values
     folder_id = (cfg.get("identity_id") or "").strip()
     folder_key = resolve_age_key_file(vault, cfg.get("age_key_file", ""))
     if folder_id:

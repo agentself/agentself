@@ -13,6 +13,7 @@ from agentself.cli.registry import (
     CommandSpec,
     command_recovery,
     commands_payload,
+    lookup_command,
     spec_for,
 )
 from agentself.cli.runtime import (
@@ -167,12 +168,23 @@ def main(argv: list[str] | None = None) -> int:
     outcome: CliOutcome
     try:
         if spec.path == ("commands",):
-            email_next = None
-            if config_path(vault).is_file():
-                from agentself.cli.commands.catalog import _email_catalog_next
+            group = (getattr(args, "group", None) or "").strip()
+            verb = (getattr(args, "verb", None) or "").strip()
+            if group or verb:
+                found = lookup_command(group, verb)
+                if found.payload is None:
+                    outcome = fail(
+                        args, 2, "refused", found.reason, nxt=found.next_command
+                    )
+                else:
+                    outcome = CliSuccess(found.payload)
+            else:
+                email_next = None
+                if config_path(vault).is_file():
+                    from agentself.cli.commands.catalog import _email_catalog_next
 
-                email_next = _email_catalog_next(vault)
-            outcome = CliSuccess(commands_payload(email_next=email_next))
+                    email_next = _email_catalog_next(vault)
+                outcome = CliSuccess(commands_payload(email_next=email_next))
         else:
             handler = _load_handler(spec)
             outcome = handler(args, vault)
