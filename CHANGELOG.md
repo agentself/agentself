@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `wallet authorize` prepares the wallet once per command. JSON and `--out`
+  still return address, scheme, network, and `message_sha256`, and still
+  verify the signature. The command does not load email.
+- A command reads `config.json` once when the client is built and binds the
+  caller once for that operation. The next operation on the same client reads
+  again, so a replaced `wallet.key` is used.
+- `agentself commands GROUP` and `agentself commands GROUP VERB` return one
+  schema, including parameter help, conflicts, and input alternatives. The
+  unfiltered catalog keeps its previous shape, plus `GROUP` and `VERB` on
+  `commands` itself.
+- Development and CI install from `uv.lock`. Published dependency ranges are
+  unchanged. Update the lock with `uv lock` or `uv lock --upgrade`.
 - `backup` and `restore` refuse symlink nodes instead of recreating them.
 - sops encrypt/decrypt ignore host `SOPS_CONFIG` and cwd `.sops.yaml`.
 - `agentself backends wallet` names how this backend interprets

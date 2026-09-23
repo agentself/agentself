@@ -72,6 +72,11 @@ failures may instead name a host action (`fund ETH`,
 JSON also includes additive `_next` with `command` and optional `until`
 and `poll_interval_seconds`. Consumers should ignore unknown keys.
 `agentself commands` may include additive `params` and `verbs`.
+`agentself commands GROUP` and `agentself commands GROUP VERB` are additive.
+The unfiltered catalog stays the featured-verb list; `commands` itself may
+list optional `GROUP` and `VERB` params. Targeted schemas add help text,
+`globals`, `conflicts`, `alternatives`, and `constraints`. Consumers should
+ignore unknown keys.
 `email connect --interval` / `--timeout`, `wallet send --test`, and
 `--force` on secret/authorization/mail file writes are additive. Existing
 `--file` / `--out` paths now refuse to replace a file unless `--force`, and

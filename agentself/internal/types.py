@@ -75,6 +75,14 @@ class WalletAuthorization(TypedDict, total=False):
     scheme: str
 
 
+class WalletAuthorizationResult(TypedDict):
+    authorization: str
+    address: str
+    scheme: str
+    network: str
+    valid: bool
+
+
 class WalletSendResult(TypedDict):
     asset: str
     hash: NotRequired[str]

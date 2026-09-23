@@ -55,6 +55,10 @@ version = {attr = "agentself.__version__"}
 
 [dependency-groups]
 dev = ["pytest", "mypy>=1.8", "ruff"]
+build = ["build", "twine", "setuptools>=77"]
+
+[tool.uv]
+required-version = ">=0.11.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

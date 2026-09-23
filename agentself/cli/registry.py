@@ -21,6 +21,32 @@ class CommandSpec:
     description: str | None = None
     epilog: str | None = None
     dest: str | None = None
+    constraints: tuple[str, ...] = ()
+    alternatives: tuple[tuple[str, ...], ...] = ()
+
+
+def add_global_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--raw",
+        dest="as_raw",
+        action="store_true",
+        default=False,
+        help="Write exact bytes for commands that support raw output",
+    )
+    parser.add_argument(
+        "--identity-dir",
+        dest="identity_dir",
+        default="",
+        metavar="PATH",
+        help="Identity directory for this invocation only (not persisted)",
+    )
 
 
 def configure_init(parser: argparse.ArgumentParser) -> None:
@@ -59,6 +85,21 @@ def configure_init(parser: argparse.ArgumentParser) -> None:
         "--unsafe",
         action="store_true",
         help="Allow replacing wallet.key on an existing identity",
+    )
+
+
+def configure_commands(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "group",
+        nargs="?",
+        metavar="GROUP",
+        help="Command group or top-level command. Omit for the full catalog",
+    )
+    parser.add_argument(
+        "verb",
+        nargs="?",
+        metavar="VERB",
+        help="One verb in GROUP",
     )
 
 
@@ -541,8 +582,16 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ("commands",),
         "List featured verbs",
         f"{_H}.catalog:list_commands",
+        configure_commands,
         args=(),
         next="agentself commands",
+        description="List featured verbs. Pass GROUP, or GROUP VERB, for one schema.",
+        epilog=(
+            "Examples:\n"
+            "  agentself commands\n"
+            "  agentself commands wallet\n"
+            "  agentself commands wallet authorize"
+        ),
     ),
     CommandSpec(
         ("diagnose",),
@@ -573,6 +622,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_secret_create,
         description="VALUE may be omitted when using --file PATH. Use --file - to read stdin.",
         epilog="Examples:\n  agentself secret create NAME VALUE\n  agentself secret create NAME --file -",
+        alternatives=(("VALUE", "--file"),),
+        constraints=(
+            "VALUE and --file together are refused.",
+            "NAME is required unless --from-dir or --from-files is used.",
+        ),
     ),
     CommandSpec(
         ("secret", "get"),
@@ -585,6 +639,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "wallet.key also requires --unsafe."
         ),
         epilog="Examples:\n  agentself secret get NAME\n  agentself secret get NAME --raw",
+        constraints=("wallet.key requires --unsafe to export.",),
     ),
     CommandSpec(
         ("secret", "run"),
@@ -604,6 +659,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "  agentself secret run --env API_KEY=NAME -- sh -c "
             "'curl -s -H \"Authorization: Bearer $API_KEY\" URL'"
         ),
+        constraints=(
+            "COMMAND is required. Put -- before the child so its flags stay with the child.",
+            "wallet.key requires --unsafe.",
+        ),
     ),
     CommandSpec(
         ("secret", "update"),
@@ -611,6 +670,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         f"{_H}.secret:update_secret",
         configure_secret_update,
         epilog="Examples:\n  agentself secret update NAME VALUE\n  agentself secret update NAME --file -",
+        alternatives=(("VALUE", "--file"),),
+        constraints=("VALUE and --file together are refused.",),
     ),
     CommandSpec(
         ("secret", "list"),
@@ -652,6 +713,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         configure_note_set,
         description="Provide VALUE or --file PATH. Use --file - to read stdin.",
         epilog="Examples:\n  agentself note set handoff --file PATH\n  agentself note set handoff --file -",
+        alternatives=(("VALUE", "--file"),),
+        constraints=("VALUE and --file together are refused.",),
     ),
     CommandSpec(
         ("note", "get"),
@@ -718,6 +781,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "Fails closed without send credentials. See agentself backends email."
         ),
         epilog="Examples:\n  agentself email send TO SUBJECT --file PATH\n  agentself email send TO SUBJECT BODY\n  agentself backends email",
+        alternatives=(("BODY", "--file"),),
+        constraints=("BODY and --file together are refused.",),
     ),
     CommandSpec(
         ("email", "receive"),
@@ -732,6 +797,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "--file or --raw. --raw requires a ref or id and writes exact body bytes."
         ),
         epilog="Examples:\n  agentself email receive\n  agentself email receive REF --file PATH\n  agentself email receive REF --raw",
+        constraints=(
+            "--file requires a message ref or ID.",
+            "--raw requires a message ref or ID.",
+        ),
     ),
     CommandSpec(
         ("email", "list"),
@@ -810,6 +879,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "decoded statement."
         ),
         epilog="Examples:\n  agentself wallet authorize --file PATH --out PATH\n  agentself wallet authorize --file PATH\n  agentself wallet authorize --file - --raw",
+        alternatives=(("MESSAGE", "--file"),),
+        constraints=(
+            "MESSAGE and --file together are refused.",
+            "--out cannot be -; use --raw for stdout.",
+            "--raw writes the authorization to stdout and does not write --out.",
+        ),
     ),
     CommandSpec(
         ("wallet", "verify"),
@@ -821,6 +896,14 @@ COMMANDS: tuple[CommandSpec, ...] = (
             "is a legacy CLI 2 form."
         ),
         epilog="Examples:\n  agentself wallet verify --file PATH --authorization-file PATH\n  agentself wallet verify --file PATH AUTHORIZATION",
+        alternatives=(
+            ("MESSAGE", "--file"),
+            ("AUTHORIZATION", "--authorization-file"),
+        ),
+        constraints=(
+            "MESSAGE and --file together are refused.",
+            "AUTHORIZATION and --authorization-file together are refused.",
+        ),
     ),
     CommandSpec(
         ("wallet", "send"),
@@ -1015,8 +1098,10 @@ def _param_name(action: argparse.Action) -> str:
     return raw.upper() if raw.islower() else raw
 
 
-def _param_of(action: argparse.Action) -> dict[str, object] | None:
-    if action.dest in _SCHEMA_SKIP_DESTS:
+def _param_of(
+    action: argparse.Action, *, skip: frozenset[str] | None = None
+) -> dict[str, object] | None:
+    if action.dest in (_SCHEMA_SKIP_DESTS if skip is None else skip):
         return None
     name = _param_name(action)
     if not name:
@@ -1088,3 +1173,135 @@ def commands_payload(*, email_next: str | None = None) -> dict[str, object]:
         if spec.raw and len(spec.path) >= 2:
             raw.setdefault(spec.path[0], []).append(spec.path[-1])
     return {"commands": featured, "raw": raw}
+
+
+@dataclass(frozen=True)
+class CommandLookup:
+    payload: dict[str, object] | None
+    next_command: str
+    reason: str = "unknown command"
+
+
+def _repeatable(action: argparse.Action) -> bool:
+    nargs = action.nargs
+    if nargs in ("*", "+", argparse.REMAINDER):
+        return True
+    return type(action).__name__ == "_AppendAction"
+
+
+def _param_detail(
+    action: argparse.Action, *, skip: frozenset[str] | None = None
+) -> dict[str, object] | None:
+    item = _param_of(action, skip=skip)
+    if item is None:
+        return None
+    help_text = action.help
+    if isinstance(help_text, str) and help_text:
+        item["help"] = help_text
+    if _repeatable(action):
+        item["repeatable"] = True
+    if action.dest not in _SENSITIVE_DESTS:
+        default = action.default
+        if default is not argparse.SUPPRESS and isinstance(
+            default, (str, int, float, bool)
+        ):
+            item["default"] = default
+        elif default is None:
+            item["default"] = None
+    return item
+
+
+def _configured_parser(spec: CommandSpec) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
+    if spec.configure is not None:
+        spec.configure(parser)
+    return parser
+
+
+def _exclusive_groups(parser: argparse.ArgumentParser) -> list[dict[str, object]]:
+    found: list[dict[str, object]] = []
+    groups = getattr(parser, "_mutually_exclusive_groups", ())
+    for group in groups:
+        names: list[str] = []
+        for action in group._group_actions:
+            name = _param_name(action)
+            if name:
+                names.append(name)
+        if len(names) >= 2:
+            found.append({"params": names})
+    return found
+
+
+def _global_params(*, raw: bool) -> list[dict[str, object]]:
+    parser = argparse.ArgumentParser(add_help=False)
+    add_global_flags(parser)
+    params: list[dict[str, object]] = []
+    for action in parser._actions:
+        if action.dest in {"help", "as_json"}:
+            continue
+        if action.dest == "as_raw" and not raw:
+            continue
+        item = _param_detail(action, skip=frozenset({"help", "as_json"}))
+        if item is not None:
+            params.append(item)
+    return params
+
+
+def _targeted_verb(spec: CommandSpec) -> dict[str, object]:
+    parser = _configured_parser(spec)
+    params: list[dict[str, object]] = []
+    for action in parser._actions:
+        item = _param_detail(action)
+        if item is not None:
+            params.append(item)
+    payload: dict[str, object] = {
+        "name": spec.path[-1],
+        "command": "agentself " + " ".join(spec.path),
+        "summary": spec.summary,
+        "raw": spec.raw,
+        "params": params,
+        "globals": _global_params(raw=spec.raw),
+    }
+    if spec.next:
+        payload["next"] = spec.next
+    conflicts = _exclusive_groups(parser)
+    if conflicts:
+        payload["conflicts"] = conflicts
+    if spec.alternatives:
+        payload["alternatives"] = [
+            {"params": list(group)} for group in spec.alternatives
+        ]
+    if spec.constraints:
+        payload["constraints"] = list(spec.constraints)
+    return payload
+
+
+def lookup_command(group: str, verb: str = "") -> CommandLookup:
+    """Schema for one group or verb. None payload means the path is unknown."""
+
+    group = group.strip()
+    verb = verb.strip()
+    top = spec_for((group,))
+    if top is None:
+        return CommandLookup(None, "agentself commands")
+    if not verb:
+        if top.handler is None:
+            children = [
+                spec
+                for spec in COMMANDS
+                if len(spec.path) == 2 and spec.path[0] == group and spec.handler
+            ]
+            return CommandLookup(
+                {
+                    "group": group,
+                    "summary": top.summary,
+                    "next": top.next or f"agentself {group}",
+                    "verbs": [_targeted_verb(child) for child in children],
+                },
+                "",
+            )
+        return CommandLookup(_targeted_verb(top), "")
+    child = spec_for((group, verb))
+    if child is None or child.handler is None:
+        return CommandLookup(None, f"agentself commands {group}")
+    return CommandLookup(_targeted_verb(child), "")

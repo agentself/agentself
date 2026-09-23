@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 
-from agentself.cli.registry import COMMANDS, featured_metavar
+from agentself.cli.registry import COMMANDS, add_global_flags, featured_metavar
 from agentself.host import ENV_IDENTITY_DIR, close_match
 from agentself.internal.next import next_object
 from agentself.local import redact_secrets
@@ -62,30 +62,6 @@ class _Parser(argparse.ArgumentParser):
         if hint and hint not in _MUTATING_COMMANDS:
             msg += f" (did you mean {hint!r}?)"
         raise argparse.ArgumentError(action, msg)
-
-
-def add_global_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--json",
-        dest="as_json",
-        action="store_true",
-        default=False,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--raw",
-        dest="as_raw",
-        action="store_true",
-        default=False,
-        help="Write exact bytes for commands that support raw output",
-    )
-    parser.add_argument(
-        "--identity-dir",
-        dest="identity_dir",
-        default="",
-        metavar="PATH",
-        help="Identity directory for this invocation only (not persisted)",
-    )
 
 
 def _cmd(
