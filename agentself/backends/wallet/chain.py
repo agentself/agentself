@@ -16,7 +16,12 @@ from agentself.backends.wallet.contract import (
     WalletError,
     WalletMaterial,
 )
-from agentself.backends.wallet.rpc import HttpJsonRpc, RpcClient, _dedup_urls
+from agentself.backends.wallet.rpc import (
+    HttpJsonRpc,
+    NetworkBudget,
+    RpcClient,
+    _dedup_urls,
+)
 from agentself.internal.eoa import generate_secp256k1, hex_0x
 from agentself.internal.files import (
     IdentityBusy,
@@ -108,9 +113,12 @@ class ChainWalletAccess(WalletAccess):
         return sig
 
     def balance(self, identity_id: str, asset: str = "") -> WalletBalance:
+        budget = NetworkBudget()
         require_safe_token(identity_id, "identity id")
         addr = self._derived_address()
-        wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
+        wei = _hex_int(
+            self._rpc_request("eth_getBalance", [addr, "latest"], budget=budget)
+        )
         wanted = (asset or "").strip()
         if wanted == GAS_ASSET:
             amount = _format_eth(wei)
@@ -128,7 +136,7 @@ class ChainWalletAccess(WalletAccess):
             }
         try:
             name, token = self._asset_token(wanted)
-            decimals = self._token_decimals(token)
+            decimals = self._token_decimals(token, budget=budget)
         except CannotSend:
             self._log.record("wallet_balance", identity_id, None, "cannot_send")
             raise
@@ -136,6 +144,7 @@ class ChainWalletAccess(WalletAccess):
             self._rpc_request(
                 "eth_call",
                 [{"to": token, "data": _balance_of_data(addr)}, "latest"],
+                budget=budget,
             )
         )
         amount = _format_units(raw, decimals)
@@ -161,15 +170,18 @@ class ChainWalletAccess(WalletAccess):
         asset: str,
         details: str = "",
     ) -> str:
+        budget = NetworkBudget()
         require_safe_token(identity_id, "identity id")
         self._require_key()
-        plan = self._prepare_send(identity_id, to, amount, asset, details)
+        plan = self._prepare_send(
+            identity_id, to, amount, asset, details, budget=budget
+        )
         if self._root is None:
-            self._send_once(identity_id, plan)
+            self._send_once(identity_id, plan, budget=budget)
             return plan.asset
         try:
             with exclusive(self._root):
-                self._send_once(identity_id, plan)
+                self._send_once(identity_id, plan, budget=budget)
         except IdentityBusy as exc:
             raise WalletError("identity directory busy") from exc
         return plan.asset
@@ -182,10 +194,13 @@ class ChainWalletAccess(WalletAccess):
         asset: str,
         details: str = "",
     ) -> str:
+        budget = NetworkBudget()
         require_safe_token(identity_id, "identity id")
         self._require_key()
-        plan = self._prepare_send(identity_id, to, amount, asset, details)
-        self._send_gas_preflight(identity_id, plan)
+        plan = self._prepare_send(
+            identity_id, to, amount, asset, details, budget=budget
+        )
+        self._send_gas_preflight(identity_id, plan, budget=budget)
         return plan.asset
 
     def _asset_token(self, asset: str) -> tuple[str, str]:
@@ -202,7 +217,7 @@ class ChainWalletAccess(WalletAccess):
             return USDC_ASSET, self.usdc
         return token, token
 
-    def _token_decimals(self, token: str) -> int:
+    def _token_decimals(self, token: str, *, budget: NetworkBudget) -> int:
         key = token.lower()
         cached = self._decimals.get(key)
         if cached is not None:
@@ -211,6 +226,7 @@ class ChainWalletAccess(WalletAccess):
             self._rpc_request(
                 "eth_call",
                 [{"to": token, "data": _decimals_data()}, "latest"],
+                budget=budget,
             )
         )
         if raw < 0 or raw > 255:
@@ -249,21 +265,27 @@ class ChainWalletAccess(WalletAccess):
         self._log.record("wallet_verify", identity_id, None, "ok" if valid else "error")
         return {"valid": valid, "address": expected, "scheme": scheme}
 
-    def _send_once(self, identity_id: str, plan: _PreparedSend) -> None:
+    def _send_once(
+        self, identity_id: str, plan: _PreparedSend, *, budget: NetworkBudget
+    ) -> None:
         pending = self._load_pending(identity_id)
         if pending and _same_intent(pending, plan, self.chain_id):
             tx_hash = str(pending.get("hash") or "")
-            if self._tx_confirmed(pending):
+            if self._tx_confirmed(pending, budget=budget):
                 self._remember_hash(tx_hash)
                 self._clear_pending(identity_id)
                 self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
                 return
-            self._finish_pending(identity_id, pending)
+            self._finish_pending(identity_id, pending, budget=budget)
             self._remember_hash(tx_hash)
             return
-        gas_price, gas_limit = self._send_gas_preflight(identity_id, plan)
+        gas_price, gas_limit = self._send_gas_preflight(
+            identity_id, plan, budget=budget
+        )
         nonce = _hex_int(
-            self._rpc_request("eth_getTransactionCount", [plan.addr, "pending"])
+            self._rpc_request(
+                "eth_getTransactionCount", [plan.addr, "pending"], budget=budget
+            )
         )
         tx = {
             "to": plan.tx_to,
@@ -295,7 +317,7 @@ class ChainWalletAccess(WalletAccess):
             "raw": raw_hex,
         }
         self._save_pending(identity_id, record)
-        self._broadcast(identity_id, record)
+        self._broadcast(identity_id, record, budget=budget)
 
     def _prepare_send(
         self,
@@ -304,6 +326,8 @@ class ChainWalletAccess(WalletAccess):
         amount: str,
         asset: str,
         details: str,
+        *,
+        budget: NetworkBudget,
     ) -> _PreparedSend:
         try:
             name, token = self._asset_token(asset)
@@ -311,7 +335,9 @@ class ChainWalletAccess(WalletAccess):
             self._log.record("wallet_send", identity_id, None, "cannot_send")
             raise
         addr = self._derived_address()
-        wei = _hex_int(self._rpc_request("eth_getBalance", [addr, "latest"]))
+        wei = _hex_int(
+            self._rpc_request("eth_getBalance", [addr, "latest"], budget=budget)
+        )
         if wei == 0:
             self._log.record("wallet_send", identity_id, None, "no_gas")
             raise CannotSend("need ETH for gas", reason="no_gas")
@@ -323,7 +349,7 @@ class ChainWalletAccess(WalletAccess):
                 "invalid destination", reason="invalid_destination"
             ) from None
         try:
-            units = _token_units(amount, self._token_decimals(token))
+            units = _token_units(amount, self._token_decimals(token, budget=budget))
             kind, call = _send_details(details)
         except CannotSend:
             self._log.record("wallet_send", identity_id, None, "cannot_send")
@@ -334,20 +360,27 @@ class ChainWalletAccess(WalletAccess):
         elif kind == "call":
             tx_to = dest
             data = call
-            self._require_held(identity_id, addr, token, units)
+            self._require_held(identity_id, addr, token, units, budget=budget)
         else:
             tx_to = token
             data = _transfer_data(dest, units)
-            self._require_held(identity_id, addr, token, units)
+            self._require_held(identity_id, addr, token, units, budget=budget)
         return _PreparedSend(addr, dest, tx_to, units, name, data, wei)
 
     def _require_held(
-        self, identity_id: str, addr: str, token: str, units: int
+        self,
+        identity_id: str,
+        addr: str,
+        token: str,
+        units: int,
+        *,
+        budget: NetworkBudget,
     ) -> None:
         held = _hex_int(
             self._rpc_request(
                 "eth_call",
                 [{"to": token, "data": _balance_of_data(addr)}, "latest"],
+                budget=budget,
             )
         )
         if held < units:
@@ -355,29 +388,34 @@ class ChainWalletAccess(WalletAccess):
             raise CannotSend("need funds", reason="insufficient_asset")
 
     def _send_gas_preflight(
-        self, identity_id: str, plan: _PreparedSend
+        self, identity_id: str, plan: _PreparedSend, *, budget: NetworkBudget
     ) -> tuple[int, int]:
-        gas_price = self._gas_price()
-        gas_limit = self._estimate_gas(plan.addr, plan.tx_to, plan.data)
+        gas_price = self._gas_price(budget=budget)
+        gas_limit = self._estimate_gas(plan.addr, plan.tx_to, plan.data, budget=budget)
         if plan.wei < gas_price * gas_limit:
             self._log.record("wallet_send", identity_id, None, "no_gas")
             raise CannotSend("need ETH for gas", reason="no_gas")
         return gas_price, gas_limit
 
-    def _estimate_gas(self, addr: str, tx_to: str, data: str) -> int:
+    def _estimate_gas(
+        self, addr: str, tx_to: str, data: str, *, budget: NetworkBudget
+    ) -> int:
         return _hex_int(
             self._rpc_request(
                 "eth_estimateGas",
                 [{"from": addr, "to": tx_to, "data": data, "value": "0x0"}],
+                budget=budget,
             )
         )
 
-    def _gas_price(self) -> int:
-        return _hex_int(self._rpc_request("eth_gasPrice", []))
+    def _gas_price(self, *, budget: NetworkBudget) -> int:
+        return _hex_int(self._rpc_request("eth_gasPrice", [], budget=budget))
 
-    def _finish_pending(self, identity_id: str, pending: dict[str, object]) -> None:
+    def _finish_pending(
+        self, identity_id: str, pending: dict[str, object], *, budget: NetworkBudget
+    ) -> None:
         tx_hash = str(pending.get("hash") or "")
-        if self._tx_confirmed(pending):
+        if self._tx_confirmed(pending, budget=budget):
             self._remember_hash(tx_hash)
             self._clear_pending(identity_id)
             self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
@@ -385,19 +423,21 @@ class ChainWalletAccess(WalletAccess):
         raw = str(pending.get("raw") or "")
         if not raw.startswith("0x"):
             raise WalletError("rpc failed")
-        self._broadcast(identity_id, pending)
+        self._broadcast(identity_id, pending, budget=budget)
 
     def _broadcast(
         self,
         identity_id: str,
         pending: dict[str, object],
+        *,
+        budget: NetworkBudget,
     ) -> None:
         raw = str(pending.get("raw") or "")
         tx_hash = str(pending.get("hash") or "")
         try:
-            result = self._rpc_request("eth_sendRawTransaction", [raw])
+            result = self._rpc_request("eth_sendRawTransaction", [raw], budget=budget)
         except WalletError:
-            if self._tx_confirmed(pending):
+            if self._tx_confirmed(pending, budget=budget):
                 self._remember_hash(tx_hash)
                 self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
                 return
@@ -406,16 +446,23 @@ class ChainWalletAccess(WalletAccess):
             raise WalletError("rpc failed")
         self._remember_hash(tx_hash)
         self._log.record("wallet_send", identity_id, None, _ok_hash(tx_hash))
-        if self._tx_confirmed(pending):
+        if self._tx_confirmed(pending, budget=budget):
             self._clear_pending(identity_id)
 
-    def _tx_confirmed(self, pending: dict[str, object]) -> bool:
+    def _tx_confirmed(
+        self, pending: dict[str, object], *, budget: NetworkBudget | None = None
+    ) -> bool:
+        budget = budget or NetworkBudget()
         tx_hash = str(pending.get("hash") or "")
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
             return False
         try:
-            found = self._rpc_request("eth_getTransactionByHash", [tx_hash])
-            receipt = self._rpc_request("eth_getTransactionReceipt", [tx_hash])
+            found = self._rpc_request(
+                "eth_getTransactionByHash", [tx_hash], budget=budget
+            )
+            receipt = self._rpc_request(
+                "eth_getTransactionReceipt", [tx_hash], budget=budget
+            )
         except WalletError:
             return False
         if not isinstance(found, dict) or not isinstance(receipt, dict):
@@ -515,10 +562,15 @@ class ChainWalletAccess(WalletAccess):
             )
         return self._http
 
-    def _rpc_request(self, method: str, params: list[object]) -> object:
+    def _rpc_request(
+        self, method: str, params: list[object], *, budget: NetworkBudget
+    ) -> object:
+        budget.remaining()
         if self._rpc is not None:
+            if isinstance(self._rpc, HttpJsonRpc):
+                return self._rpc.request(method, params, budget=budget)
             return self._rpc.request(method, params)
-        return self._http_client().request(method, params)
+        return self._http_client().request(method, params, budget=budget)
 
 
 def _typed_statement(message: str) -> dict[str, object] | None:
