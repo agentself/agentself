@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentself.internal.files import (
@@ -26,6 +27,12 @@ def is_mail_ref(value: str) -> bool:
     return _MAIL_REF_RE.fullmatch(value) is not None
 
 
+@dataclass
+class _MailRefLookup:
+    refs: dict[str, list[str]] = field(default_factory=dict)
+    highest: int = 0
+
+
 class MailRefState:
     """Persistent backend-neutral compact refs for provider message IDs."""
 
@@ -36,10 +43,17 @@ class MailRefState:
         self, identity_id: str, messages: list[MailboxMessage]
     ) -> list[MailboxMessage]:
         with exclusive(self._root):
+            lookup = None
             for message in messages:
                 message_id = str(message.get("id") or "")
                 if message_id:
-                    message["ref"] = self._remember_locked(identity_id, message_id)
+                    if not _valid_message_id(message_id):
+                        raise ValueError("invalid provider message id")
+                    if lookup is None:
+                        lookup = self._load_locked(identity_id)
+                    message["ref"] = self._remember_locked(
+                        identity_id, message_id, lookup
+                    )
         return messages
 
     def remember(self, identity_id: str, message_id: str) -> str:
@@ -80,12 +94,9 @@ class MailRefState:
                     return True
             return False
 
-    def _remember_locked(self, identity_id: str, message_id: str) -> str:
-        if not _valid_message_id(message_id):
-            raise ValueError("invalid provider message id")
+    def _load_locked(self, identity_id: str) -> _MailRefLookup:
         folder = _state_dir(self._root, identity_id, "refs")
-        matches: list[str] = []
-        highest = 0
+        lookup = _MailRefLookup()
         if folder.exists():
             for path in folder.iterdir():
                 if not is_mail_ref(path.name):
@@ -95,20 +106,34 @@ class MailRefState:
                 existing = path.read_text(encoding="utf-8")
                 if not _valid_message_id(existing):
                     raise OSError("invalid mail ref mapping")
-                highest = max(highest, int(path.name[1:]))
-                if existing == message_id:
-                    matches.append(path.name)
+                lookup.highest = max(lookup.highest, int(path.name[1:]))
+                lookup.refs.setdefault(existing, []).append(path.name)
+        return lookup
+
+    def _remember_locked(
+        self,
+        identity_id: str,
+        message_id: str,
+        lookup: _MailRefLookup | None = None,
+    ) -> str:
+        if not _valid_message_id(message_id):
+            raise ValueError("invalid provider message id")
+        if lookup is None:
+            lookup = self._load_locked(identity_id)
+        matches = lookup.refs.get(message_id, [])
         if len(matches) > 1:
             raise MailRefCollision(message_id)
         if matches:
             return matches[0]
-        ref = f"m{highest + 1}"
+        ref = f"m{lookup.highest + 1}"
         if not is_mail_ref(ref):
             raise OSError("mail ref space exhausted")
         path = self._path(identity_id, ref)
         if path.exists() or path.is_symlink():
             raise MailRefCollision(ref)
         atomic_write_text(path, message_id)
+        lookup.refs[message_id] = [ref]
+        lookup.highest += 1
         return ref
 
     def _path(self, identity_id: str, ref: str) -> Path:

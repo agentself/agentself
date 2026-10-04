@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Email batches read saved compact-reference mappings once, keeping stable
+  `mN` refs and the existing on-disk format as the mailbox grows.
 - `wallet authorize` prepares the wallet once per command. JSON and `--out`
   still return address, scheme, network, and `message_sha256`, and still
   verify the signature. The command does not load email.
