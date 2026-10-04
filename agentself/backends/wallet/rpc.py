@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterable
@@ -10,6 +11,18 @@ from agentself.backends.wallet.contract import WalletError
 
 USER_AGENT = "Mozilla/5.0 (compatible; agentself/1)"
 _MAX_BODY = 1_048_576
+NETWORK_BUDGET_SECONDS = 15.0
+
+
+class NetworkBudget:
+    def __init__(self) -> None:
+        self._deadline = time.monotonic() + NETWORK_BUDGET_SECONDS
+
+    def remaining(self) -> float:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise WalletError("rpc failed")
+        return remaining
 
 
 class RpcClient(Protocol):
@@ -32,7 +45,10 @@ class HttpJsonRpc:
         self.fallbacks = list(fallbacks or [])
         self._opener = opener
 
-    def request(self, method: str, params: list[object]) -> object:
+    def request(
+        self, method: str, params: list[object], *, budget: NetworkBudget | None = None
+    ) -> object:
+        budget = budget or NetworkBudget()
         urls = _dedup_urls(self.url, self.fallbacks)
         if not urls:
             raise WalletError("no RPC configured")
@@ -42,12 +58,14 @@ class HttpJsonRpc:
         last: BaseException | None = None
         for url in urls:
             try:
-                return self._post(url, payload, method)
+                return self._post(url, payload, method, budget)
             except _TryNext as exc:
                 last = exc
         raise WalletError("rpc failed") from last
 
-    def _post(self, url: str, payload: bytes, method: str) -> object:
+    def _post(
+        self, url: str, payload: bytes, method: str, budget: NetworkBudget
+    ) -> object:
         req = urllib.request.Request(
             url,
             data=payload,
@@ -59,7 +77,7 @@ class HttpJsonRpc:
         )
         opener = self._opener or urllib.request.urlopen
         try:
-            opened = opener(req, timeout=15)
+            opened = opener(req, timeout=budget.remaining())
             raw = _body_from_opened(opened)
         except _TryNext:
             raise

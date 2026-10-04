@@ -97,6 +97,14 @@ agentself wallet --help
 agentself email --help
 ```
 
+Base and Ethereum wallet balance, send, and send validation each start a fresh
+15-second network budget shared by all RPC calls and endpoint fallbacks. Each
+HTTP attempt receives only the remaining time; no new request starts after the
+budget expires. This is not a strict wall-clock limit: urllib timeouts govern
+blocking I/O, and DNS or a response body that keeps arriving can take longer.
+A send timeout does not mean the transaction was not sent. Saved pending sends
+remain available for confirmation or retry with the same signed transaction.
+
 Secret file input drops a leading UTF-8 BOM and keeps a trailing newline.
 `wallet.key` must be a hex private key after that decode. Default
 `secret get NAME` is JSON with the value. Prefer `--file PATH`. `--raw`
